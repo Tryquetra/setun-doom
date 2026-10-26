@@ -25,6 +25,20 @@
 
 ---
 
+## Emulation Evolution Levels & Branch Roadmap
+
+The project progresses through five architectural levels of balanced ternary emulation, advancing from arithmetic co-processing to full dynamic translation, native compiler targeting, full-system OS emulation, and physical FPGA synthesis:
+
+| Level | Architecture Stage | Scope & Implementation Details | Git Branch | Tag / Status |
+| :---: | :--- | :--- | :--- | :---: |
+| **Level 0** | **DDA Co-Processor & Gate-Level ALU** | Gate-level combinational arithmetic (`Trit::full_add`, 21-stage ripple-carry adders, 42-trit multipliers, non-restoring ternary division). Symmetric $11.10$ fixed-point arithmetic (`TernaryFixed`). Linear VGA framebuffer in 6-trit trytes (`Tryte6`). C-engine FFI hooks in `r_draw.c` for `R_DrawColumn`, `R_DrawSpan`, `R_DrawFuzzColumn`, and `R_DrawTranslatedColumn`. Strict zero false positives audit. | [`main`](https://github.com/Tryquetra/setun-doom/tree/main) | [`v0.1.0-level-0`](https://github.com/Tryquetra/setun-doom/releases/tag/v0.1.0-level-0) (Completed) |
+| **Level 1** | **Dynamic Binary Translation (DBT / JIT)** | Direct execution of standard binary RV32I ELF executables without host C hooks. 32-bit register file ($x0..x31$) mapped directly into `[Word21; 32]`. Basic-block translator fusing branch comparisons into native 3-way `BCEG` instructions. Syscall layer (`ecall`) for console I/O, VGA frame emission, and user input. | [`feat/level-1-dbt-rv32i`](https://github.com/Tryquetra/setun-doom/tree/feat/level-1-dbt-rv32i) | In Progress |
+| **Level 2** | **Native Compiler Backend (`LLVM Target`)** | Clang/LLVM target backend (`ternary21-setun`) emitting native 21-trit Setun machine instructions directly from C/C++ source code. Eliminates runtime binary translation; compiles Doom source code directly into native ternary ELF objects with native balanced type representations (`i21`). | `feat/level-2-llvm-target` | Planned |
+| **Level 3** | **Full-System Emulation (`Setun-DOS`)** | Autonomous ternary operating environment with native ternary BIOS interrupt vectors. Compatibility layer for DOS `INT 21h` services (DMA file loading for WADs, memory management across $3^{14}$ words). Synthesized FM audio driver emulating OPL2/MIDI using ternary adders. | `feat/level-3-full-system-dos` | Planned |
+| **Level 4** | **Physical Hardware Synthesis (FPGA / ASIC)** | Verilog and SystemVerilog implementation utilizing dual-rail encoding (2 bits per trit). Target synthesis for Lattice iCE40 and Xilinx Artix-7 FPGAs. Physical memory controller and hardware VGA DAC rasterization outputting live video to real displays. | `feat/level-4-fpga-synthesis` | Planned |
+
+---
+
 ## Benchmark Suite (`Setun-Doom 21-Trit` vs `RV32I 32-Bit`)
 
 | Benchmark / Kernel | Ternary Instrs | Instrs vs `RV32I` | Trit Flips | Digit Flips vs `RV32I` | Dynamic Energy $\Delta V^2$ vs `RV32I` | Host MIPS |
