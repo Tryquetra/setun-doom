@@ -250,8 +250,8 @@ fn main() {
         dbt_summary.instruction_diff_pct()
     );
     println!(
-        " * Fusões Peephole REBEL-6/Setun       : {} fusões de imediato (LI.T/AIPC.T) + {} fusões tricótomas (BCEG)",
-        dbt_summary.total_immediate_fusions, dbt_summary.total_branch_fusions
+        " * Fusões Peephole REBEL-6/Setun       : {} fusões de imediato (LI.T/AIPC.T) + {} fusões tricótomas (BCEG) + {} inversões Setun (STI.T)",
+        dbt_summary.total_immediate_fusions, dbt_summary.total_branch_fusions, dbt_summary.total_neg_fusions
     );
     println!(
         " * Telemetria Física de Chaveamento    : {} Trit Flips vs {} Bit Flips (Redução = {:.2}% | Carry Gates = {})",

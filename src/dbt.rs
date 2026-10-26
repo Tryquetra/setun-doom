@@ -281,6 +281,8 @@ pub enum SetunTranslatedOp {
         fallthrough_pc: u32,
         rv32i_instrs: u8,
     },
+    /// Inversão de sinal pura por portas ternárias Setun (`NEG rd, rs2` / `STI.T`).
+    NegT { rd: u8, rs: u8 },
     /// Instrução base mapeada 1-para-1 para a ALU ternária de 21 trits.
     Single { instr: Rv32iInstr, pc: u32 },
 }
@@ -352,6 +354,8 @@ pub struct DbtExecutionReport {
     pub immediate_fusions_executed: u64,
     /// Quantidade de fusões de saltos tricótomos (`SLT* + BEQ/BNE -> BCEG`) executadas.
     pub branch_fusions_executed: u64,
+    /// Quantidade de inversões diretas de sinal Setun (`NEG rd, rs2` / `STI.T`) executadas.
+    pub neg_fusions_executed: u64,
     /// Telemetria física de comutação de estados (*Trit Flips*, *Half/Full-Swings*, *Bit Flips* e *Gate Carries*).
     pub telemetry: PowerTelemetry,
     /// Saída capturada de `stdout` (syscall `write`).
@@ -409,6 +413,7 @@ pub struct SetunDbtEngine {
     pub setun_instructions_executed: u64,
     pub immediate_fusions_executed: u64,
     pub branch_fusions_executed: u64,
+    pub neg_fusions_executed: u64,
     /// Buffer de console para syscall `write`.
     pub stdout_buffer: Vec<u8>,
 }
@@ -435,6 +440,7 @@ impl SetunDbtEngine {
             setun_instructions_executed: 0,
             immediate_fusions_executed: 0,
             branch_fusions_executed: 0,
+            neg_fusions_executed: 0,
             stdout_buffer: Vec::new(),
         };
 
@@ -758,7 +764,21 @@ impl SetunDbtEngine {
                 }
             }
 
-            // 4. Tradução direta 1-para-1 para operação ternária da Setun
+            // 4. Otimização Peephole: Inversão pura de sinal Setun (NEG rd, rs2 / STI.T)
+            // No RV32I padrão, 'neg rd, rs' é pseudo-instrução traduzida como 'sub rd, x0, rs'.
+            // Na máquina Setun, isso dispensa totalmente o somador e propagações de carry,
+            // executando diretamente via inversão física fio a fio dos 21 trits (+1 <-> -1).
+            if let Rv32iInstr::Sub { rd, rs1: 0, rs2 } = instr0 {
+                ops.push(SetunTranslatedOp::NegT { rd, rs: rs2 });
+                self.emit_setun_code_word(Opcode::Neg, rd as i64);
+                cur_pc = next_pc;
+                if self.branch_targets.contains(&cur_pc) {
+                    break;
+                }
+                continue;
+            }
+
+            // 5. Tradução direta 1-para-1 para operação ternária da Setun
             ops.push(SetunTranslatedOp::Single {
                 instr: instr0,
                 pc: cur_pc,
@@ -928,6 +948,24 @@ impl SetunDbtEngine {
                             fallthrough_pc
                         };
                         break;
+                    }
+
+                    SetunTranslatedOp::NegT { rd, rs } => {
+                        let val = self.read_reg(rs);
+                        let inverted = if val == MIN_I32_WORD21 {
+                            // No complemento de dois de 32 bits, -(-2^31) transborda de volta para -2^31
+                            MIN_I32_WORD21
+                        } else {
+                            // Para todos os outros números em [-2^31 + 1, 2^31 - 1],
+                            // a inversão do Setun é 100% simétrica por portas de trits sem carry!
+                            val.gate_invert_trits()
+                        };
+                        self.write_reg(rd, inverted)?;
+                        self.rv32i_instructions_executed += 1;
+                        self.setun_instructions_executed += 1;
+                        self.neg_fusions_executed += 1;
+                        self.cpu.cycles += 1;
+                        self.pc = self.pc.wrapping_add(4);
                     }
 
                     SetunTranslatedOp::Single { instr, pc } => {
@@ -1368,6 +1406,7 @@ impl SetunDbtEngine {
             setun_instructions_executed: self.setun_instructions_executed,
             immediate_fusions_executed: self.immediate_fusions_executed,
             branch_fusions_executed: self.branch_fusions_executed,
+            neg_fusions_executed: self.neg_fusions_executed,
             telemetry: self.cpu.telemetry,
             stdout_buffer: self.stdout_buffer.clone(),
         }
@@ -1495,6 +1534,8 @@ pub struct RiscvIsaSuiteSummary {
     pub total_immediate_fusions: u64,
     /// Total de fusões tricótomas `BCEG` executadas.
     pub total_branch_fusions: u64,
+    /// Total de inversões de sinal Setun `NEG/STI.T` executadas.
+    pub total_neg_fusions: u64,
     /// Telemetria acumulada de todos os 37 testes.
     pub total_telemetry: PowerTelemetry,
 }
@@ -1559,6 +1600,7 @@ pub fn run_all_riscv_isa_tests() -> Result<RiscvIsaSuiteSummary, DbtError> {
     let mut total_setun_instrs = 0u64;
     let mut total_immediate_fusions = 0u64;
     let mut total_branch_fusions = 0u64;
+    let mut total_neg_fusions = 0u64;
     let mut total_telemetry = PowerTelemetry::default();
 
     for &(name, elf_bytes) in &RISCV_ISA_ELF_TESTS {
@@ -1568,6 +1610,7 @@ pub fn run_all_riscv_isa_tests() -> Result<RiscvIsaSuiteSummary, DbtError> {
         total_setun_instrs += report.setun_instructions_executed;
         total_immediate_fusions += report.immediate_fusions_executed;
         total_branch_fusions += report.branch_fusions_executed;
+        total_neg_fusions += report.neg_fusions_executed;
 
         total_telemetry.ternary_trit_flips += report.telemetry.ternary_trit_flips;
         total_telemetry.ternary_half_swings += report.telemetry.ternary_half_swings;
@@ -1584,6 +1627,7 @@ pub fn run_all_riscv_isa_tests() -> Result<RiscvIsaSuiteSummary, DbtError> {
         total_setun_instrs,
         total_immediate_fusions,
         total_branch_fusions,
+        total_neg_fusions,
         total_telemetry,
     })
 }
