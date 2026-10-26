@@ -1043,6 +1043,59 @@ pub unsafe extern "C" fn setun_BlitVideoBuffer(
     }
 }
 
+/// Estrutura exportada via C ABI contendo o estado dos registradores e telemetria para o HUD.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default)]
+pub struct SetunLiveTelemetrySnapshot {
+    pub acc_val: i64,
+    pub r_val: i64,
+    pub pc: i64,
+    pub cycles: u64,
+    pub adder_carry_propagations: u64,
+    pub ternary_trit_flips: u64,
+    pub ternary_half_swings: u64,
+    pub ternary_full_swings: u64,
+    pub binary32_bit_flips: u64,
+    pub digit_reduction_pct: f32,
+    pub energy_reduction_pct: f32,
+    pub acc_trits: [i8; 21],
+}
+
+/// Coleta uma captura instantânea atômica do estado dos registradores e telemetria para o HUD gráfico.
+///
+/// # Safety
+/// `out_snap` deve apontar para uma área de memória válida alinhada para [`SetunLiveTelemetrySnapshot`].
+#[no_mangle]
+pub unsafe extern "C" fn setun_GetLiveTelemetrySnapshot(out_snap: *mut SetunLiveTelemetrySnapshot) {
+    if out_snap.is_null() {
+        return;
+    }
+    let machine = global_machine()
+        .lock()
+        .expect("Mutex corrompido em setun_GetLiveTelemetrySnapshot");
+    let tel = machine.cpu.telemetry;
+    let acc_word = machine.cpu.acc;
+    let mut trits_arr = [0i8; 21];
+    for (i, t) in acc_word.to_trits().iter().enumerate() {
+        trits_arr[i] = t.as_i8();
+    }
+
+    *out_snap = SetunLiveTelemetrySnapshot {
+        acc_val: acc_word.as_i64(),
+        r_val: machine.cpu.r.as_i64(),
+        pc: machine.cpu.pc as i64,
+        cycles: machine.cpu.cycles,
+        adder_carry_propagations: tel.adder_carry_propagations,
+        ternary_trit_flips: tel.ternary_trit_flips,
+        ternary_half_swings: tel.ternary_half_swings,
+        ternary_full_swings: tel.ternary_full_swings,
+        binary32_bit_flips: tel.binary32_bit_flips,
+        digit_reduction_pct: tel.digit_flip_reduction_pct() as f32,
+        energy_reduction_pct: tel.weighted_energy_reduction_pct() as f32,
+        acc_trits: trits_arr,
+    };
+}
+
 /// Imprime no terminal um resumo ao vivo da telemetria ternária acumulada pela CPU Setun-Doom
 /// durante a execução do `doomgeneric`.
 #[no_mangle]
