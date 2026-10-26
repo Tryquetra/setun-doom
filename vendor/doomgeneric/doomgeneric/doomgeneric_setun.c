@@ -107,6 +107,55 @@ static uint8_t convert_sdl_key_to_doom(SDL_Keycode key)
     }
 }
 
+// Fonte bitmap 3x5 compacta para renderização de rótulos de telemetria sem dependência de bibliotecas externas
+static const uint16_t s_Font3x5[] = {
+    [' '] = 0x0000,
+    ['-'] = 0x01C0,
+    ['+'] = 0x0BA0,
+    ['%'] = 0x5555,
+    ['.'] = 0x0002,
+    [':'] = 0x0208,
+    ['/'] = 0x1248,
+    ['<'] = 0x1242,
+    ['='] = 0x038E,
+    ['>'] = 0x4212,
+    ['0'] = 0x7B6F, ['1'] = 0x2492, ['2'] = 0x73E7, ['3'] = 0x73CF, ['4'] = 0x5BC9,
+    ['5'] = 0x79CF, ['6'] = 0x79EF, ['7'] = 0x7249, ['8'] = 0x7BEF, ['9'] = 0x7BCF,
+    ['A'] = 0x7BE9, ['B'] = 0x7B6E, ['C'] = 0x7927, ['D'] = 0x736E, ['E'] = 0x79E7,
+    ['F'] = 0x79E1, ['G'] = 0x796F, ['H'] = 0x5BE9, ['I'] = 0x7497, ['J'] = 0x126E,
+    ['K'] = 0x5AE9, ['L'] = 0x4927, ['M'] = 0x7FED, ['N'] = 0x7B6D, ['O'] = 0x7B6F,
+    ['P'] = 0x7BE1, ['Q'] = 0x7B6B, ['R'] = 0x7BE5, ['S'] = 0x79CE, ['T'] = 0x7492,
+    ['U'] = 0x5B6F, ['V'] = 0x5B6A, ['W'] = 0x5BF7, ['X'] = 0x5AAB, ['Y'] = 0x5AE2,
+    ['Z'] = 0x7267,
+};
+
+static void draw_tiny_char(SDL_Renderer* renderer, int x, int y, char c)
+{
+    unsigned char uc = (unsigned char)c;
+    if (uc >= 'a' && uc <= 'z') uc -= 32;
+    if (uc >= sizeof(s_Font3x5)/sizeof(s_Font3x5[0])) return;
+    uint16_t glyph = s_Font3x5[uc];
+    if (glyph == 0 && c != ' ') return;
+
+    for (int row = 0; row < 5; row++) {
+        for (int col = 0; col < 3; col++) {
+            int bit = 14 - (row * 3 + col);
+            if ((glyph >> bit) & 1) {
+                SDL_RenderDrawPoint(renderer, x + col, y + row);
+            }
+        }
+    }
+}
+
+static void draw_tiny_text(SDL_Renderer* renderer, int x, int y, const char* str)
+{
+    while (*str) {
+        draw_tiny_char(renderer, x, y, *str);
+        x += 4;
+        str++;
+    }
+}
+
 static int s_ShowHud = 1;
 
 // Desenha o painel HUD de telemetria ternária Setun sobre a janela gráfica SDL2
@@ -115,95 +164,96 @@ static void render_setun_hud(SDL_Renderer* renderer)
     SetunLiveTelemetrySnapshot snap;
     setun_GetLiveTelemetrySnapshot(&snap);
 
-    // Salva o estado de mesclagem para desenhar painel semitransparente no topo (320x34)
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
     // 1. Fundo do painel do osciloscópio (estilo terminal industrial âmbar/cinza escuro)
-    SDL_SetRenderDrawColor(renderer, 10, 15, 18, 220);
-    SDL_Rect panel_rect = { 4, 4, 312, 36 };
+    SDL_SetRenderDrawColor(renderer, 8, 12, 14, 230);
+    SDL_Rect panel_rect = { 4, 3, 312, 42 };
     SDL_RenderFillRect(renderer, &panel_rect);
 
     // Borda do painel
-    SDL_SetRenderDrawColor(renderer, 45, 90, 80, 255);
+    SDL_SetRenderDrawColor(renderer, 35, 75, 70, 255);
     SDL_RenderDrawRect(renderer, &panel_rect);
 
+    // Rótulos de Seção em Inglês
+    SDL_SetRenderDrawColor(renderer, 130, 160, 150, 255);
+    draw_tiny_text(renderer, 8, 5, "SETUN ACCUMULATOR (21 TRITS)");
+    draw_tiny_text(renderer, 145, 5, "ENERGY SAVE");
+    draw_tiny_text(renderer, 245, 5, "BSP SIDE");
+    draw_tiny_text(renderer, 8, 24, "ALU CARRY GATES PROPAGATION");
+
     // 2. Lâmpadas de Néon dos 21 Trits da Word21 (Acumulador Setun)
-    // Cores autênticas: Positivo (+1) = Verde/Ciano | Zero (0) = Cinza Apagado | Negativo (-1) = Âmbar/Laranja
-    int led_start_x = 10;
-    int led_y = 9;
+    int led_start_x = 8;
+    int led_y = 12;
     int led_w = 4;
     int led_h = 7;
     int led_gap = 2;
 
     for (int i = 0; i < 21; i++) {
-        // Exibe do trit mais significativo (20) ao menos significativo (0)
         int8_t trit = snap.acc_trits[20 - i];
         if (trit > 0) {
-            SDL_SetRenderDrawColor(renderer, 30, 255, 120, 255); // Positivo: Verde néon brilhante
+            SDL_SetRenderDrawColor(renderer, 30, 255, 120, 255); // Positive (+1): Bright Neon Green
         } else if (trit < 0) {
-            SDL_SetRenderDrawColor(renderer, 255, 80, 40, 255);  // Negativo: Laranja/âmbar soviético
+            SDL_SetRenderDrawColor(renderer, 255, 80, 40, 255);  // Negative (-1): Soviet Amber/Orange
         } else {
-            SDL_SetRenderDrawColor(renderer, 50, 60, 65, 255);   // Zero: Neutro / Apagado
+            SDL_SetRenderDrawColor(renderer, 45, 50, 55, 255);   // Zero (0): Dark Neutral
         }
         SDL_Rect led_rect = { led_start_x + i * (led_w + led_gap), led_y, led_w, led_h };
         SDL_RenderFillRect(renderer, &led_rect);
     }
 
     // 3. Barra de Economia de Energia Física (Delta V^2 Reduction %)
-    // Verde = economia de chaveamento (0% a 100%)
     float reduction = snap.energy_reduction_pct;
     if (reduction < 0.0f) reduction = 0.0f;
     if (reduction > 100.0f) reduction = 100.0f;
 
     int bar_x = 145;
-    int bar_y = 9;
+    int bar_y = 12;
     int bar_max_w = 60;
     int bar_h = 7;
     int bar_w = (int)((reduction / 100.0f) * bar_max_w);
 
-    // Fundo da barra
-    SDL_SetRenderDrawColor(renderer, 30, 35, 40, 255);
+    SDL_SetRenderDrawColor(renderer, 25, 30, 35, 255);
     SDL_Rect bar_bg = { bar_x, bar_y, bar_max_w, bar_h };
     SDL_RenderFillRect(renderer, &bar_bg);
 
-    // Preenchimento da barra de eficiência
     SDL_SetRenderDrawColor(renderer, 0, 220, 255, 255);
     SDL_Rect bar_fill = { bar_x, bar_y, bar_w, bar_h };
     SDL_RenderFillRect(renderer, &bar_fill);
 
-    // Borda da barra
-    SDL_SetRenderDrawColor(renderer, 70, 90, 100, 255);
+    SDL_SetRenderDrawColor(renderer, 60, 80, 90, 255);
     SDL_RenderDrawRect(renderer, &bar_bg);
 
-    // 4. Indicador de Carry Gates e Pulsos da ALU (Linha inferior de pulsos)
-    int pulse_x = 10;
-    int pulse_y = 22;
-    int pulse_count = (int)((snap.adder_carry_propagations / 1000) % 35);
+    // Valor percentual textual (ex: "60%")
+    char pct_buf[16];
+    snprintf(pct_buf, sizeof(pct_buf), "%d%%", (int)reduction);
+    SDL_SetRenderDrawColor(renderer, 0, 220, 255, 255);
+    draw_tiny_text(renderer, bar_x + bar_max_w + 4, 13, pct_buf);
+
+    // 4. Indicador de Carry Gates e Pulsos da ALU
+    int pulse_x = 8;
+    int pulse_y = 32;
+    int pulse_count = (int)((snap.adder_carry_propagations / 1000) % 45);
     SDL_SetRenderDrawColor(renderer, 240, 190, 40, 255);
     for (int p = 0; p < pulse_count; p++) {
-        SDL_Rect p_rect = { pulse_x + p * 4, pulse_y, 2, 4 };
+        SDL_Rect p_rect = { pulse_x + p * 4, pulse_y, 2, 6 };
         SDL_RenderFillRect(renderer, &p_rect);
     }
 
-    // 5. Indicador Tricótomo BSP (< = >)
-    // Compara o acumulador atual com zero
+    // 5. Indicador Tricótomo BSP (< = >) com Rótulo
     int bsp_x = 285;
-    int bsp_y = 8;
+    int bsp_y = 11;
     if (snap.acc_val > 0) {
-        SDL_SetRenderDrawColor(renderer, 40, 255, 120, 255); // Frontal (>)
-        SDL_Rect bsp_rect = { bsp_x, bsp_y, 6, 8 };
-        SDL_RenderFillRect(renderer, &bsp_rect);
+        SDL_SetRenderDrawColor(renderer, 40, 255, 120, 255);
+        draw_tiny_text(renderer, bsp_x, bsp_y, "FRONT");
     } else if (snap.acc_val < 0) {
-        SDL_SetRenderDrawColor(renderer, 255, 60, 40, 255);  // Traseiro (<)
-        SDL_Rect bsp_rect = { bsp_x, bsp_y, 6, 8 };
-        SDL_RenderFillRect(renderer, &bsp_rect);
+        SDL_SetRenderDrawColor(renderer, 255, 60, 40, 255);
+        draw_tiny_text(renderer, bsp_x, bsp_y, "BACK");
     } else {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // Na linha (=)
-        SDL_Rect bsp_rect = { bsp_x, bsp_y + 3, 6, 2 };
-        SDL_RenderFillRect(renderer, &bsp_rect);
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        draw_tiny_text(renderer, bsp_x, bsp_y, "PLANE");
     }
 
-    // Restaura o modo opaco
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
 
