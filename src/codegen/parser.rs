@@ -158,10 +158,19 @@ impl LlvmParser {
             }
         }
 
+        // Void call: call void @callee(...) or tail call void @callee(...)
+        if cleaned.contains("call ") && !cleaned.contains('=') {
+            return Self::parse_call(None, &cleaned);
+        }
+
         // Assignments: %dst = <operation> ...
         if let Some((dst_part, rhs_part)) = cleaned.split_once('=') {
             let dst = dst_part.trim().to_string();
             let rhs = rhs_part.trim();
+
+            if rhs.contains("call ") {
+                return Self::parse_call(Some(dst), rhs);
+            }
 
             let tokens: Vec<&str> = rhs.split_whitespace().collect();
             if tokens.is_empty() {
@@ -299,6 +308,28 @@ impl LlvmParser {
         } else {
             None
         }
+    }
+
+    fn parse_call(dst: Option<String>, text: &str) -> Option<LlvmInst> {
+        let callee_start = text.find('@')?;
+        let open_paren = text[callee_start..].find('(')? + callee_start;
+        let callee_raw = &text[callee_start + 1..open_paren].trim();
+        let callee = callee_raw.trim_matches('"').to_string();
+
+        let close_paren = text.rfind(')')?;
+        let args_str = text[open_paren + 1..close_paren].trim();
+
+        let mut args = Vec::new();
+        if !args_str.is_empty() {
+            for arg_tok in args_str.split(',') {
+                let trimmed = arg_tok.trim();
+                if let Some(val_tok) = trimmed.split_whitespace().last() {
+                    args.push(Self::parse_val(val_tok));
+                }
+            }
+        }
+
+        Some(LlvmInst::Call { dst, callee, args })
     }
 
     fn extract_binary_args(rhs: &str) -> Option<(LlvmValue, LlvmValue)> {

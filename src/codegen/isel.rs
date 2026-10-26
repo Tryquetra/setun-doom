@@ -11,9 +11,18 @@ pub const CODEGEN_STACK_FRAME_BASE: i64 = 4_000_000;
 pub struct SetunCodeGenerator;
 
 impl SetunCodeGenerator {
-    /// Compiles an LLVM IR function into a native sequence of Setun [`Instruction`]s.
+    /// Compiles an LLVM IR function into a native sequence of Setun [`Instruction`]s (entry point mode).
     pub fn compile_function(func: &LlvmFunction) -> Result<Vec<Instruction>, String> {
+        Self::compile_function_with_relocs(func, true).map(|(insts, _)| insts)
+    }
+
+    /// Compiles an LLVM IR function, recording cross-function call site relocations.
+    pub fn compile_function_with_relocs(
+        func: &LlvmFunction,
+        is_entry: bool,
+    ) -> Result<(Vec<Instruction>, Vec<(usize, String)>), String> {
         let mut instructions = Vec::new();
+        let mut call_relocs: Vec<(usize, String)> = Vec::new();
         // Maps LLVM SSA variables to index registers IX0..IX8 or stack locations
         let mut var_map: HashMap<String, usize> = HashMap::new();
         // Maps alloca pointers to fixed addresses in linear memory
@@ -326,8 +335,199 @@ impl SetunCodeGenerator {
                                 LlvmValue::Label(_) => {}
                             }
                         }
-                        // In standalone functions without stack frame caller, HALT terminates execution cleanly
-                        instructions.push(Instruction::new(Opcode::Halt, 0, 0));
+                        if is_entry {
+                            instructions.push(Instruction::new(Opcode::Halt, 0, 0));
+                        } else {
+                            instructions.push(Instruction::new(Opcode::Ret, 0, 0));
+                        }
+                    }
+                    LlvmInst::Call { dst, callee, args } => {
+                        if callee == "llvm.smin.i32" || callee == "llvm.smin" {
+                            if args.len() >= 2 {
+                                let lhs = &args[0];
+                                let rhs = &args[1];
+                                match lhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).ok_or_else(|| format!("smin lhs not found: {}", var))?;
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::LoadImm, 0, *c));
+                                    }
+                                    _ => {}
+                                }
+                                match rhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).ok_or_else(|| format!("smin rhs not found: {}", var))?;
+                                        instructions.push(Instruction::new(Opcode::MovAccToIx, 7, 0));
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                        instructions.push(Instruction::new(Opcode::Store, 0, 799));
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, 7, 0));
+                                        instructions.push(Instruction::new(Opcode::CmpT, 0, 799));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::Store, 0, 799));
+                                        instructions.push(Instruction::new(Opcode::LoadImm, 0, *c));
+                                        instructions.push(Instruction::new(Opcode::Store, 0, 798));
+                                        instructions.push(Instruction::new(Opcode::Load, 0, 799));
+                                        instructions.push(Instruction::new(Opcode::CmpT, 0, 798));
+                                    }
+                                    _ => {}
+                                }
+                                let dst_reg = if let Some(d) = dst {
+                                    Self::get_or_alloc_reg(d, &mut var_map, &mut next_reg)?
+                                } else {
+                                    7
+                                };
+                                let jmp_rhs_idx = instructions.len();
+                                instructions.push(Instruction::new(Opcode::JmpP, 0, 0));
+                                match lhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).unwrap();
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                        instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::LoadIxImm, dst_reg, *c));
+                                    }
+                                    _ => {}
+                                }
+                                let jmp_done_idx = instructions.len();
+                                instructions.push(Instruction::new(Opcode::Jmp, 0, 0));
+                                let rhs_pc = instructions.len() as i64;
+                                instructions[jmp_rhs_idx] = Instruction::new(Opcode::JmpP, 0, rhs_pc);
+                                match rhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).unwrap();
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                        instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::LoadIxImm, dst_reg, *c));
+                                    }
+                                    _ => {}
+                                }
+                                let done_pc = instructions.len() as i64;
+                                instructions[jmp_done_idx] = Instruction::new(Opcode::Jmp, 0, done_pc);
+                            }
+                        } else if callee == "llvm.smax.i32" || callee == "llvm.smax" {
+                            if args.len() >= 2 {
+                                let lhs = &args[0];
+                                let rhs = &args[1];
+                                match lhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).ok_or_else(|| format!("smax lhs not found: {}", var))?;
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::LoadImm, 0, *c));
+                                    }
+                                    _ => {}
+                                }
+                                match rhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).ok_or_else(|| format!("smax rhs not found: {}", var))?;
+                                        instructions.push(Instruction::new(Opcode::MovAccToIx, 7, 0));
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                        instructions.push(Instruction::new(Opcode::Store, 0, 799));
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, 7, 0));
+                                        instructions.push(Instruction::new(Opcode::CmpT, 0, 799));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::Store, 0, 799));
+                                        instructions.push(Instruction::new(Opcode::LoadImm, 0, *c));
+                                        instructions.push(Instruction::new(Opcode::Store, 0, 798));
+                                        instructions.push(Instruction::new(Opcode::Load, 0, 799));
+                                        instructions.push(Instruction::new(Opcode::CmpT, 0, 798));
+                                    }
+                                    _ => {}
+                                }
+                                let dst_reg = if let Some(d) = dst {
+                                    Self::get_or_alloc_reg(d, &mut var_map, &mut next_reg)?
+                                } else {
+                                    7
+                                };
+                                let jmp_rhs_idx = instructions.len();
+                                instructions.push(Instruction::new(Opcode::JmpN, 0, 0));
+                                match lhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).unwrap();
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                        instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::LoadIxImm, dst_reg, *c));
+                                    }
+                                    _ => {}
+                                }
+                                let jmp_done_idx = instructions.len();
+                                instructions.push(Instruction::new(Opcode::Jmp, 0, 0));
+                                let rhs_pc = instructions.len() as i64;
+                                instructions[jmp_rhs_idx] = Instruction::new(Opcode::JmpN, 0, rhs_pc);
+                                match rhs {
+                                    LlvmValue::Variable(var) => {
+                                        let reg = *var_map.get(var).unwrap();
+                                        instructions.push(Instruction::new(Opcode::MovIxToAcc, reg, 0));
+                                        instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
+                                    }
+                                    LlvmValue::ConstantInt(c) => {
+                                        instructions.push(Instruction::new(Opcode::LoadIxImm, dst_reg, *c));
+                                    }
+                                    _ => {}
+                                }
+                                let done_pc = instructions.len() as i64;
+                                instructions[jmp_done_idx] = Instruction::new(Opcode::Jmp, 0, done_pc);
+                            }
+                        } else {
+                            // General function call
+                            // 1. Caller-save active registers 0..next_reg to hardware stack
+                            let live_count = next_reg.min(7);
+                            for r in 0..live_count {
+                                instructions.push(Instruction::new(Opcode::MovIxToAcc, r, 0));
+                                instructions.push(Instruction::new(Opcode::Push, 0, 0));
+                            }
+
+                            // 2. Set up arguments in IX0..IXk
+                            for (arg_i, arg_val) in args.iter().enumerate() {
+                                if arg_i < 7 {
+                                    match arg_val {
+                                        LlvmValue::Variable(v) => {
+                                            if let Some(&src_reg) = var_map.get(v) {
+                                                if src_reg != arg_i {
+                                                    instructions.push(Instruction::new(Opcode::MovIxToAcc, src_reg, 0));
+                                                    instructions.push(Instruction::new(Opcode::MovAccToIx, arg_i, 0));
+                                                }
+                                            }
+                                        }
+                                        LlvmValue::ConstantInt(c) => {
+                                            instructions.push(Instruction::new(Opcode::LoadIxImm, arg_i, *c));
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+
+                            // 3. Emit CALL instruction (linker will patch address)
+                            let call_site_idx = instructions.len();
+                            instructions.push(Instruction::new(Opcode::Call, 0, 0));
+                            call_relocs.push((call_site_idx, callee.clone()));
+
+                            // 4. Save return ACC in scratchpad IX7
+                            instructions.push(Instruction::new(Opcode::MovAccToIx, 7, 0));
+
+                            // 5. Restore caller-saved registers in reverse order
+                            for r in (0..live_count).rev() {
+                                instructions.push(Instruction::new(Opcode::Pop, 0, 0));
+                                instructions.push(Instruction::new(Opcode::MovAccToIx, r, 0));
+                            }
+
+                            // 6. Deposit return value into destination register if expected
+                            if let Some(d) = dst {
+                                let dst_reg = Self::get_or_alloc_reg(d, &mut var_map, &mut next_reg)?;
+                                instructions.push(Instruction::new(Opcode::MovIxToAcc, 7, 0));
+                                instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -342,7 +542,7 @@ impl SetunCodeGenerator {
             instructions[idx] = Instruction::new(op, reg, target_pc);
         }
 
-        Ok(instructions)
+        Ok((instructions, call_relocs))
     }
 
     fn get_or_alloc_reg(

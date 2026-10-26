@@ -141,6 +141,12 @@ pub enum LlvmInst {
         val_true: LlvmValue,
         val_false: LlvmValue,
     },
+    /// Call instruction: `%dst = [tail] call [type] @callee(args...)` or `call void @callee(args...)`
+    Call {
+        dst: Option<String>,
+        callee: String,
+        args: Vec<LlvmValue>,
+    },
 }
 
 /// Basic block containing a linear sequence of instructions terminated by a branch or return.

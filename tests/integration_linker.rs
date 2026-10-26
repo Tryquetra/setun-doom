@@ -110,3 +110,67 @@ fn test_multimodule_linking_and_tree_shaking() {
         "Executable image produced incorrect mathematical result"
     );
 }
+
+#[test]
+fn test_multimodule_with_function_calls() {
+    let mod_math = r#"
+    int square(int x) {
+        return x * x;
+    }
+    "#;
+    let mod_main = r#"
+    int square(int x);
+    int calc_hypot_sq(int a, int b) {
+        int a2 = square(a);
+        int b2 = square(b);
+        return a2 + b2;
+    }
+    "#;
+
+    let tmp_dir = std::env::temp_dir();
+    let math_c = tmp_dir.join("test_math.c");
+    let math_ll = tmp_dir.join("test_math.ll");
+    let main_c = tmp_dir.join("test_main.c");
+    let main_ll = tmp_dir.join("test_main.ll");
+
+    fs::write(&math_c, mod_math).unwrap();
+    fs::write(&main_c, mod_main).unwrap();
+
+    let _ = Command::new("clang").args(["-O1", "-S", "-emit-llvm", math_c.to_str().unwrap(), "-o", math_ll.to_str().unwrap()]).status().unwrap();
+    let _ = Command::new("clang").args(["-O1", "-S", "-emit-llvm", main_c.to_str().unwrap(), "-o", main_ll.to_str().unwrap()]).status().unwrap();
+
+    let parsed_math = LlvmParser::parse(&fs::read_to_string(&math_ll).unwrap()).unwrap();
+    let parsed_main = LlvmParser::parse(&fs::read_to_string(&main_ll).unwrap()).unwrap();
+
+    let mut linker = SetunLinker::new();
+    linker.add_module(parsed_math);
+    linker.add_module(parsed_main);
+
+    let image = linker.link("calc_hypot_sq").expect("Failed to link");
+    println!("Image entry_pc: {}", image.entry_pc);
+    for (addr, word) in &image.code_words {
+        let instr = setun_doom::cpu::Instruction::decode(*word).unwrap();
+        println!("  {}: {:?}", addr, instr);
+    }
+
+    let mut mem = Memory::new();
+    let mut cpu = Cpu::new();
+    image.load_into_memory(&mut mem);
+
+    cpu.index_regs[0] = Word21::new(3);
+    cpu.index_regs[1] = Word21::new(4);
+    cpu.pc = image.entry_pc as i64;
+
+    for step in 0..100 {
+        if cpu.halted {
+            break;
+        }
+        let pc = cpu.pc;
+        let instr = setun_doom::cpu::Instruction::decode(mem.read_word_fast(pc)).unwrap();
+        println!("Step {:2}: PC={} [{:?}] ACC={} IX0={} IX1={} IX2={} IX3={}",
+            step, pc, instr, cpu.acc.as_i64(), cpu.index_regs[0].as_i64(), cpu.index_regs[1].as_i64(), cpu.index_regs[2].as_i64(), cpu.index_regs[3].as_i64());
+        cpu.step(&mut mem);
+    }
+
+    assert_eq!(cpu.acc.as_i64(), 25);
+}

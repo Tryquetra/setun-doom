@@ -187,19 +187,19 @@ impl SetunLinker {
             let func_start_pc = current_code_addr;
             symbol_table.insert(func_name.clone(), func_start_pc);
 
-            let func_instructions = SetunCodeGenerator::compile_function(func)?;
+            let is_entry = func_name == entry_symbol;
+            let (func_instructions, func_call_relocs) =
+                SetunCodeGenerator::compile_function_with_relocs(func, is_entry)?;
+
+            for (reloc_site, callee) in func_call_relocs {
+                relocations.push(RelocationRecord {
+                    instruction_idx: all_instructions.len() + reloc_site,
+                    target_symbol: callee,
+                });
+            }
 
             for mut instr in func_instructions {
-                let instr_idx = all_instructions.len();
-                // Check if instruction is a cross-function CALL site needing relocation
-                if instr.opcode == Opcode::Call && instr.operand < 0 {
-                    // Call targets with placeholder operands
-                    let placeholder_name = format!("__unresolved_{}", instr.operand.unsigned_abs());
-                    relocations.push(RelocationRecord {
-                        instruction_idx: instr_idx,
-                        target_symbol: placeholder_name,
-                    });
-                } else if matches!(instr.opcode, Opcode::Jmp | Opcode::JmpP | Opcode::JmpN | Opcode::JmpZ) && instr.operand >= 0 {
+                if matches!(instr.opcode, Opcode::Jmp | Opcode::JmpP | Opcode::JmpN | Opcode::JmpZ) && instr.operand >= 0 {
                     // Rebase intra-function relative branch offset with func_start_pc
                     instr.operand += func_start_pc as i64;
                 }
@@ -249,11 +249,20 @@ impl SetunLinker {
                 for block in &func.blocks {
                     for inst in &block.instructions {
                         // Scan for potential function references in call operands
-                        if let LlvmInst::Copy { src: LlvmValue::Variable(var), .. } = inst {
-                            if functions.contains_key(var) && !visited.contains(var) {
-                                visited.insert(var.clone());
-                                queue.push(var.clone());
+                        match inst {
+                            LlvmInst::Call { callee, .. } => {
+                                if functions.contains_key(callee) && !visited.contains(callee) {
+                                    visited.insert(callee.clone());
+                                    queue.push(callee.clone());
+                                }
                             }
+                            LlvmInst::Copy { src: LlvmValue::Variable(var), .. } => {
+                                if functions.contains_key(var) && !visited.contains(var) {
+                                    visited.insert(var.clone());
+                                    queue.push(var.clone());
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
