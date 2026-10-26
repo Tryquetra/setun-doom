@@ -2,8 +2,11 @@
 name = "setun-doom"
 version = "0.1.0"
 edition = "2021"
-authors = ["Robson Cassiano"]
-description = "Balanced Ternary Computer Emulator inspired by Setun (1958), scaled to 21-trit architecture for Doom (doomgeneric)"
+authors = ["Robson Cassiano <https://eu.robsoncassiano.software>"]
+license = "MIT"
+homepage = "https://eu.robsoncassiano.software"
+repository = "https://github.com/Tryquetra/setun-doom"
+description = "Balanced Ternary Computer Emulator inspired by Setun (1958) and Setun-70 (1970), scaled to 21-trit architecture for Doom (doomgeneric)"
 
 [lib]
 name = "setun_doom"

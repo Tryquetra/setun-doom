@@ -2,6 +2,8 @@
 // Copyright(C) 1993-1996 Id Software, Inc.
 // Copyright(C) 2005-2014 Simon Howard
 // Copyright(C) 2005, 2006 Andrey Budko
+// Modified on 2026-10-25 by Robson Cassiano (https://eu.robsoncassiano.software)
+// to route P_AproxDistance and P_PointOnLineSide through the Setun-Doom 21-trit ternary CPU.
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License

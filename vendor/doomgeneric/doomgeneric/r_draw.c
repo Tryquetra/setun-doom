@@ -1,6 +1,8 @@
 //
 // Copyright(C) 1993-1996 Id Software, Inc.
 // Copyright(C) 2005-2014 Simon Howard
+// Modified on 2026-10-25 by Robson Cassiano (https://eu.robsoncassiano.software)
+// to route R_DrawColumn and R_DrawSpan through the Setun-Doom 21-trit ternary DDA adder.
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License

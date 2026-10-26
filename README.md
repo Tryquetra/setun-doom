@@ -51,3 +51,24 @@ cargo build --release
 make -C vendor/doomgeneric/doomgeneric -f Makefile.setun
 ./vendor/doomgeneric/doomgeneric/doomgeneric_setun -iwad ./vendor/DOOM1.WAD
 ```
+
+---
+
+## License & Third-Party Attributions
+
+* **Setun-Doom Balanced Ternary Emulator (`src/`)**:
+  * Copyright (c) 2026 [Robson Cassiano](https://eu.robsoncassiano.software) ([@Tryquetra](https://github.com/Tryquetra)).
+  * Licensed under the **MIT License** (see [`LICENSE`](LICENSE)).
+* **Doom Engine & `doomgeneric` (`vendor/doomgeneric/`)**:
+  * Licensed under the **GNU General Public License v2.0 or later (`GPL-2.0-or-later`)** (see [`vendor/doomgeneric/LICENSE`](vendor/doomgeneric/LICENSE)).
+  * Original Doom source code Copyright (C) 1993-1996 **Id Software, Inc.** (John Carmack, John Romero, Dave Taylor, et al.).
+  * Chocolate Doom port Copyright (C) 2005-2014 **Simon Howard (`fraggle`)** and **Andrey Budko**.
+  * `doomgeneric` port by **Wojtek (`ozkl`)** ([`ozkl/doomgeneric`](https://github.com/ozkl/doomgeneric)).
+* **DOOM Shareware Episode 1 Data (`vendor/DOOM1.WAD`)**:
+  * Copyright (C) 1993-1996 **Id Software, Inc.** Distributed unmodified at no charge under the DOOM Shareware Distribution License.
+* **Academic & Historical Credits**:
+  * **Setun (1958) & Setun-70 (1970)**: **Nikolai Petrovich Brusentsov**, **E. A. Zhogolev**, **S. P. Maslov**, and **José Ramil Alvarez** (Computing Center of Moscow State University / MGU); **Stanislav Maslovski** (Setun-70 ISA documentation); archival translations in [`Tryquetra/setun-papers-articles-translations`](https://github.com/Tryquetra/setun-papers-articles-translations) and [`Tryquetra/setun-emulator-original-isa`](https://github.com/Tryquetra/setun-emulator-original-isa).
+  * **REBEL-6 & REBEL-2 Extensions**: *"REBEL-6: Instruction Set Extensions on RV32I for Balanced Ternary Computing"* (IEEE ISMVL 2025, [`bos-lima/RV32IToREBEL`](https://github.com/bos-lima/RV32IToREBEL)) and *"REBEL-2"* (`BCEG` 3-way branch).
+
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full compliance record.
+

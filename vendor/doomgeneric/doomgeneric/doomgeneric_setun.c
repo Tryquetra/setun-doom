@@ -1,7 +1,10 @@
 // ============================================================================
+// Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
+//
 // Driver de Plataforma `doomgeneric_setun.c`
 // Conecta o motor C do Doom (1993) à arquitetura ternária balanceada Setun-Doom
 // (`libsetun_doom.a` em Rust) e exibe em janela SDL2 interativa (ou headless).
+// Distribuído sob a licença MIT / GPL-2.0-or-later para compatibilidade com doomgeneric.
 // ============================================================================
 
 #include "doomkeys.h"

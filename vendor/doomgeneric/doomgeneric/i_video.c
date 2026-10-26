@@ -4,6 +4,8 @@
 // $Id:$
 //
 // Copyright (C) 1993-1996 by id Software, Inc.
+// Modified on 2026-10-25 by Robson Cassiano (https://eu.robsoncassiano.software)
+// to synchronize PLAYPAL with the Setun-Doom ternary VGA memory region.
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License
