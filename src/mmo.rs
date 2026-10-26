@@ -709,8 +709,9 @@ pub unsafe extern "C" fn setun_DrawColumn(
     let x = dc_x as usize;
 
     for _ in 0..=count {
-        // Extrai o índice inteiro de textura em base 3^10 (divisão euclidiana preserva piso para negativos)
-        let tex_row = (t_frac.as_i64().div_euclid(crate::fixed::FRAC_SCALE) as usize) & 127;
+        // Extrai a linha inteira de textura deslocando 10 trits fisicamente nos fios (sem divisao binaria)
+        let int_row = t_frac.shift_trits(-10).as_i64();
+        let tex_row = (int_row.rem_euclid(128)) as usize;
         let raw_texel = *dc_source.add(tex_row) as usize;
         let lit_color = *dc_colormap.add(raw_texel);
 
@@ -736,6 +737,167 @@ pub unsafe extern "C" fn setun_DrawColumn(
         dest_ptr = dest_ptr.add(screenwidth as usize);
         y += 1;
     }
+    machine.cpu.acc = t_frac;
+}
+
+/// Executa o interpolador de colunas com mapeamento de cores `R_DrawTranslatedColumn` do `r_draw.c`
+/// (usado para sprites de jogadores e variações de monstros) usando acumulador `TernaryFixed`
+/// e o somador Ripple-Carry de 21 portas `Trit::full_add`.
+///
+/// # Safety
+/// Ponteiros devem ser válidos para leitura e escrita no framebuffer.
+#[no_mangle]
+pub unsafe extern "C" fn setun_DrawTranslatedColumn(
+    dc_x: i32,
+    dc_yl: i32,
+    dc_yh: i32,
+    centery: i32,
+    dc_iscale: i32,
+    dc_texturemid: i32,
+    dc_source: *const u8,
+    dc_colormap: *const u8,
+    dc_translation: *const u8,
+    dest_start: *mut u8,
+    screenwidth: i32,
+) {
+    let count = dc_yh - dc_yl;
+    if count < 0 {
+        return;
+    }
+    assert!(
+        !dc_source.is_null()
+            && !dc_colormap.is_null()
+            && !dc_translation.is_null()
+            && !dest_start.is_null(),
+        "Ponteiro nulo em setun_DrawTranslatedColumn"
+    );
+
+    let frac16_init = dc_texturemid.wrapping_add((dc_yl - centery).wrapping_mul(dc_iscale));
+    let mut t_frac = crate::fixed::TernaryFixed::from_doom_fixed16(frac16_init).raw_word();
+    let t_step = crate::fixed::TernaryFixed::from_doom_fixed16(dc_iscale).raw_word();
+
+    let mut b_frac16 = frac16_init;
+    let b_step16 = dc_iscale;
+
+    let mut machine = global_machine()
+        .lock()
+        .expect("Mutex corrompido em setun_DrawTranslatedColumn");
+
+    let mut dest_ptr = dest_start;
+    let mut y = dc_yl as usize;
+    let x = dc_x as usize;
+
+    for _ in 0..=count {
+        let int_row = t_frac.shift_trits(-10).as_i64();
+        let tex_row = (int_row.rem_euclid(128)) as usize;
+        let raw_texel = *dc_source.add(tex_row) as usize;
+        let trans_texel = *dc_translation.add(raw_texel) as usize;
+        let lit_color = *dc_colormap.add(trans_texel);
+
+        *dest_ptr = lit_color;
+        let fb_offset = y * crate::memory::FB_WIDTH + x;
+        machine.memory.raw_cells_mut()[crate::memory::FRAMEBUFFER_BASE + fb_offset] =
+            Tryte6::from_palette_index(lit_color).as_i64();
+
+        let (next_t_frac, _cout, carries) =
+            t_frac.gate_ripple_carry_add(t_step, crate::trit::Trit::Zero);
+        let next_b_frac16 = b_frac16.wrapping_add(b_step16);
+
+        machine.cpu.telemetry.adder_carry_propagations += carries as u64;
+        machine
+            .cpu
+            .telemetry
+            .record_fixed16_transition(t_frac, next_t_frac, b_frac16, next_b_frac16);
+        machine.cpu.cycles += 1;
+
+        t_frac = next_t_frac;
+        b_frac16 = next_b_frac16;
+        dest_ptr = dest_ptr.add(screenwidth as usize);
+        y += 1;
+    }
+    machine.cpu.acc = t_frac;
+}
+
+/// Executa o rasterizador de invisibilidade/espectros `R_DrawFuzzColumn` do `r_draw.c`
+/// usando o somador Ripple-Carry de 21 portas `Trit::full_add` para avançar `frac` a cada pixel.
+///
+/// # Safety
+/// Ponteiros devem ser válidos.
+#[no_mangle]
+pub unsafe extern "C" fn setun_DrawFuzzColumn(
+    dc_x: i32,
+    dc_yl: i32,
+    dc_yh: i32,
+    centery: i32,
+    dc_iscale: i32,
+    dc_texturemid: i32,
+    colormaps: *const u8,
+    fuzzoffset: *const i32,
+    fuzzpos_ptr: *mut i32,
+    fuzztable_len: i32,
+    dest_start: *mut u8,
+    screenwidth: i32,
+) {
+    let count = dc_yh - dc_yl;
+    if count < 0 {
+        return;
+    }
+    assert!(
+        !colormaps.is_null()
+            && !fuzzoffset.is_null()
+            && !fuzzpos_ptr.is_null()
+            && !dest_start.is_null(),
+        "Ponteiro nulo em setun_DrawFuzzColumn"
+    );
+
+    let frac16_init = dc_texturemid.wrapping_add((dc_yl - centery).wrapping_mul(dc_iscale));
+    let mut t_frac = crate::fixed::TernaryFixed::from_doom_fixed16(frac16_init).raw_word();
+    let t_step = crate::fixed::TernaryFixed::from_doom_fixed16(dc_iscale).raw_word();
+
+    let mut b_frac16 = frac16_init;
+    let b_step16 = dc_iscale;
+
+    let mut machine = global_machine()
+        .lock()
+        .expect("Mutex corrompido em setun_DrawFuzzColumn");
+
+    let mut dest_ptr = dest_start;
+    let mut y = dc_yl as usize;
+    let x = dc_x as usize;
+    let mut fuzzpos = *fuzzpos_ptr;
+
+    for _ in 0..=count {
+        let f_off = *fuzzoffset.add(fuzzpos as usize);
+        let sampled_pixel = *dest_ptr.offset(f_off as isize);
+        let lit_color = *colormaps.add(6 * 256 + (sampled_pixel as usize));
+
+        *dest_ptr = lit_color;
+        let fb_offset = y * crate::memory::FB_WIDTH + x;
+        machine.memory.raw_cells_mut()[crate::memory::FRAMEBUFFER_BASE + fb_offset] =
+            Tryte6::from_palette_index(lit_color).as_i64();
+
+        fuzzpos += 1;
+        if fuzzpos >= fuzztable_len {
+            fuzzpos = 0;
+        }
+
+        let (next_t_frac, _cout, carries) =
+            t_frac.gate_ripple_carry_add(t_step, crate::trit::Trit::Zero);
+        let next_b_frac16 = b_frac16.wrapping_add(b_step16);
+
+        machine.cpu.telemetry.adder_carry_propagations += carries as u64;
+        machine
+            .cpu
+            .telemetry
+            .record_fixed16_transition(t_frac, next_t_frac, b_frac16, next_b_frac16);
+        machine.cpu.cycles += 1;
+
+        t_frac = next_t_frac;
+        b_frac16 = next_b_frac16;
+        dest_ptr = dest_ptr.add(screenwidth as usize);
+        y += 1;
+    }
+    *fuzzpos_ptr = fuzzpos;
     machine.cpu.acc = t_frac;
 }
 
@@ -794,8 +956,9 @@ pub unsafe extern "C" fn setun_DrawSpan(
     let mut x = ds_x1 as usize;
 
     for _ in 0..=count {
-        let u_int = (tx_frac.as_i64().div_euclid(crate::fixed::FRAC_SCALE) as usize) & 63;
-        let v_int = (ty_frac.as_i64().div_euclid(crate::fixed::FRAC_SCALE) as usize) & 63;
+        // Extrai as coordenadas inteiras de textura (u, v) deslocando 10 trits fisicamente nos fios
+        let u_int = (tx_frac.shift_trits(-10).as_i64().rem_euclid(64)) as usize;
+        let v_int = (ty_frac.shift_trits(-10).as_i64().rem_euclid(64)) as usize;
         let spot = (v_int * 64) + u_int;
         let raw_texel = *ds_source.add(spot) as usize;
         let lit_color = *ds_colormap.add(raw_texel);

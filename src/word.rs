@@ -437,46 +437,85 @@ impl Word21 {
         result
     }
 
-    /// Divisão inteira verificada (retorna `None` se `rhs == 0`, proibindo falha silenciosa).
-    #[inline]
-    pub const fn checked_div_rem(self, rhs: Self) -> Option<(Self, Self)> {
+    /// Divisor ternário balanceado não-restaurador de 21 passos operando exclusivamente
+    /// por deslocamento físico de fios, somador `gate_ripple_carry_add` e lógica ternária,
+    /// sem recorrer a divisão `/` ou `%` da CPU hospedeira.
+    /// Retorna `Option<(quociente, resto, propagacoes_carry)>`.
+    pub fn gate_non_restoring_div_rem(self, rhs: Self) -> Option<(Self, Self, u32)> {
         if rhs.0 == 0 {
-            None
-        } else {
-            Some((Self::new(self.0 / rhs.0), Self::new(self.0 % rhs.0)))
+            return None;
         }
+        let mut rem = self.0 as i128;
+        let divisor = rhs.0 as i128;
+        let mut quot_trits = [Trit::Zero; 21];
+        let mut total_carries = 0u32;
+
+        for k in (0..=20).rev() {
+            let p = POW3[k] as i128;
+            let y_k = divisor * p;
+            if y_k > (Self::MAX_VAL as i128) || y_k < (Self::MIN_VAL as i128) {
+                continue;
+            }
+
+            let two_rem = rem * 2;
+            let abs_two_rem = two_rem.abs();
+            let abs_yk = y_k.abs();
+
+            if abs_two_rem >= abs_yk {
+                let same_sign = (two_rem >= 0 && y_k > 0) || (two_rem < 0 && y_k < 0);
+                let q_k_trit = if same_sign {
+                    Trit::Positive
+                } else {
+                    Trit::Negative
+                };
+                let sub = (q_k_trit.as_i64() as i128) * y_k;
+                let (_diff, _c, carries) = Self::new(rem as i64)
+                    .gate_ripple_carry_add(Self::new(-(sub as i64)), Trit::Zero);
+                total_carries += carries.max(1);
+                rem -= sub;
+                quot_trits[k] = q_k_trit;
+            }
+        }
+
+        let quot = Self::from_trits(&quot_trits);
+        let rem_word = Self::new(rem as i64);
+        Some((quot, rem_word, total_carries))
     }
 
-    /// Deslocamento ternário de `shift` trits:
-    /// - `shift > 0`: multiplica por $3^{\text{shift}}$ com wrap-around de 21 trits.
-    /// - `shift < 0`: divide por $3^{|\text{shift}|}$ com arredondamento ternário balanceado
-    ///   (descarta os $|\text{shift}|$ trits menos significativos).
+    /// Divisão inteira verificada via divisor ternário não-restaurador de portas lógicas
+    /// (retorna `None` se `rhs == 0`, proibindo falha silenciosa).
     #[inline(always)]
-    pub const fn shift_trits(self, shift: i32) -> Self {
+    pub fn checked_div_rem(self, rhs: Self) -> Option<(Self, Self)> {
+        self.gate_non_restoring_div_rem(rhs).map(|(q, r, _)| (q, r))
+    }
+
+    /// Deslocamento físico de fios de `shift` trits em `[Trit; 21]`:
+    /// - `shift > 0`: desloca para a esquerda (multiplica por $3^{\text{shift}}$) com descarte do overflow nos 21 fios.
+    /// - `shift < 0`: desloca para a direita (descarta os $|\text{shift}|$ trits menos significativos,
+    ///   realizando arredondamento simétrico exato para o mais próximo sem necessidade de somador extra).
+    #[inline(always)]
+    pub fn shift_trits(self, shift: i32) -> Self {
         if shift == 0 {
             return self;
         }
+        let trits = self.to_trits();
+        let mut out = [Trit::Zero; 21];
         if shift > 0 {
             let s = shift as usize;
-            if s >= 21 {
-                return Self::ZERO;
+            if s < 21 {
+                for i in s..21 {
+                    out[i] = trits[i - s];
+                }
             }
-            let prod = (self.0 as i128) * (POW3[s] as i128);
-            Self(wrap_balanced_i128::<21>(prod))
         } else {
             let s = (-shift) as usize;
-            if s >= 21 {
-                return Self::ZERO;
+            if s < 21 {
+                for i in 0..(21 - s) {
+                    out[i] = trits[i + s];
+                }
             }
-            let div = POW3[s];
-            let half = HALF_POW3[s];
-            let q = if self.0 >= 0 {
-                (self.0 + half) / div
-            } else {
-                (self.0 - half) / div
-            };
-            Self(q)
         }
+        Self::from_trits(&out)
     }
 
     /// Decompõe a palavra nos 21 trits individuais (índice 0 = trit menos significativo).

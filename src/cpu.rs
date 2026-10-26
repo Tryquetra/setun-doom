@@ -558,12 +558,13 @@ impl Cpu {
                     let val = read_mem(mem, addr)?;
                     let a = TernaryFixed::from_raw(self.acc);
                     let b = TernaryFixed::from_raw(val);
-                    let Some(quot) = a.checked_fixed_div(b) else {
+                    let Some((quot, carries)) = a.gate_fixed_div(b) else {
                         return Err(CpuTrap::DivisionByZero {
                             pc: instr_pc,
                             opcode: Opcode::Div,
                         });
                     };
+                    self.telemetry.adder_carry_propagations += carries as u64;
                     let a16 = a.to_doom_fixed16();
                     let b16 = b.to_doom_fixed16();
                     let bin_quot16 = if b16 != 0 {
@@ -740,12 +741,13 @@ impl Cpu {
                 Opcode::DivInt => {
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
-                    let Some((quot, rem)) = self.acc.checked_div_rem(val) else {
+                    let Some((quot, rem, carries)) = self.acc.gate_non_restoring_div_rem(val) else {
                         return Err(CpuTrap::DivisionByZero {
                             pc: instr_pc,
                             opcode: Opcode::DivInt,
                         });
                     };
+                    self.telemetry.adder_carry_propagations += carries as u64;
                     self.set_r(rem);
                     self.set_acc(quot);
                 }

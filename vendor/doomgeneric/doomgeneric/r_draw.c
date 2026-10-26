@@ -2,7 +2,7 @@
 // Copyright(C) 1993-1996 Id Software, Inc.
 // Copyright(C) 2005-2014 Simon Howard
 // Modified on 2026-10-25 by Robson Cassiano (https://eu.robsoncassiano.software)
-// to route R_DrawColumn and R_DrawSpan through the Setun-Doom 21-trit ternary DDA adder.
+// to route R_DrawColumn, R_DrawSpan, R_DrawTranslatedColumn and R_DrawFuzzColumn through the Setun-Doom 21-trit ternary DDA adder.
 //
 // This program is free software; you can redistribute it and/or
 // modify it under the terms of the GNU General Public License
@@ -104,6 +104,33 @@ extern void setun_DrawColumn(
     int32_t dc_texturemid,
     const uint8_t* dc_source,
     const uint8_t* dc_colormap,
+    uint8_t* dest_start,
+    int32_t screenwidth
+);
+extern void setun_DrawTranslatedColumn(
+    int32_t dc_x,
+    int32_t dc_yl,
+    int32_t dc_yh,
+    int32_t centery,
+    int32_t dc_iscale,
+    int32_t dc_texturemid,
+    const uint8_t* dc_source,
+    const uint8_t* dc_colormap,
+    const uint8_t* dc_translation,
+    uint8_t* dest_start,
+    int32_t screenwidth
+);
+extern void setun_DrawFuzzColumn(
+    int32_t dc_x,
+    int32_t dc_yl,
+    int32_t dc_yh,
+    int32_t centery,
+    int32_t dc_iscale,
+    int32_t dc_texturemid,
+    const uint8_t* colormaps,
+    const int32_t* fuzzoffset,
+    int32_t* fuzzpos_ptr,
+    int32_t fuzztable_len,
     uint8_t* dest_start,
     int32_t screenwidth
 );
@@ -335,6 +362,22 @@ void R_DrawFuzzColumn (void)
     
     dest = ylookup[dc_yl] + columnofs[dc_x];
 
+#ifdef SETUN_TERNARY_ALU
+    setun_DrawFuzzColumn(
+        dc_x,
+        dc_yl,
+        dc_yh,
+        centery,
+        dc_iscale,
+        dc_texturemid,
+        colormaps,
+        fuzzoffset,
+        &fuzzpos,
+        FUZZTABLE,
+        dest,
+        SCREENWIDTH
+    );
+#else
     // Looks familiar.
     fracstep = dc_iscale; 
     frac = dc_texturemid + (dc_yl-centery)*fracstep; 
@@ -358,6 +401,7 @@ void R_DrawFuzzColumn (void)
 
 	frac += fracstep; 
     } while (count--); 
+#endif 
 } 
 
 // low detail mode version
@@ -469,6 +513,21 @@ void R_DrawTranslatedColumn (void)
 
     dest = ylookup[dc_yl] + columnofs[dc_x]; 
 
+#ifdef SETUN_TERNARY_ALU
+    setun_DrawTranslatedColumn(
+        dc_x,
+        dc_yl,
+        dc_yh,
+        centery,
+        dc_iscale,
+        dc_texturemid,
+        dc_source,
+        dc_colormap,
+        dc_translation,
+        dest,
+        SCREENWIDTH
+    );
+#else
     // Looks familiar.
     fracstep = dc_iscale; 
     frac = dc_texturemid + (dc_yl-centery)*fracstep; 
@@ -486,6 +545,7 @@ void R_DrawTranslatedColumn (void)
 	
 	frac += fracstep; 
     } while (count--); 
+#endif 
 } 
 
 void R_DrawTranslatedColumnLow (void) 

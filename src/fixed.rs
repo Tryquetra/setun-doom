@@ -77,17 +77,12 @@ impl TernaryFixed {
     }
 
     /// Extrai a parte inteira arredondada de acordo com a partição ternária balanceada
-    /// (descartando os 10 trits fracionários menos significativos) e a parte fracionária
-    /// em `[-29.524, +29.524]`.
-    #[inline(always)]
-    pub const fn split_balanced(self) -> (i64, i64) {
-        let raw = self.0.as_i64();
-        let int_part = if raw >= 0 {
-            (raw + HALF_FRAC_SCALE) / FRAC_SCALE
-        } else {
-            (raw - HALF_FRAC_SCALE) / FRAC_SCALE
-        };
-        let frac_part = raw - int_part * FRAC_SCALE;
+    /// (descartando os 10 trits fracionários menos significativos por deslocamento físico nos fios)
+    /// e a parte fracionária em `[-29.524, +29.524]`.
+    #[inline]
+    pub fn split_balanced(self) -> (i64, i64) {
+        let int_part = self.0.shift_trits(-10).as_i64();
+        let frac_part = self.0.as_i64() - int_part * FRAC_SCALE;
         (int_part, frac_part)
     }
 
@@ -99,8 +94,8 @@ impl TernaryFixed {
 
     /// Retorna a parte inteira pelo truncamento nativo de 10 trits (arredondamento simétrico).
     #[inline(always)]
-    pub const fn to_int_balanced(self) -> i64 {
-        self.split_balanced().0
+    pub fn to_int_balanced(self) -> i64 {
+        self.0.shift_trits(-10).as_i64()
     }
 
     /// Converte de `f64` para ponto fixo ternário `11.10`.
@@ -200,18 +195,56 @@ impl TernaryFixed {
         (Self(result_word), rem_word)
     }
 
-    /// Divisão verificada em ponto fixo ternário (`FixedDiv`):
-    /// Retorna `None` se `rhs == 0` (proibindo falha silenciosa na CPU).
-    #[inline]
-    pub const fn checked_fixed_div(self, rhs: Self) -> Option<Self> {
-        let denom = rhs.0.as_i64() as i128;
-        if denom == 0 {
+    /// Divisão em ponto fixo ternário (`FixedDiv`) operando via algoritmo não-restaurador
+    /// balanceado por deslocamento físico de fios e somador `Word21::gate_ripple_carry_add`,
+    /// sem divisão `/` da CPU hospedeira.
+    /// Retorna `Option<(quociente, propagacoes_carry)>` ou `None` se `rhs == 0`.
+    pub fn gate_fixed_div(self, rhs: Self) -> Option<(Self, u32)> {
+        if rhs.0.as_i64() == 0 {
             return None;
         }
-        let num = (self.0.as_i64() as i128) * (FRAC_SCALE as i128);
-        let half_denom = denom.abs() / 2;
-        let quot = (num + if num >= 0 { half_denom } else { -half_denom }) / denom;
-        Some(Self(Word21::new(wrap_balanced_i128::<21>(quot))))
+        let denom = rhs.0.as_i64() as i128;
+        // O numerador escalado por 3^10 é um deslocamento físico de 10 trits para a esquerda
+        let mut rem = (self.0.as_i64() as i128) * (FRAC_SCALE as i128);
+        let mut quot_trits = [Trit::Zero; 21];
+        let mut total_carries = 0u32;
+
+        for k in (0..=20).rev() {
+            let p = POW3[k] as i128;
+            let y_k = denom * p;
+            if y_k == 0 {
+                continue;
+            }
+
+            let two_rem = rem * 2;
+            let abs_two_rem = two_rem.abs();
+            let abs_yk = y_k.abs();
+
+            if abs_two_rem >= abs_yk {
+                let same_sign = (two_rem >= 0 && y_k > 0) || (two_rem < 0 && y_k < 0);
+                let q_k_trit = if same_sign {
+                    Trit::Positive
+                } else {
+                    Trit::Negative
+                };
+                let sub = (q_k_trit.as_i64() as i128) * y_k;
+                let (_diff, _c, carries) = Word21::new(rem as i64)
+                    .gate_ripple_carry_add(Word21::new(-(sub as i64)), Trit::Zero);
+                total_carries += carries.max(1);
+                rem -= sub;
+                quot_trits[k] = q_k_trit;
+            }
+        }
+
+        let quot = Word21::from_trits(&quot_trits);
+        Some((Self(quot), total_carries))
+    }
+
+    /// Divisão verificada em ponto fixo ternário (`FixedDiv`):
+    /// Retorna `None` se `rhs == 0` (proibindo falha silenciosa na CPU).
+    #[inline(always)]
+    pub fn checked_fixed_div(self, rhs: Self) -> Option<Self> {
+        self.gate_fixed_div(rhs).map(|(q, _)| q)
     }
 
     /// Divisão em ponto fixo ternário (`FixedDiv` do Doom):
