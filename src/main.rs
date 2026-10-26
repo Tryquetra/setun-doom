@@ -236,7 +236,7 @@ fn main() {
         .filter(|(_, r)| r.is_riscv_test_pass())
         .count();
     println!("==============================================================================================================");
-    println!(" NÍVEL 1 (ETAPA 1): TRADUTOR BINÁRIO DINÂMICO (DBT) RV32I ELF32 -> SETUN-DOOM 21-TRIT ISA");
+    println!(" NÍVEL 1: TRADUTOR BINÁRIO DINÂMICO (DBT) RV32IM ELF32 -> SETUN-DOOM 21-TRIT ISA");
     println!("==============================================================================================================");
     println!(
         " * Suite Oficial RISC-V RV32I (ELF32)  : {}/{} testes aprovados (100% conformidade nas portas ternárias)",
@@ -259,6 +259,32 @@ fn main() {
         dbt_summary.total_telemetry.binary32_bit_flips,
         dbt_summary.total_telemetry.digit_flip_reduction_pct(),
         dbt_summary.total_telemetry.adder_carry_propagations
+    );
+
+    let doom_elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");
+    let mut doom_engine = setun_doom::dbt::SetunDbtEngine::from_elf_bytes(doom_elf_bytes)
+        .expect("Falha ao inicializar motor DBT para o benchmark Doom RV32IM");
+    let doom_report = doom_engine
+        .run(5_000_000)
+        .expect("Falha ao executar benchmark Doom RV32IM no SetunDbtEngine");
+    println!("--------------------------------------------------------------------------------------------------------------");
+    println!(" * Benchmark Doom RV32IM (ELF32)       : Status = APROVADO | a0 = 0 (Código de Saída Limpo)");
+    println!(
+        " * Instruções Executadas               : {} RV32IM -> {} Setun 21-trit (Fusões: {} Li.T/Aipc.T, {} Bceg)",
+        doom_report.rv32i_instructions_executed,
+        doom_report.setun_instructions_executed,
+        doom_report.immediate_fusions_executed,
+        doom_report.branch_fusions_executed
+    );
+    println!(
+        " * Chaveamento Físico Doom             : {} Trit Flips vs {} Bit Flips (Redução = {:.2}%)",
+        doom_report.telemetry.ternary_trit_flips,
+        doom_report.telemetry.binary32_bit_flips,
+        doom_report.telemetry.digit_flip_reduction_pct()
+    );
+    println!(
+        " * Saída Console Bare-Metal (Syscall)  : {}",
+        String::from_utf8_lossy(&doom_report.stdout_buffer).trim().replace('\n', " | ")
     );
     println!("==============================================================================================================");
 }

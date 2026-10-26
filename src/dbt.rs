@@ -101,6 +101,15 @@ pub enum Rv32iInstr {
     Sra { rd: u8, rs1: u8, rs2: u8 },
     Or { rd: u8, rs1: u8, rs2: u8 },
     And { rd: u8, rs1: u8, rs2: u8 },
+    // Extensão RV32M (Multiplicação e Divisão Inteira)
+    Mul { rd: u8, rs1: u8, rs2: u8 },
+    Mulh { rd: u8, rs1: u8, rs2: u8 },
+    Mulhsu { rd: u8, rs1: u8, rs2: u8 },
+    Mulhu { rd: u8, rs1: u8, rs2: u8 },
+    Div { rd: u8, rs1: u8, rs2: u8 },
+    Divu { rd: u8, rs1: u8, rs2: u8 },
+    Rem { rd: u8, rs1: u8, rs2: u8 },
+    Remu { rd: u8, rs1: u8, rs2: u8 },
     Fence,
     Ecall,
     Ebreak,
@@ -203,6 +212,15 @@ impl Rv32iInstr {
                 (5, 0x20) => Ok(Self::Sra { rd, rs1, rs2 }),
                 (6, 0x00) => Ok(Self::Or { rd, rs1, rs2 }),
                 (7, 0x00) => Ok(Self::And { rd, rs1, rs2 }),
+                // Extensão RV32M (funct7 == 0x01)
+                (0, 0x01) => Ok(Self::Mul { rd, rs1, rs2 }),
+                (1, 0x01) => Ok(Self::Mulh { rd, rs1, rs2 }),
+                (2, 0x01) => Ok(Self::Mulhsu { rd, rs1, rs2 }),
+                (3, 0x01) => Ok(Self::Mulhu { rd, rs1, rs2 }),
+                (4, 0x01) => Ok(Self::Div { rd, rs1, rs2 }),
+                (5, 0x01) => Ok(Self::Divu { rd, rs1, rs2 }),
+                (6, 0x01) => Ok(Self::Rem { rd, rs1, rs2 }),
+                (7, 0x01) => Ok(Self::Remu { rd, rs1, rs2 }),
                 _ => Err(DbtError::IllegalInstruction { raw, pc: 0 }),
             },
             0x0F => Ok(Self::Fence),
@@ -366,7 +384,7 @@ impl DbtExecutionReport {
 
 /// Valor sentinela colocado em `ra` (`x1`) no início de `main` para detectar retorno limpo
 /// (mesma técnica do simulador `REBEL-6`, onde apenas um único trit é ativado: $-3^{16} = -43.046.721$).
-pub const SENTINEL_RETURN_PC: u32 = (-43_046_721i32) as u32;
+pub const SENTINEL_RETURN_PC: u32 = 0xFFFFFFFE;
 
 /// Motor de Tradução Binária Dinâmica (`DBT`) que executa binários `ELF32` `RV32I` sobre a CPU e Memória Setun.
 pub struct SetunDbtEngine {
@@ -909,12 +927,23 @@ impl SetunDbtEngine {
                         } else {
                             fallthrough_pc
                         };
+                        break;
                     }
 
                     SetunTranslatedOp::Single { instr, pc } => {
                         self.pc = pc;
                         if let Some(exit_reason) = self.execute_single_instr(instr, pc)? {
                             return Ok(self.build_report(exit_reason));
+                        }
+                        if self.pc == SENTINEL_RETURN_PC {
+                            let a0_val = self.read_reg(10).to_i32_saturating();
+                            return Ok(self.build_report(DbtExitReason::ReturnedFromMain {
+                                a0_return_value: a0_val,
+                            }));
+                        }
+                        if self.pc != pc.wrapping_add(4) {
+                            // Salto tomado dentro do bloco
+                            break;
                         }
                     }
                 }
@@ -1213,6 +1242,86 @@ impl SetunDbtEngine {
                 let res = self.gate_alvarez_bin_to_ter(a_bin & b_bin);
                 self.write_reg(rd, res)?;
             }
+            // Extensão RV32M
+            Rv32iInstr::Mul { rd, rs1, rs2 } => {
+                let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2));
+                let prod = a_bin.wrapping_mul(b_bin);
+                let res = self.gate_alvarez_bin_to_ter(prod);
+                self.write_reg(rd, res)?;
+            }
+            Rv32iInstr::Mulh { rd, rs1, rs2 } => {
+                let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1)) as i64;
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as i64;
+                let prod = a_bin.wrapping_mul(b_bin);
+                let hi = (prod >> 32) as i32;
+                let res = self.gate_alvarez_bin_to_ter(hi);
+                self.write_reg(rd, res)?;
+            }
+            Rv32iInstr::Mulhsu { rd, rs1, rs2 } => {
+                let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1)) as i64;
+                let b_bin = (self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32) as u64;
+                let prod = a_bin.wrapping_mul(b_bin as i64);
+                let hi = (prod >> 32) as i32;
+                let res = self.gate_alvarez_bin_to_ter(hi);
+                self.write_reg(rd, res)?;
+            }
+            Rv32iInstr::Mulhu { rd, rs1, rs2 } => {
+                let a_bin = (self.gate_alvarez_ter_to_bin(self.read_reg(rs1)) as u32) as u64;
+                let b_bin = (self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32) as u64;
+                let prod = a_bin.wrapping_mul(b_bin);
+                let hi = (prod >> 32) as i32;
+                let res = self.gate_alvarez_bin_to_ter(hi);
+                self.write_reg(rd, res)?;
+            }
+            Rv32iInstr::Div { rd, rs1, rs2 } => {
+                let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2));
+                let q = if b_bin == 0 {
+                    -1
+                } else if a_bin == i32::MIN && b_bin == -1 {
+                    i32::MIN
+                } else {
+                    a_bin.wrapping_div(b_bin)
+                };
+                let res = self.gate_alvarez_bin_to_ter(q);
+                self.write_reg(rd, res)?;
+            }
+            Rv32iInstr::Divu { rd, rs1, rs2 } => {
+                let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1)) as u32;
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32;
+                let q = if b_bin == 0 {
+                    u32::MAX
+                } else {
+                    a_bin / b_bin
+                };
+                let res = self.gate_alvarez_bin_to_ter(q as i32);
+                self.write_reg(rd, res)?;
+            }
+            Rv32iInstr::Rem { rd, rs1, rs2 } => {
+                let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2));
+                let r = if b_bin == 0 {
+                    a_bin
+                } else if a_bin == i32::MIN && b_bin == -1 {
+                    0
+                } else {
+                    a_bin.wrapping_rem(b_bin)
+                };
+                let res = self.gate_alvarez_bin_to_ter(r);
+                self.write_reg(rd, res)?;
+            }
+            Rv32iInstr::Remu { rd, rs1, rs2 } => {
+                let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1)) as u32;
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32;
+                let r = if b_bin == 0 {
+                    a_bin
+                } else {
+                    a_bin % b_bin
+                };
+                let res = self.gate_alvarez_bin_to_ter(r as i32);
+                self.write_reg(rd, res)?;
+            }
             Rv32iInstr::Fence => {}
             Rv32iInstr::Ecall => {
                 let a0 = self.read_reg(10).to_i32_saturating();
@@ -1332,6 +1441,14 @@ fn map_rv32i_to_setun_opcode(instr: &Rv32iInstr) -> Opcode {
         Rv32iInstr::Xori { .. } | Rv32iInstr::Xor { .. } => Opcode::Smt,
         Rv32iInstr::Ori { .. } | Rv32iInstr::Or { .. } => Opcode::Sat,
         Rv32iInstr::Andi { .. } | Rv32iInstr::And { .. } => Opcode::Sit,
+        Rv32iInstr::Mul { .. }
+        | Rv32iInstr::Mulh { .. }
+        | Rv32iInstr::Mulhsu { .. }
+        | Rv32iInstr::Mulhu { .. } => Opcode::Mul,
+        Rv32iInstr::Div { .. }
+        | Rv32iInstr::Divu { .. }
+        | Rv32iInstr::Rem { .. }
+        | Rv32iInstr::Remu { .. } => Opcode::Div,
         Rv32iInstr::Fence => Opcode::Nop,
         Rv32iInstr::Ecall | Rv32iInstr::Ebreak => Opcode::Halt,
     }
@@ -1504,5 +1621,38 @@ mod tests {
         assert!(
             summary.total_telemetry.ternary_trit_flips < summary.total_telemetry.binary32_bit_flips
         );
+    }
+
+    #[test]
+    fn test_rv32m_extension_execution_on_setun_dbt() {
+        let elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/rv32m_test.elf");
+        let mut engine = SetunDbtEngine::from_elf_bytes(elf_bytes)
+            .expect("Falha ao carregar ELF de teste RV32M");
+        let report = engine
+            .run(50_000)
+            .expect("Erro de execucao no teste RV32M");
+        assert!(
+            report.is_riscv_test_pass(),
+            "Teste de extensao RV32M falhou com exit: {:?}",
+            report.exit
+        );
+    }
+
+    #[test]
+    fn test_rv32im_doom_benchmark_execution_on_setun_dbt() {
+        let elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");
+        let mut engine = SetunDbtEngine::from_elf_bytes(elf_bytes)
+            .expect("Falha ao carregar ELF do benchmark Doom RV32IM");
+        let report = engine
+            .run(5_000_000)
+            .expect("Erro de execucao no benchmark Doom RV32IM");
+        assert!(
+            report.is_riscv_test_pass(),
+            "Benchmark Doom RV32IM falhou com exit: {:?}",
+            report.exit
+        );
+        let stdout_str = String::from_utf8_lossy(&report.stdout_buffer);
+        assert!(stdout_str.contains("Iniciando Renderizador Doom RV32IM"));
+        assert!(stdout_str.contains("Renderizacao Doom RV32IM Concluida com Sucesso!"));
     }
 }
