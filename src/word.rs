@@ -1,15 +1,15 @@
-//! Palavras ternárias balanceadas de 21 e 27 trits, trytes de 6 trits e empacotamento
-//! dual-bit / aritmética direta em `i64` para o caminho crítico da CPU.
+//! Balanced ternary words of 21 and 27 trits, 6-trit trytes, and dual-bit packing
+//! with direct `i64` arithmetic for the CPU critical path.
 //!
-//! Uma palavra de 21 trits (`Word21`) cobre $3^{21} = 10.460.353.203$ estados,
-//! distribuídos simetricamente em $[-5.230.176.601, +5.230.176.601]$, superando
-//! com folga a capacidade de 32 bits binários ($2^{32} = 4.294.967.296$).
+//! A 21-trit word (`Word21`) covers $3^{21} = 10,460,353,203$ states,
+//! symmetrically distributed over $[-5,230,176,601, +5,230,176,601]$, exceeding
+//! binary 32-bit integer capacity ($2^{32} = 4,294,967,296$).
 
 use crate::trit::Trit;
 use core::fmt;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-/// Tabelas pré-computadas de potências de 3 (`3^0` até `3^27`).
+/// Precomputed lookup table of powers of 3 (`3^0` through `3^27`).
 pub const POW3: [i64; 28] = [
     1,
     3,
@@ -41,7 +41,7 @@ pub const POW3: [i64; 28] = [
     7_625_597_484_987,
 ];
 
-/// Metade inteira de `3^N` (`(3^N - 1) / 2`), definindo o limite máximo positivo de `N` trits.
+/// Integer half of `3^N` (`(3^N - 1) / 2`), defining the maximum positive boundary for `N` trits.
 pub const HALF_POW3: [i64; 28] = [
     0,
     1,
@@ -73,8 +73,8 @@ pub const HALF_POW3: [i64; 28] = [
     3_812_798_742_493,
 ];
 
-/// Envelopa um valor arbitrário `i64` para o domínio ternário balanceado de `N` trits
-/// em `[-HALF_POW3[N], +HALF_POW3[N]]` preservando a congruência módulo `3^N`.
+/// Wraps an arbitrary `i64` value into the balanced ternary domain of `N` trits
+/// in `[-HALF_POW3[N], +HALF_POW3[N]]` preserving congruence modulo `3^N`.
 #[inline(always)]
 pub const fn wrap_balanced<const N: usize>(val: i64) -> i64 {
     let modulus = POW3[N];
@@ -91,7 +91,7 @@ pub const fn wrap_balanced<const N: usize>(val: i64) -> i64 {
     rem
 }
 
-/// Envelopamento rápido de 128 bits para 21 trits (usado após multiplicações largas).
+/// Fast 128-bit modular wrapping for 21 trits (used after wide multiplications).
 #[inline(always)]
 pub const fn wrap_balanced_i128<const N: usize>(val: i128) -> i64 {
     let modulus = POW3[N] as i128;
@@ -108,8 +108,8 @@ pub const fn wrap_balanced_i128<const N: usize>(val: i128) -> i64 {
     rem as i64
 }
 
-/// Converte um inteiro `i64` em um array de `N` trits balanceados (índice 0 = trit menos significativo)
-/// pelo algoritmo clássico de divisão sucessiva com resto balanceado em `{-1, 0, +1}`.
+/// Converts an `i64` integer into an array of `N` balanced trits (index 0 = least significant trit)
+/// via classical successive division with balanced remainder in `{-1, 0, +1}`.
 #[inline]
 pub fn i64_to_trits<const N: usize>(val: i64) -> [Trit; N] {
     let mut trits = [Trit::Zero; N];
@@ -131,8 +131,8 @@ pub fn i64_to_trits<const N: usize>(val: i64) -> [Trit; N] {
     trits
 }
 
-/// Converte um slice ou array de `N` trits balanceados (índice 0 = trit menos significativo)
-/// para o inteiro equivalente `i64`.
+/// Converts a slice or array of `N` balanced trits (index 0 = least significant trit)
+/// to the equivalent `i64` integer.
 #[inline]
 pub fn trits_to_i64<const N: usize>(trits: &[Trit; N]) -> i64 {
     let mut acc: i64 = 0;
@@ -144,12 +144,12 @@ pub fn trits_to_i64<const N: usize>(trits: &[Trit; N]) -> i64 {
     acc
 }
 
-/// Extrai uma sub-fatia contígua de `LEN` trits começando na posição ` OFFSET` (0-indexada)
-/// diretamente a partir do valor numérico `val`, sem alocar arrays de trits.
+/// Extracts a contiguous sub-slice of `LEN` trits starting at position `offset` (0-indexed)
+/// directly from the numeric value `val`, without allocating trit arrays.
 #[inline(always)]
 pub const fn extract_trit_field(val: i64, offset: usize, len: usize) -> i64 {
-    // Arredondamento ternário balanceado na divisão por 3^offset:
-    // val = q * 3^offset + r, onde r está em [-half_offset, +half_offset].
+    // Balanced ternary rounding in division by 3^offset:
+    // val = q * 3^offset + r, where r is in [-half_offset, +half_offset].
     let divisor = POW3[offset];
     let half_div = HALF_POW3[offset];
     let shifted = if val >= 0 {
@@ -168,8 +168,8 @@ pub const fn extract_trit_field(val: i64, offset: usize, len: usize) -> i64 {
     rem
 }
 
-/// Empacota um array de `N` trits em representação dual-bit (`u64`), onde cada trit ocupa 2 bits:
-/// bits `[2*i .. 2*i+1]` armazenam `trits[i].to_dual_bits()`.
+/// Packs an array of `N` trits into dual-bit representation (`u64`), where each trit occupies 2 bits:
+/// bits `[2*i .. 2*i+1]` store `trits[i].to_dual_bits()`.
 #[inline]
 pub fn pack_dual_bits<const N: usize>(trits: &[Trit; N]) -> u64 {
     let mut packed: u64 = 0;
@@ -179,7 +179,7 @@ pub fn pack_dual_bits<const N: usize>(trits: &[Trit; N]) -> u64 {
     packed
 }
 
-/// Desempacota um `u64` dual-bit em um array de `N` trits.
+/// Unpacks a dual-bit `u64` into an array of `N` trits.
 #[inline]
 pub fn unpack_dual_bits<const N: usize>(packed: u64) -> [Trit; N] {
     let mut trits = [Trit::Zero; N];
@@ -190,8 +190,8 @@ pub fn unpack_dual_bits<const N: usize>(packed: u64) -> [Trit; N] {
     trits
 }
 
-/// Tryte de 6 trits balanceados ($3^6 = 729$ estados, amplitude `[-364, +364]`).
-/// Utilizado para indexação de paleta de cores no framebuffer VGA 320x200 e bytes expandidos.
+/// 6-trit balanced tryte ($3^6 = 729$ states, range `[-364, +364]`).
+/// Used for color palette indexing in 320x200 VGA framebuffer and expanded bytes.
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Tryte6(i16);
@@ -217,15 +217,15 @@ impl Tryte6 {
         self.0 as i64
     }
 
-    /// Converte um byte binário `u8` (0..=255) para `Tryte6` centrado simetricamente
-    /// ou mapeado diretamente. Aqui mapeamos `b as i16 - 128` em `[-128, +127]`,
-    /// totalmente contido na faixa `[-364, +364]`.
+    /// Converts a binary `u8` byte (0..=255) to `Tryte6` symmetrically centered
+    /// or directly mapped. Here `byte as i16 - 128` maps to `[-128, +127]`,
+    /// completely contained within `[-364, +364]`.
     #[inline(always)]
     pub const fn from_u8_centered(byte: u8) -> Self {
         Self((byte as i16) - 128)
     }
 
-    /// Reconverte um `Tryte6` centrado (`[-128, +127]`) para `u8` (`0..=255`).
+    /// Converts a centered `Tryte6` (`[-128, +127]`) back to `u8` (`0..=255`).
     #[inline(always)]
     pub const fn to_u8_centered(self) -> u8 {
         let shifted = self.0 + 128;
@@ -238,16 +238,15 @@ impl Tryte6 {
         }
     }
 
-    /// Converte um índice de paleta VGA (`0..=255`) preservando representação ternária direta.
+    /// Converts a VGA palette index (`0..=255`) preserving direct ternary representation.
     #[inline(always)]
     pub const fn from_palette_index(idx: u8) -> Self {
         Self((idx as i16) - 128)
     }
 
-    /// Extrai o índice de paleta VGA (`0..=255`) a partir do `Tryte6`.
+    /// Extracts the VGA palette index (`0..=255`) from `Tryte6`.
     #[inline(always)]
     pub const fn to_palette_index(self) -> u8 {
-        // Permite tanto valores centrados [-128..127] quanto diretos modulo 256 dentro de [-364..364]
         let v = self.0;
         if v >= -128 && v <= 127 {
             (v + 128) as u8
@@ -267,12 +266,12 @@ impl Tryte6 {
     }
 }
 
-/// Palavra principal de 21 trits balanceados (`Setun-Doom ISA`).
+/// Primary 21-trit balanced word (`Setun-Doom ISA`).
 ///
-/// - Capacidade total: $3^{21} = 10.460.353.203$ estados (> 2.4x o espaço de 32 bits binários).
-/// - Amplitude simétrica: $[-5.230.176.601, +5.230.176.601]$.
-/// - Armazenada internamente em `i64` alinhado no caminho crítico da CPU para execução em
-///   ciclo único no processador hospedeiro, mantendo semântica aritmética ternária estrita.
+/// - Total capacity: $3^{21} = 10,460,353,203$ states (> 2.4x binary 32-bit integer space).
+/// - Symmetric range: $[-5,230,176,601, +5,230,176,601]$.
+/// - Stored internally in `i64` aligned on the CPU critical path for single-cycle host execution,
+///   maintaining strict balanced ternary arithmetic semantics.
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Word21(i64);
@@ -286,32 +285,32 @@ impl Word21 {
     pub const ONE: Self = Self(1);
     pub const NEG_ONE: Self = Self(-1);
 
-    /// Constrói uma `Word21` envelopando o valor `i64` nos 21 trits balanceados.
+    /// Constructs a `Word21` wrapping an `i64` value into 21 balanced trits.
     #[inline(always)]
     pub const fn new(val: i64) -> Self {
         Self(wrap_balanced::<21>(val))
     }
 
-    /// Constrói uma `Word21` a partir de um `i32` binário (conversão exata sem overflow,
-    /// pois `i32::MAX = 2_147_483_647 < 5_230_176_601`).
+    /// Constructs a `Word21` from a binary `i32` (exact conversion without overflow,
+    /// since `i32::MAX = 2,147,483,647 < 5,230,176,601`).
     #[inline(always)]
     pub const fn from_i32(val: i32) -> Self {
         Self(val as i64)
     }
 
-    /// Constrói uma `Word21` a partir de um `i64` binário.
+    /// Constructs a `Word21` from a binary `i64`.
     #[inline(always)]
     pub const fn from_i64(val: i64) -> Self {
         Self::new(val)
     }
 
-    /// Retorna o valor inteiro assinado `i64` subjacente.
+    /// Returns the underlying signed `i64` integer value.
     #[inline(always)]
     pub const fn as_i64(self) -> i64 {
         self.0
     }
 
-    /// Converte para `i32` saturando nos limites de 32 bits binários caso exceda `i32::MIN..=i32::MAX`.
+    /// Converts to `i32` saturating at 32-bit binary integer boundaries if exceeding `i32::MIN..=i32::MAX`.
     #[inline(always)]
     pub const fn to_i32_saturating(self) -> i32 {
         if self.0 > i32::MAX as i64 {
@@ -323,20 +322,20 @@ impl Word21 {
         }
     }
 
-    /// Sinal tricótomo intrínseco da palavra (`Trit::Negative`, `Trit::Zero` ou `Trit::Positive`).
-    /// Substitui flags artificiais de CPU (Zero/Sign/Carry) por inspeção direta da palavra.
+    /// Intrinsic trichotomous sign of the word (`Trit::Negative`, `Trit::Zero`, or `Trit::Positive`).
+    /// Replaces artificial CPU status flags (Zero/Sign/Carry) with direct word inspection.
     #[inline(always)]
     pub const fn sign_trit(self) -> Trit {
         Trit::from_i64_sign(self.0)
     }
 
-    /// Inversão simples de todos os 21 trits (negação simétrica instantânea sem soma de +1).
+    /// Simple inversion of all 21 trits (instantaneous symmetric negation without adding +1).
     #[inline(always)]
     pub const fn neg_trits(self) -> Self {
         Self(-self.0)
     }
 
-    /// Inversor físico de 21 portas `Trit::invert` operando trit-a-trit em `[Trit; 21]`.
+    /// Physical inverter of 21 `Trit::invert` gates operating trit-by-trit on `[Trit; 21]`.
     #[inline]
     pub fn gate_invert_trits(self) -> Self {
         let trits = self.to_trits();
@@ -345,12 +344,12 @@ impl Word21 {
             out[i] = trits[i].invert();
         }
         let res = Self::from_trits(&out);
-        assert_eq!(res.0, -self.0, "Divergencia no inversor de portas ternarias");
+        assert_eq!(res.0, -self.0, "Divergence in ternary gate inverter");
         res
     }
 
-    /// Somador Ripple-Carry de 21 estágios construído exclusivamente com portas `Trit::full_add`.
-    /// Retorna `(palavra_soma, carry_out_trit_21, contagem_propagacoes_carry)`.
+    /// 21-stage ripple-carry adder constructed exclusively from `Trit::full_add` gates.
+    /// Returns `(sum_word, carry_out_trit_21, carry_propagation_count)`.
     #[inline]
     pub fn gate_ripple_carry_add(self, rhs: Self, carry_in: Trit) -> (Self, Trit, u32) {
         let a = self.to_trits();
@@ -370,14 +369,14 @@ impl Word21 {
         let expected = wrap_balanced::<21>(self.0 + rhs.0 + carry_in.as_i64());
         assert_eq!(
             res.0, expected,
-            "Divergencia no somador Ripple-Carry de 21 trits"
+            "Divergence in 21-trit ripple-carry adder"
         );
         (res, carry, carry_props)
     }
 
-    /// Multiplicador físico ternário balanceado Shift-and-Add/Subtract de `21 x 21 -> 42` trits,
-    /// operando exclusivamente com portas `Trit::t_mul` e `Trit::full_add`.
-    /// Retorna `(produto_42_trits, propagacoes_carry)`.
+    /// Physical balanced ternary Shift-and-Add/Subtract multiplier of `21 x 21 -> 42` trits,
+    /// operating exclusively with `Trit::t_mul` and `Trit::full_add` gates.
+    /// Returns `(product_42_trits, carry_propagations)`.
     #[inline]
     pub fn gate_shift_and_add_mul42(self, rhs: Self) -> ([Trit; 42], u32) {
         let a = self.to_trits();
@@ -388,7 +387,7 @@ impl Word21 {
         for i in 0..21 {
             let mult_trit = b[i];
             if mult_trit == Trit::Zero {
-                // Em ternário balanceado, trits Zero pulam o estágio sem comutar portas
+                // In balanced ternary, Zero trits bypass the stage without switching gates
                 continue;
             }
             let mut carry = Trit::Zero;
@@ -415,8 +414,8 @@ impl Word21 {
         (acc, carry_props)
     }
 
-    /// Comparador de magnitude ternário de 21 trits (varredura do trit mais significativo `20` até `0`
-    /// usando a porta elementar `Trit::cmp_trit`).
+    /// 21-trit ternary magnitude comparator (scans from most significant trit `20` down to `0`
+    /// using elementary `Trit::cmp_trit` gate).
     #[inline]
     pub fn gate_cmp_t(self, rhs: Self) -> Trit {
         let a = self.to_trits();
@@ -432,15 +431,15 @@ impl Word21 {
         assert_eq!(
             result,
             Trit::cmp_t(self.0, rhs.0),
-            "Divergencia no comparador de magnitude ternario de 21 trits"
+            "Divergence in 21-trit ternary magnitude comparator"
         );
         result
     }
 
-    /// Divisor ternário balanceado não-restaurador de 21 passos operando exclusivamente
-    /// por deslocamento físico de fios, somador `gate_ripple_carry_add` e lógica ternária,
-    /// sem recorrer a divisão `/` ou `%` da CPU hospedeira.
-    /// Retorna `Option<(quociente, resto, propagacoes_carry)>`.
+    /// 21-step non-restoring balanced ternary divider operating exclusively
+    /// via physical wire shifting, `gate_ripple_carry_add` adder, and ternary logic,
+    /// without host CPU `/` or `%` operations.
+    /// Returns `Option<(quotient, remainder, carry_propagations)>`.
     pub fn gate_non_restoring_div_rem(self, rhs: Self) -> Option<(Self, Self, u32)> {
         if rhs.0 == 0 {
             return None;
@@ -482,17 +481,17 @@ impl Word21 {
         Some((quot, rem_word, total_carries))
     }
 
-    /// Divisão inteira verificada via divisor ternário não-restaurador de portas lógicas
-    /// (retorna `None` se `rhs == 0`, proibindo falha silenciosa).
+    /// Checked integer division via logic-gate non-restoring ternary divider
+    /// (returns `None` if `rhs == 0`, silent failure prohibited).
     #[inline(always)]
     pub fn checked_div_rem(self, rhs: Self) -> Option<(Self, Self)> {
         self.gate_non_restoring_div_rem(rhs).map(|(q, r, _)| (q, r))
     }
 
-    /// Deslocamento físico de fios de `shift` trits em `[Trit; 21]`:
-    /// - `shift > 0`: desloca para a esquerda (multiplica por $3^{\text{shift}}$) com descarte do overflow nos 21 fios.
-    /// - `shift < 0`: desloca para a direita (descarta os $|\text{shift}|$ trits menos significativos,
-    ///   realizando arredondamento simétrico exato para o mais próximo sem necessidade de somador extra).
+    /// Physical wire shift of `shift` trits across `[Trit; 21]`:
+    /// - `shift > 0`: shifts left (multiplies by $3^{\text{shift}}$) discarding 21-wire overflow.
+    /// - `shift < 0`: shifts right (discards $|\text{shift}|$ least significant trits,
+    ///   performing exact symmetric nearest rounding without extra adder stages).
     #[inline(always)]
     pub fn shift_trits(self, shift: i32) -> Self {
         if shift == 0 {
@@ -518,10 +517,10 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Conta a quantidade de trits nulos (`Trit::Zero`) mais significativos consecutivos
-    /// antes do primeiro trit ativo (`Trit::Negative` ou `Trit::Positive`).
+    /// Counts the number of consecutive most significant zero trits (`Trit::Zero`)
+    /// before the first active trit (`Trit::Negative` or `Trit::Positive`).
     ///
-    /// Se a palavra for completamente nula (`Word21::ZERO`), retorna `21`.
+    /// If the word is completely zero (`Word21::ZERO`), returns `21`.
     #[inline]
     pub fn count_leading_zeros(self) -> usize {
         let trits = self.to_trits();
@@ -536,10 +535,10 @@ impl Word21 {
         count
     }
 
-    /// Normaliza a mantissa ternária deslocando os trits nulos para a esquerda em hardware
-    /// e retorna `(palavra_normalizada, trits_deslocados)`.
+    /// Normalizes the ternary mantissa by shifting leading zero trits to the left in hardware
+    /// and returns `(normalized_word, shifted_trits)`.
     ///
-    /// Se a palavra for `Word21::ZERO`, retorna `(Word21::ZERO, 21)`.
+    /// If the word is `Word21::ZERO`, returns `(Word21::ZERO, 21)`.
     #[inline]
     pub fn normalize_leading(self) -> (Self, usize) {
         let lz = self.count_leading_zeros();
@@ -552,31 +551,31 @@ impl Word21 {
         }
     }
 
-    /// Decompõe a palavra nos 21 trits individuais (índice 0 = trit menos significativo).
+    /// Decomposes the word into 21 individual trits (index 0 = least significant trit).
     #[inline]
     pub fn to_trits(self) -> [Trit; 21] {
         i64_to_trits::<21>(self.0)
     }
 
-    /// Constrói uma `Word21` a partir de 21 trits individuais.
+    /// Constructs a `Word21` from 21 individual trits.
     #[inline]
     pub fn from_trits(trits: &[Trit; 21]) -> Self {
         Self::new(trits_to_i64::<21>(trits))
     }
 
-    /// Empacota a palavra em codificação dual-bit de 42 bits dentro de um `u64`.
+    /// Packs the word into 42-bit dual-bit encoding inside a `u64`.
     #[inline]
     pub fn to_dual_bits(self) -> u64 {
         pack_dual_bits::<21>(&self.to_trits())
     }
 
-    /// Reconstrói a `Word21` a partir da codificação dual-bit de 42 bits.
+    /// Reconstructs `Word21` from 42-bit dual-bit encoding.
     #[inline]
     pub fn from_dual_bits(packed: u64) -> Self {
         Self::from_trits(&unpack_dual_bits::<21>(packed))
     }
 
-    /// Operação lógica trit-a-trit de multiplicação (XOR ternário / produto de sinais).
+    /// Trit-by-trit logic multiplication (ternary XOR / sign modulation).
     #[inline]
     pub fn tritwise_mul(self, other: Self) -> Self {
         let a = self.to_trits();
@@ -588,7 +587,7 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Operação lógica trit-a-trit de mínimo (AND ternário de Kleene).
+    /// Trit-by-trit logic minimum (Kleene ternary AND).
     #[inline]
     pub fn tritwise_and(self, other: Self) -> Self {
         let a = self.to_trits();
@@ -600,7 +599,7 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Operação lógica trit-a-trit de máximo (OR ternário de Kleene).
+    /// Trit-by-trit logic maximum (Kleene ternary OR).
     #[inline]
     pub fn tritwise_or(self, other: Self) -> Self {
         let a = self.to_trits();
@@ -612,7 +611,7 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Votação Majoritária trit-a-trit entre 3 palavras (`majv.t` do artigo REBEL-6, IEEE ISMVL 2025).
+    /// Trit-by-trit majority vote across 3 words (`majv.t` from REBEL-6 paper, IEEE ISMVL 2025).
     #[inline]
     pub fn tritwise_majority(self, b: Self, c: Self) -> Self {
         let ta = self.to_trits();
@@ -625,7 +624,7 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Votação Minoritária trit-a-trit entre 3 palavras (`minv.t` do artigo REBEL-6, IEEE ISMVL 2025).
+    /// Trit-by-trit minority vote across 3 words (`minv.t` from REBEL-6 paper, IEEE ISMVL 2025).
     #[inline]
     pub fn tritwise_minority(self, b: Self, c: Self) -> Self {
         let ta = self.to_trits();
@@ -638,7 +637,7 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Adição Limiar trit-a-trit entre 2 palavras (`SAT` / Operação Básica `B21` `000+-+` da Setun-70).
+    /// Trit-by-trit threshold addition across 2 words (`SAT` / Basic Operation `B21` `000+-+` of Setun-70).
     #[inline]
     pub fn tritwise_sat(self, other: Self) -> Self {
         let a = self.to_trits();
@@ -650,8 +649,8 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Inibição / Coalescência trit-a-trit (`SIT` / Operação Básica `B20` `000+-0` da Setun-70):
-    /// Calcula `self + other * (1 - |self|)` em cada um dos 21 trits.
+    /// Trit-by-trit inhibition / coalescence (`SIT` / Basic Operation `B20` `000+-0` of Setun-70):
+    /// Computes `self + other * (1 - |self|)` across each of the 21 trits.
     #[inline]
     pub fn tritwise_sit(self, other: Self) -> Self {
         let a = self.to_trits();
@@ -663,13 +662,13 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
-    /// Conversor de base em hardware $2 \to 3$ ($p \to p+1$) pelo algoritmo recorrente de
-    /// J. Ramil Alvarez (*"Простые алгоритмы перевода p -> p-1 и p -> p+1"*, Setun Lab, 1974).
+    /// Hardware base converter $2 \to 3$ ($p \to p+1$) via the recurrent algorithm of
+    /// J. Ramil Alvarez (*"Simple algorithms of translation p -> p-1 and p -> p+1"*, Setun Lab, 1974).
     ///
-    /// Converte um inteiro binário `i32` em complemento de dois para `[Trit; 21]` usando
-    /// exclusivamente deslocamento físico de 1 trit ($3A$), inversão de fios ($-A$) e o somador
-    /// `Trit::full_add` com `bit_k` injetado no `carry_in` ($2A + b_k = 3A - A + b_k$),
-    /// sem usar divisão `/ 3` ou módulo `% 3` da CPU hospedeira.
+    /// Converts a two's-complement binary `i32` into `[Trit; 21]` using
+    /// physical 1-trit shift ($3A$), wire inversion ($-A$), and the
+    /// `Trit::full_add` adder with `bit_k` injected into `carry_in` ($2A + b_k = 3A - A + b_k$),
+    /// without host CPU `/ 3` or `% 3` operations.
     pub fn alvarez_from_i32_gates(val: i32) -> ([Trit; 21], u32) {
         let mut acc = [Trit::Zero; 21];
         let mut total_carries = 0u32;
@@ -680,7 +679,7 @@ impl Word21 {
             let bit = ((val >> bit_idx) & 1) != 0;
             let carry_in = if bit { Trit::Positive } else { Trit::Zero };
 
-            // Deslocamento físico de 1 trit para a esquerda (3 * A) e inversão (-A)
+            // Physical 1-trit left shift (3 * A) and wire inversion (-A)
             let mut shifted = [Trit::Zero; 21];
             let mut neg_acc = [Trit::Zero; 21];
             for i in 0..21 {
@@ -690,7 +689,7 @@ impl Word21 {
                 neg_acc[i] = acc[i].invert();
             }
 
-            // Soma ripple-carry de 21 estágios: (3 * A) + (-A) + bit_k = 2 * A + bit_k
+            // 21-stage ripple-carry sum: (3 * A) + (-A) + bit_k = 2 * A + bit_k
             let mut carry = carry_in;
             for i in 0..21 {
                 let (s, c_next) = shifted[i].full_add(neg_acc[i], carry);
@@ -705,24 +704,24 @@ impl Word21 {
         assert_eq!(
             verified.as_i64(),
             val as i64,
-            "Divergencia no conversor de base 2->3 de Ramil Alvarez"
+            "Divergence in Ramil Alvarez 2->3 base converter"
         );
         (acc, total_carries)
     }
 
-    /// Comparação tricótoma (`cmp.t` / operador `<=>` do artigo REBEL-6):
-    /// Opera via comparador de magnitude de 21 trits (`gate_cmp_t`).
-    /// Retorna `Word21::ONE` (`+1`) se `self > rhs`, `Word21::ZERO` (`0`) se `self == rhs`
-    /// e `Word21::NEG_ONE` (`-1`) se `self < rhs`.
+    /// Trichotomous comparison (`cmp.t` / `<=>` operator of REBEL-6 paper):
+    /// Operates via 21-trit magnitude comparator (`gate_cmp_t`).
+    /// Returns `Word21::ONE` (`+1`) if `self > rhs`, `Word21::ZERO` (`0`) if `self == rhs`,
+    /// and `Word21::NEG_ONE` (`-1`) if `self < rhs`.
     #[inline]
     pub fn cmp_t(self, rhs: Self) -> Self {
         Self(self.gate_cmp_t(rhs).as_i64())
     }
 
-    /// Conta quantos dos 21 trits mudaram de estado entre `self` e `next`
-    /// (métrica de *Digit Flips* ternários da Seção IV.B do artigo REBEL-6).
-    /// Também retorna quantas dessas transições foram *half-swings* (`-1 <-> 0` ou `0 <-> +1`,
-    /// que consomem menos energia dinâmica) vs *full-swings* (`-1 <-> +1`).
+    /// Counts how many of the 21 trits changed state between `self` and `next`
+    /// (ternary *Digit Flips* metric from Section IV.B of REBEL-6 paper).
+    /// Also returns how many transitions were *half-swings* (`-1 <-> 0` or `0 <-> +1`,
+    /// consuming less dynamic switching energy) vs *full-swings* (`-1 <-> +1`).
     #[inline]
     pub fn count_trit_flips(self, next: Self) -> (u32, u32, u32) {
         if self.0 == next.0 {
@@ -746,8 +745,8 @@ impl Word21 {
         (total, half_swings, full_swings)
     }
 
-    /// Conta quantos bits mudariam em um registrador binário de 32 bits em complemento de dois (`RV32I`)
-    /// para a mesma transição de valor inteiro `self -> next` (usando `(a_i32 ^ b_i32).count_ones()`).
+    /// Counts how many bits would toggle in a 32-bit two's-complement binary register (`RV32I`)
+    /// for the same integer transition `self -> next` (using `(a_i32 ^ b_i32).count_ones()`).
     #[inline(always)]
     pub const fn count_binary32_flips(self, next: Self) -> u32 {
         let a32 = self.to_i32_saturating();
@@ -755,7 +754,7 @@ impl Word21 {
         (a32 ^ b32).count_ones()
     }
 
-    /// Analisa uma string de trits balanceados (ex: `"+0-+"`, MSB primeiro) em `Word21`.
+    /// Parses a string of balanced trits (e.g. `"+0-+"`, MSB first) into `Word21`.
     pub fn from_balanced_str(s: &str) -> Result<Self, &'static str> {
         let mut acc: i64 = 0;
         let mut count = 0usize;
@@ -763,17 +762,17 @@ impl Word21 {
             if ch == '_' || ch.is_whitespace() {
                 continue;
             }
-            let t = Trit::from_char(ch).ok_or("Caractere ternario invalido")?;
+            let t = Trit::from_char(ch).ok_or("Invalid ternary character")?;
             acc = acc * 3 + t.as_i64();
             count += 1;
             if count > 21 {
-                return Err("Excede 21 trits");
+                return Err("Exceeds 21 trits");
             }
         }
         Ok(Self::new(acc))
     }
 
-    /// Formata a palavra como string de 21 caracteres ternários balanceados (MSB primeiro).
+    /// Formats the word as a string of 21 balanced ternary characters (MSB first).
     pub fn to_balanced_string(self) -> String {
         let trits = self.to_trits();
         let mut s = String::with_capacity(21);
@@ -815,7 +814,7 @@ impl Mul for Word21 {
         let expected = wrap_balanced_i128::<21>((self.0 as i128) * (rhs.0 as i128));
         assert_eq!(
             res.0, expected,
-            "Divergencia no multiplicador Shift-and-Add de 21 trits"
+            "Divergence in 21-trit Shift-and-Add multiplier"
         );
         res
     }
@@ -828,7 +827,7 @@ impl Div for Word21 {
     fn div(self, rhs: Self) -> Self::Output {
         let (quot, _) = self
             .checked_div_rem(rhs)
-            .expect("Divisao por zero em Word21 (proibido falhar silenciosamente)");
+            .expect("Division by zero in Word21 (silent failure prohibited)");
         quot
     }
 }
@@ -848,10 +847,10 @@ impl fmt::Display for Word21 {
     }
 }
 
-/// Palavra estendida de 27 trits balanceados (`Word27`).
+/// Extended 27-trit balanced word (`Word27`).
 ///
-/// - Capacidade: $3^{27} = 7.625.597.484.987$ estados (amplitude `[-3.812.798.742.493, +3.812.798.742.493]`).
-/// - Útil para acumuladores duplos, produtos intermediários de alta precisão e instruções longas.
+/// - Capacity: $3^{27} = 7,625,597,484,987$ states (range `[-3,812,798,742,493, +3,812,798,742,493]`).
+/// - Useful for double accumulators, high-precision intermediate products, and long instructions.
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Word27(i64);
@@ -951,7 +950,7 @@ mod tests {
             let reconstructed = Word21::from_trits(&trits);
             assert_eq!(reconstructed, w);
 
-            // Inversão de cada trit individual deve corresponder exatamente a -val
+            // Inversion of each individual trit must exactly match -val
             let mut inv_trits = [Trit::Zero; 21];
             for i in 0..21 {
                 inv_trits[i] = -trits[i];
@@ -972,7 +971,7 @@ mod tests {
 
     #[test]
     fn test_word21_wrap_around_symmetry() {
-        // MAX_VAL + 1 dá a volta para MIN_VAL em aritmética modular balanceada
+        // MAX_VAL + 1 wraps around to MIN_VAL in balanced modular arithmetic
         let max = Word21::new(Word21::MAX_VAL);
         let wrapped = max + Word21::ONE;
         assert_eq!(wrapped.as_i64(), Word21::MIN_VAL);

@@ -1,16 +1,19 @@
-//! Executável de demonstração e validação completa da arquitetura Setun-Doom.
+// Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
+// SPDX-License-Identifier: MIT
+
+//! Demonstration and complete validation executable for the Setun-Doom architecture.
 //!
-//! Executa em sequência:
-//! 1. Verificação de tipos e simetria ternária (`Trit`, `Word21`, `TernaryFixed`).
-//! 2. Montagem de código-fonte assembly textual (`SetunAssembler`) com labels e literais `0t...`.
-//! 3. Travessia de Árvore BSP Tricótoma (`BspTree`) + Clipper de Oclusão em Trits (`solidsegs`)
-//!    + Rasterizador 3D de Colunas (`TernaryRenderer::render_bsp_scene`).
-//! 4. Ciclo de plataforma `doomgeneric` (`DG_Init`, `DG_DrawFrameToBuffer`, `DG_GetTicksMs`, `DG_GetKey`).
+//! Executes in sequence:
+//! 1. Type verification and ternary symmetry (`Trit`, `Word21`, `TernaryFixed`).
+//! 2. Textual assembly code assembly (`SetunAssembler`) with labels and `0t...` literals.
+//! 3. Trichotomous BSP Tree Traversal (`BspTree`) + Trit Occlusion Clipper (`solidsegs`)
+//!    + 3D Column Rasterizer (`TernaryRenderer::render_bsp_scene`).
+//! 4. Platform cycle for `doomgeneric` (`DG_Init`, `DG_DrawFrameToBuffer`, `DG_GetTicksMs`, `DG_GetKey`).
 
 use setun_doom::{
-    BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs,
-    DG_Init, SetunAssembler, Subsector, TernaryFixed, TernaryRenderer, Tryte6, WallSeg, Word21,
-    FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE, global_machine,
+    global_machine, BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer,
+    DG_GetKey, DG_GetTicksMs, DG_Init, SetunAssembler, Subsector, TernaryFixed, TernaryRenderer,
+    Tryte6, WallSeg, Word21, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
 };
 
 fn main() {
@@ -39,9 +42,9 @@ fn main() {
     DG_Init();
 
     {
-        let mut machine = global_machine().lock().expect("Falha ao bloquear maquina");
+        let mut machine = global_machine().lock().expect("Failed to lock global machine");
 
-        // 1. Renderiza uma cena BSP 3D com portal frontal e parede de fundo
+        // 1. Render a 3D BSP scene with frontal portal and back wall
         let front_sub = Subsector {
             id: 0,
             segs: vec![
@@ -94,22 +97,22 @@ fn main() {
             TernaryFixed::ZERO,
         );
         println!(
-            " * Cena BSP 3D       : {} segmentos visiveis | {} colunas desenhadas (120..199 via portal traseiro)",
+            " * 3D BSP Scene      : {} visible segments | {} columns drawn (120..199 through rear portal)",
             segs_drawn, cols_drawn
         );
 
-        // 2. Monta e executa um kernel em Setun-ASM textual
+        // 2. Assemble and run a kernel in textual Setun-ASM
         let scale = TernaryFixed::from_f64(1.75);
         let base_h = TernaryFixed::from_f64(-16.0);
         machine.memory.write_word(500, scale.raw_word()).unwrap();
         machine.memory.write_word(501, base_h.raw_word()).unwrap();
 
         let asm_kernel = r#"
-            ; Kernel Setun-ASM com instrucoes REBEL-6 (CMP.T, MAJV.T, STI.T):
-            ; 1. Multiplica ponto fixo 11.10 (1.75 * -16.0 = -28.0)
-            ; 2. Aplica inversao ternaria STI.T (NEG) se negativo
-            ; 3. Executa comparacao tricotoma CMP.T (<=>) e voto majoritario MAJV.T
-            ; 4. Desenha mira (crosshair) ternaria no centro do Framebuffer VGA (160, 100)
+            ; Setun-ASM Kernel with REBEL-6 instructions (CMP.T, MAJV.T, STI.T):
+            ; 1. Multiplies 11.10 fixed point (1.75 * -16.0 = -28.0)
+            ; 2. Applies ternary inversion STI.T (NEG) if negative
+            ; 3. Executes trichotomous comparison CMP.T (<=>) and majority vote MAJV.T
+            ; 4. Draws ternary crosshair in the center of VGA Framebuffer (160, 100)
             LOAD 500
             MUL 501
             STORE 502
@@ -131,12 +134,12 @@ fn main() {
             STORE_INDEX IX0, 4632158
             ADD_IX_IMM IX0, -1
             MOV_IX_ACC IX0
-            ; BCEG unifica o salto se igual (.crosshair_loop) ou maior (.crosshair_loop) em 1 ciclo!
+            ; BCEG unifies the jump if equal (.crosshair_loop) or greater (.crosshair_loop) in 1 cycle
             BCEG IX1, .crosshair_loop, .crosshair_loop
             HALT
         "#;
 
-        let compiled = SetunAssembler::assemble(asm_kernel).expect("Erro no SetunAssembler");
+        let compiled = SetunAssembler::assemble(asm_kernel).expect("Error in SetunAssembler");
         machine.load_program(0, &compiled);
         let steps = machine.run_ticks(10_000);
 
@@ -145,7 +148,7 @@ fn main() {
         let cmp_res = machine.memory.read_word(504).unwrap().as_i64();
         let tel = machine.cpu.telemetry;
         println!(
-            " * Setun-ASM Kernel  : {} instrucoes | {} ciclos | FixedMul = {} | ABS = {} | CMP.T = {:+}",
+            " * Setun-ASM Kernel  : {} instructions | {} cycles | FixedMul = {} | ABS = {} | CMP.T = {:+}",
             compiled.len(),
             steps,
             raw_prod,
@@ -153,7 +156,7 @@ fn main() {
             cmp_res
         );
         println!(
-            " * REBEL-6 Telemetry : Ternary Flips = {} (Half-swings = {}, Full = {}) vs Binary32 Flips = {} ({:.2}% menos chaveamento)",
+            " * REBEL-6 Telemetry : Ternary Flips = {} (Half-swings = {}, Full = {}) vs Binary32 Flips = {} ({:.2}% reduction)",
             tel.ternary_trit_flips,
             tel.ternary_half_swings,
             tel.ternary_full_swings,
@@ -185,7 +188,7 @@ fn main() {
 
     let suite = BenchmarkRunner::run_all();
     println!("==============================================================================================================");
-    println!(" TABELA COMPARATIVA SETUN-DOOM (TERNÁRIO 21-TRIT) vs. RV32I (BINÁRIO 32-BIT) — METODOLOGIA IEEE ISMVL 2025");
+    println!(" COMPARATIVE TABLE: SETUN-DOOM (21-TRIT TERNARY) vs. RV32I (32-BIT BINARY) — IEEE ISMVL 2025 METHODOLOGY");
     println!("==============================================================================================================");
     println!(
         " {:<32} | {:>10} | {:>9} | {:>11} | {:>11} | {:>11} | {:>9}",
@@ -212,7 +215,7 @@ fn main() {
     }
     println!("==============================================================================================================");
     println!(
-        " * Precisão Ponto Fixo ({} amostras) : TernaryFixed 11.10 RMSE = {:.4} (Erro Simetria = {:.4}) vs Doom 16.16 RMSE = {:.4} (Viés Sinal = {:.4})",
+        " * Fixed-Point Precision ({} samples) : TernaryFixed 11.10 RMSE = {:.4} (Symmetry Error = {:.4}) vs Doom 16.16 RMSE = {:.4} (Sign Bias = {:.4})",
         suite.fixed_precision.iterations,
         suite.fixed_precision.ternary_rmse,
         suite.fixed_precision.ternary_sign_symmetry_error,
@@ -220,7 +223,7 @@ fn main() {
         suite.fixed_precision.binary16_sign_asymmetry_bias
     );
     println!(
-        " * Throughput Pipeline 3D BSP+VGA      : {} frames (320x200) em {:.2} ms => {:.1} FPS ({:.2} MPixels/s)",
+        " * 3D BSP+VGA Pipeline Throughput     : {} frames (320x200) in {:.2} ms => {:.1} FPS ({:.2} MPixels/s)",
         suite.render_throughput.frames,
         suite.render_throughput.elapsed_ms,
         suite.render_throughput.fps,
@@ -229,32 +232,32 @@ fn main() {
     println!("==============================================================================================================\n");
 
     let dbt_summary = setun_doom::dbt::run_all_riscv_isa_tests()
-        .expect("Falha ao executar a suite oficial de 37 testes RV32I no SetunDbtEngine");
+        .expect("Failed to execute official 37 RV32I tests on SetunDbtEngine");
     let passed_count = dbt_summary
         .tests
         .iter()
         .filter(|(_, r)| r.is_riscv_test_pass())
         .count();
     println!("==============================================================================================================");
-    println!(" NÍVEL 1: TRADUTOR BINÁRIO DINÂMICO (DBT) RV32IM ELF32 -> SETUN-DOOM 21-TRIT ISA");
+    println!(" LEVEL 1: DYNAMIC BINARY TRANSLATOR (DBT) RV32IM ELF32 -> SETUN-DOOM 21-TRIT ISA");
     println!("==============================================================================================================");
     println!(
-        " * Suite Oficial RISC-V RV32I (ELF32)  : {}/{} testes aprovados (100% conformidade nas portas ternárias)",
+        " * Official RISC-V RV32I Suite (ELF32) : {}/{} tests passed (100% compliance across ternary gates)",
         passed_count,
         dbt_summary.tests.len()
     );
     println!(
-        " * Compressão Dinâmica de Instruções   : {} (RV32I) -> {} (Setun 21-trit) | Variação = {:+.2}%",
+        " * Dynamic Instruction Compression    : {} (RV32I) -> {} (Setun 21-trit) | Variation = {:+.2}%",
         dbt_summary.total_rv32i_instrs,
         dbt_summary.total_setun_instrs,
         dbt_summary.instruction_diff_pct()
     );
     println!(
-        " * Fusões Peephole REBEL-6/Setun       : {} fusões de imediato (LI.T/AIPC.T) + {} fusões tricótomas (BCEG) + {} inversões Setun (STI.T)",
+        " * REBEL-6/Setun Peephole Fusions     : {} immediate fusions (LI.T/AIPC.T) + {} trichotomous fusions (BCEG) + {} Setun inversions (STI.T)",
         dbt_summary.total_immediate_fusions, dbt_summary.total_branch_fusions, dbt_summary.total_neg_fusions
     );
     println!(
-        " * Telemetria Física de Chaveamento    : {} Trit Flips vs {} Bit Flips (Redução = {:.2}% | Carry Gates = {})",
+        " * Physical Switching Telemetry       : {} Trit Flips vs {} Bit Flips (Reduction = {:.2}% | Carry Gates = {})",
         dbt_summary.total_telemetry.ternary_trit_flips,
         dbt_summary.total_telemetry.binary32_bit_flips,
         dbt_summary.total_telemetry.digit_flip_reduction_pct(),
@@ -263,38 +266,38 @@ fn main() {
 
     let doom_elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");
     let mut doom_engine = setun_doom::dbt::SetunDbtEngine::from_elf_bytes(doom_elf_bytes)
-        .expect("Falha ao inicializar motor DBT para o benchmark Doom RV32IM");
+        .expect("Failed to initialize DBT engine for Doom RV32IM benchmark");
     let doom_report = doom_engine
         .run(5_000_000)
-        .expect("Falha ao executar benchmark Doom RV32IM no SetunDbtEngine");
+        .expect("Failed to execute Doom RV32IM benchmark in SetunDbtEngine");
     println!("--------------------------------------------------------------------------------------------------------------");
-    println!(" * Benchmark Doom RV32IM (ELF32)       : Status = APROVADO | a0 = 0 (Código de Saída Limpo)");
+    println!(" * Doom RV32IM Benchmark (ELF32)      : Status = PASSED | a0 = 0 (Clean Exit Code)");
     println!(
-        " * Instruções Executadas               : {} RV32IM -> {} Setun 21-trit (Fusões: {} Li.T/Aipc.T, {} Bceg)",
+        " * Instructions Executed              : {} RV32IM -> {} Setun 21-trit (Fusions: {} Li.T/Aipc.T, {} Bceg)",
         doom_report.rv32i_instructions_executed,
         doom_report.setun_instructions_executed,
         doom_report.immediate_fusions_executed,
         doom_report.branch_fusions_executed
     );
     println!(
-        " * Chaveamento Físico Doom             : {} Trit Flips vs {} Bit Flips (Redução = {:.2}%)",
+        " * Physical Switching Doom            : {} Trit Flips vs {} Bit Flips (Reduction = {:.2}%)",
         doom_report.telemetry.ternary_trit_flips,
         doom_report.telemetry.binary32_bit_flips,
         doom_report.telemetry.digit_flip_reduction_pct()
     );
     println!(
-        " * Saída Console Bare-Metal (Syscall)  : {}",
+        " * Bare-Metal Console Output (Syscall): {}",
         String::from_utf8_lossy(&doom_report.stdout_buffer).trim().replace('\n', " | ")
     );
     println!("==============================================================================================================");
 
-    // Se o argumento --no-gui não for fornecido e DISPLAY estiver configurado, abre a interface gráfica interativa
+    // If --no-gui argument is not provided and DISPLAY is set, open interactive graphical interface
     let enable_gui = !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
     if enable_gui {
-        println!("\n[GUI] Inicializando janela gráfica da banca de testes (SDL2 640x400)...");
-        println!("[GUI] Controles interativos: W/S (câmera frontal/traseira) | A/D (lateral) | Espaço (reset) | ESC/Q (sair)");
+        println!("\n[GUI] Initializing testbench graphical window (SDL2 640x400)...");
+        println!("[GUI] Interactive controls: W/S (camera forward/backward) | A/D (lateral) | Space (reset) | ESC/Q (quit)");
 
-        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench — 21-Trit BSP & ALU Visualizer") {
+        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench - 21-Trit BSP & ALU Visualizer") {
             let mut last_cam_x = gui.cam_x;
             let mut last_cam_y = gui.cam_y;
 
@@ -303,7 +306,7 @@ fn main() {
                     last_cam_x = gui.cam_x;
                     last_cam_y = gui.cam_y;
 
-                    let mut machine = global_machine().lock().expect("Falha ao bloquear maquina");
+                    let mut machine = global_machine().lock().expect("Failed to lock global machine");
                     let front_sub = Subsector {
                         id: 0,
                         segs: vec![
@@ -363,7 +366,7 @@ fn main() {
                 gui.present_frame(&rgba);
                 gui.delay(16); // ~60 FPS
             }
-            println!("[GUI] Janela gráfica encerrada.");
+            println!("[GUI] Graphical window closed.");
         }
     }
 }

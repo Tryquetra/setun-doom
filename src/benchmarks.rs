@@ -1,19 +1,19 @@
-//! # Suíte de Benchmarks Científicos e de Motor Gráfico (`Setun-Doom` vs. `RV32I` Binário)
+//! # Scientific and Graphics Engine Benchmark Suite (`Setun-Doom` vs. Binary `RV32I`)
 //!
-//! Implementa os experimentos comparativos entre a arquitetura ternária balanceada (`Setun-Doom` /
-//! `REBEL-6`) e a referência binária de 32 bits em complemento de dois (`RV32I`):
+//! Implements comparative experiments between the balanced ternary architecture (`Setun-Doom` /
+//! `REBEL-6`) and the binary 32-bit two's complement reference (`RV32I`):
 //!
-//! 1. **Tabela Comparativa de Carga de Trabalho (Estilo Tabela IV do Artigo REBEL-6)**:
-//!    - **Busca de 3 Vias com `BCEG`** (*Three-Way Search* em array ordenado na memória ternária).
-//!    - **Particionamento Quicksort de 3 Vias** (*Dutch National Flag* de Dijkstra usando `CMP.T` e `BCEG`).
-//!    - **Oscilação de Sinal & Travessia de Plano BSP** (produto vetorial cruzando o zero repetidamente).
-//!    - **Interpolador de Colunas `R_DrawColumn`** (acumulação de coordenadas de textura no Framebuffer VGA).
-//!    - **Micro-Dhrystone Ternário** (carga intensiva de milhões de ciclos para medir MIPS reais no host).
-//! 2. **Análise de Precisão Numérica (Drift / RMSE)**:
-//!    - Compara o erro acumulado do ponto fixo ternário `11.10` ([`TernaryFixed`], arredondamento simétrico)
-//!      contra o `fixed_t` binário `16.16` do Doom (truncamento assimétrico para $-\infty$) frente a `f64`.
-//! 3. **Throughput de Renderização 3D (BSP + Occlusion Clipper + RGBA)**:
-//!    - Mede quadros por segundo (FPS) equivalentes e milhões de pixels/segundo no pipeline completo.
+//! 1. **Workload Comparison Table (IEEE ISMVL 2025 Table IV Style)**:
+//!    - **3-Way Search with `BCEG`** (*Three-Way Search* on sorted array in ternary memory).
+//!    - **Dijkstra 3-Way Quicksort Partitioning** (*Dutch National Flag* using `CMP.T` and `BCEG`).
+//!    - **Sign Oscillation & BSP Plane Traversal** (cross product crossing zero repeatedly).
+//!    - **Column Interpolator `R_DrawColumn`** (texture coordinate accumulation into VGA Framebuffer).
+//!    - **Ternary Micro-Dhrystone** (intensive workload of millions of cycles to measure real host MIPS).
+//! 2. **Numerical Precision Analysis (Drift / RMSE)**:
+//!    - Compares accumulated error of ternary `11.10` fixed-point ([`TernaryFixed`], symmetric rounding)
+//!      against Doom's binary `16.16` `fixed_t` (asymmetric truncation toward $-\infty$) relative to `f64`.
+//! 3. **3D Rendering Throughput (BSP + Occlusion Clipper + RGBA)**:
+//!    - Measures equivalent frames per second (FPS) and millions of pixels/second through the full pipeline.
 
 use crate::assembler::SetunAssembler;
 use crate::bsp::{BspChild, BspNode, BspTree, Subsector, WallSeg};
@@ -24,24 +24,24 @@ use crate::render::TernaryRenderer;
 use crate::word::{Tryte6, Word21};
 use std::time::Instant;
 
-/// Resultado consolidado de um benchmark individual de ISA (Estilo Tabela IV do IEEE ISMVL 2025).
+/// Consolidated result of an individual ISA benchmark (IEEE ISMVL 2025 Table IV Style).
 #[derive(Clone, Debug)]
 pub struct IsaBenchmarkResult {
-    /// Nome do benchmark.
+    /// Benchmark name.
     pub name: &'static str,
-    /// Instruções executadas na nossa ISA ternária (`Setun-Doom`).
+    /// Instructions executed on ternary ISA (`Setun-Doom`).
     pub ternary_instructions: u64,
-    /// Instruções equivalentes exigidas em `RV32I` binário (onde cada `BCEG` exige `blt + beq`
-    /// e constantes de 21 trits exigem `lui + addi`).
+    /// Equivalent instructions required in binary `RV32I` (where each `BCEG` requires `blt + beq`
+    /// and 21-trit constants require `lui + addi`).
     pub binary_rv32i_instructions: u64,
-    /// Telemetria de chaveamento de estados (*Trit Flips*, *Half-Swings*, *Full-Swings* e *Bit Flips*).
+    /// State transition telemetry (*Trit Flips*, *Half-Swings*, *Full-Swings*, and *Bit Flips*).
     pub telemetry: PowerTelemetry,
-    /// Tempo de parede gasto na simulação em microssegundos.
+    /// Wall-clock time spent in simulation in microseconds.
     pub elapsed_us: u128,
 }
 
 impl IsaBenchmarkResult {
-    /// Diferença percentual de instruções executadas (`< 0.0` indica menos instruções no ternário).
+    /// Percentage difference of executed instructions (`< 0.0` indicates fewer instructions in ternary).
     pub fn instruction_diff_pct(&self) -> f64 {
         if self.binary_rv32i_instructions == 0 {
             return 0.0;
@@ -51,17 +51,17 @@ impl IsaBenchmarkResult {
         ((t - b) / b) * 100.0
     }
 
-    /// Diferença percentual de *Digit Flips* (`< 0.0` indica menos chaveamento no ternário).
+    /// Percentage difference of *Digit Flips* (`< 0.0` indicates fewer transitions in ternary).
     pub fn digit_flip_diff_pct(&self) -> f64 {
         -self.telemetry.digit_flip_reduction_pct()
     }
 
-    /// Diferença percentual de energia capacitiva ponderada ($\Delta V^2$, onde *Half-Swing* = 0.25x).
+    /// Percentage difference of weighted capacitive energy ($\Delta V^2$, where *Half-Swing* = 0.25x).
     pub fn weighted_energy_diff_pct(&self) -> f64 {
         -self.telemetry.weighted_energy_reduction_pct()
     }
 
-    /// Milhões de instruções ternárias executadas por segundo (MIPS) no simulador Rust.
+    /// Millions of ternary instructions executed per second (MIPS) on host Rust simulator.
     pub fn mips(&self) -> f64 {
         if self.elapsed_us == 0 {
             return 0.0;
@@ -70,7 +70,7 @@ impl IsaBenchmarkResult {
     }
 }
 
-/// Resultado do experimento de precisão numérica (`TernaryFixed 11.10` vs. `Doom Binary 16.16`).
+/// Numerical precision experiment result (`TernaryFixed 11.10` vs. `Doom Binary 16.16`).
 #[derive(Copy, Clone, Debug)]
 pub struct FixedPrecisionReport {
     pub iterations: usize,
@@ -80,7 +80,7 @@ pub struct FixedPrecisionReport {
     pub binary16_sign_asymmetry_bias: f64,
 }
 
-/// Resultado de performance de renderização 3D + tradução RGBA.
+/// 3D rendering throughput and RGBA conversion performance result.
 #[derive(Copy, Clone, Debug)]
 pub struct RenderThroughputReport {
     pub frames: usize,
@@ -89,17 +89,17 @@ pub struct RenderThroughputReport {
     pub megapixels_per_sec: f64,
 }
 
-/// Relatório global da suíte de benchmarks Setun-Doom.
+/// Global report for the Setun-Doom benchmark suite.
 pub struct FullBenchmarkSuiteReport {
     pub isa_benchmarks: Vec<IsaBenchmarkResult>,
     pub fixed_precision: FixedPrecisionReport,
     pub render_throughput: RenderThroughputReport,
 }
 
-/// Executor de referência `RV32I` real com banco de 32 registradores (`x0..x31` em complemento de dois).
-/// Elimina estimativas estáticas (`cpu.cycles + N`): cada benchmark executa o algoritmo equivalente
-/// diretamente nos 32 registradores do `RV32I` (sem penalidade de acumulador `MOV_IX_ACC`),
-/// contabilizando instruções reais e *Bit Flips* exatos em `x0..x31`.
+/// Real `RV32I` reference executor with 32-register file (`x0..x31` in two's complement).
+/// Eliminates static estimates (`cpu.cycles + N`): each benchmark executes the equivalent algorithm
+/// directly across the 32 `RV32I` registers (without accumulator penalty `MOV_IX_ACC`),
+/// tracking actual instructions and exact *Bit Flips* across `x0..x31`.
 #[derive(Clone, Debug, Default)]
 pub struct Rv32iReferenceCpu {
     pub regs: [i32; 32],
@@ -112,7 +112,7 @@ impl Rv32iReferenceCpu {
         Self::default()
     }
 
-    /// Escreve em `regs[rd]` (com `x0` fixo em 0) e soma a distância de Hamming `(prev ^ next).count_ones()`.
+    /// Writes to `regs[rd]` (with `x0` tied to 0) and adds Hamming distance `(prev ^ next).count_ones()`.
     #[inline(always)]
     pub fn write_reg(&mut self, rd: usize, val: i32) {
         self.instructions += 1;
@@ -126,18 +126,18 @@ impl Rv32iReferenceCpu {
         }
     }
 
-    /// Contabiliza uma instrução que não altera registradores (ex: `beq`, `blt`, `bge`, `j`, `sw`).
+    /// Records an instruction that does not modify registers (e.g., `beq`, `blt`, `bge`, `j`, `sw`).
     #[inline(always)]
     pub fn step_branch_or_store(&mut self) {
         self.instructions += 1;
     }
 }
 
-/// Executor da bateria de benchmarks científicos e de motor gráfico.
+/// Test runner for scientific and graphics engine benchmarks.
 pub struct BenchmarkRunner;
 
 impl BenchmarkRunner {
-    /// Executa todos os benchmarks e retorna o relatório consolidado.
+    /// Executes all benchmarks and returns the consolidated report.
     pub fn run_all() -> FullBenchmarkSuiteReport {
         let mut isa_benchmarks = Vec::new();
         isa_benchmarks.push(Self::bench_three_way_search_bceg());
@@ -156,8 +156,8 @@ impl BenchmarkRunner {
         }
     }
 
-    /// 1. Benchmark de Busca Ordenada de 3 Vias usando `BCEG` (`Three-Way Search`).
-    /// Compara a execução real na CPU `Setun-Doom` contra a execução real no banco de 32 registradores `RV32I`.
+    /// 1. 3-Way Sorted Search Benchmark using `BCEG` (`Three-Way Search`).
+    /// Compares actual execution on `Setun-Doom` CPU against actual execution on 32-register `RV32I`.
     fn bench_three_way_search_bceg() -> IsaBenchmarkResult {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
@@ -168,10 +168,10 @@ impl BenchmarkRunner {
         }
 
         let asm = r#"
-            LOAD_IX_IMM IX0, 0          ; índice atual no vetor (0..255)
-            LOAD_IX_IMM IX1, 700        ; chave alvo (+700 -> índice 198)
+            LOAD_IX_IMM IX0, 0          ; current index in array (0..255)
+            LOAD_IX_IMM IX1, 700        ; target key (+700 -> index 198)
             LOAD_IMM 0
-            STORE 900                   ; contador de passos
+            STORE 900                   ; step counter
         .search_loop:
             LOAD_INDEX IX0, 1000        ; ACC = array[IX0]
             BCEG IX1, .found, .overshot
@@ -182,7 +182,7 @@ impl BenchmarkRunner {
             JMP .search_loop
         .found:
             MOV_IX_ACC IX0
-            STORE 901                   ; salva índice encontrado (198)
+            STORE 901                   ; store found index (198)
             HALT
         "#;
 
@@ -196,7 +196,7 @@ impl BenchmarkRunner {
         assert!(cpu.halted && cpu.trap.is_none());
         assert_eq!(mem.read_word_fast(901).as_i64(), 198);
 
-        // Executa o mesmo algoritmo no processador RV32I de 32 registradores:
+        // Executes the same algorithm on the 32-register RV32I processor:
         // x1 = idx (0), x2 = target (700), x3 = array[idx]
         let mut rv = Rv32iReferenceCpu::new();
         rv.write_reg(1, 0); // li x1, 0
@@ -227,7 +227,7 @@ impl BenchmarkRunner {
         tel.binary32_bit_flips = rv.bit_flips;
 
         IsaBenchmarkResult {
-            name: "1. Busca 3-Vias (BCEG Search)",
+            name: "1. 3-Way Search (BCEG Search)",
             ternary_instructions: cpu.cycles,
             binary_rv32i_instructions: rv.instructions,
             telemetry: tel,
@@ -235,8 +235,8 @@ impl BenchmarkRunner {
         }
     }
 
-    /// 2. Benchmark de Particionamento de 3 Vias de Dijkstra (*Dutch National Flag* / Quicksort Ternário).
-    /// Compara acumulador ternário + `BCEG` contra `RV32I` de 32 registradores (onde `RV32I` não paga `MOV_IX_ACC`).
+    /// 2. Dijkstra 3-Way Partitioning Benchmark (*Dutch National Flag* / Ternary Quicksort).
+    /// Compares ternary accumulator + `BCEG` against 32-register `RV32I` (where `RV32I` does not pay `MOV_IX_ACC`).
     fn bench_dutch_flag_3way_partition() -> IsaBenchmarkResult {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
@@ -251,13 +251,13 @@ impl BenchmarkRunner {
         }
 
         let asm = r#"
-            LOAD_IX_IMM IX0, 299        ; cursor de varredura (299..0)
-            LOAD_IX_IMM IX1, 0          ; pivô = 0
-            LOAD_IX_IMM IX2, 0          ; contagem < 0
-            LOAD_IX_IMM IX3, 0          ; contagem == 0
-            LOAD_IX_IMM IX4, 0          ; contagem > 0
+            LOAD_IX_IMM IX0, 299        ; sweep cursor (299..0)
+            LOAD_IX_IMM IX1, 0          ; pivot = 0
+            LOAD_IX_IMM IX2, 0          ; count < 0
+            LOAD_IX_IMM IX3, 0          ; count == 0
+            LOAD_IX_IMM IX4, 0          ; count > 0
         .part_loop:
-            LOAD_INDEX IX0, 2000        ; ACC = vetor[IX0]
+            LOAD_INDEX IX0, 2000        ; ACC = array[IX0]
             BCEG IX1, .is_zero, .is_pos
             ADD_IX_IMM IX2, 1
             JMP .next_elem
@@ -267,7 +267,7 @@ impl BenchmarkRunner {
         .is_pos:
             ADD_IX_IMM IX4, 1
         .next_elem:
-            BIX IX0, .part_loop         ; IX0 -= 1; se IX0 >= 0 salta sem destruir ACC!
+            BIX IX0, .part_loop         ; IX0 -= 1; if IX0 >= 0 branch without destroying ACC
             HALT
         "#;
 
@@ -283,8 +283,8 @@ impl BenchmarkRunner {
         assert_eq!(cpu.index_regs[3].as_i64(), 100);
         assert_eq!(cpu.index_regs[4].as_i64(), 100);
 
-        // Execução real em RV32I com 32 registradores (x1=i, x2=neg, x3=zero, x4=pos, x5=elem):
-        // Note que em RV32I o fim do loop usa `addi x1, x1, -1; bge x1, x0, .part_loop` sem precisar de MOV_IX_ACC!
+        // Actual execution on RV32I with 32 registers (x1=i, x2=neg, x3=zero, x4=pos, x5=elem):
+        // Note that on RV32I the loop end uses `addi x1, x1, -1; bge x1, x0, .part_loop` without needing MOV_IX_ACC.
         let mut rv = Rv32iReferenceCpu::new();
         rv.write_reg(1, 299); // li x1, 299
         rv.write_reg(2, 0); // li x2, 0
@@ -334,15 +334,15 @@ impl BenchmarkRunner {
         }
     }
 
-    /// 3. Benchmark de Travessia de Plano BSP Real (`ROM_POINT_ON_SIDE` do Doom).
-    /// Executa a sub-rotina de firmware `ROM_POINT_ON_SIDE_ENTRY` (`R_PointOnSide` completo com
-    /// `SUB`, `SHIFT -10`, `MUL`, `CMP_T`, `JMP_N`) para 200 pontos oscilando entre frente e trás
-    /// de um plano divisor BSP, comparado contra `R_PointOnSide` em `RV32I` (`16.16` binário).
+    /// 3. Real BSP Plane Traversal Benchmark (Doom's `ROM_POINT_ON_SIDE`).
+    /// Executes the firmware subroutine `ROM_POINT_ON_SIDE_ENTRY` (full `R_PointOnSide` with
+    /// `SUB`, `SHIFT -10`, `MUL`, `CMP_T`, `JMP_N`) for 200 points oscillating between front and back
+    /// of a BSP partition line, compared against `R_PointOnSide` in `RV32I` (`16.16` binary).
     fn bench_bsp_zero_crossing_determinant() -> IsaBenchmarkResult {
         let mut machine = crate::mmo::SetunDoomMachine::new();
         let mut rv = Rv32iReferenceCpu::new();
 
-        // Plano divisor diagonal: lx = 100.0, ly = -50.0, ldx = 24.0, ldy = -18.0
+        // Diagonal partition line: lx = 100.0, ly = -50.0, ldx = 24.0, ldy = -18.0
         let lx16 = 100 * 65536;
         let ly16 = -50 * 65536;
         let ldx16 = 24 * 65536;
@@ -358,7 +358,7 @@ impl BenchmarkRunner {
         machine.memory.write_word_fast(64, tldx);
         machine.memory.write_word_fast(65, tldy);
 
-        // Inicializa registradores constantes no RV32I: x10=lx, x11=ly, x12=ldx, x13=ldy
+        // Initialize constant registers in RV32I: x10=lx, x11=ly, x12=ldx, x13=ldy
         rv.write_reg(10, lx16);
         rv.write_reg(11, ly16);
         rv.write_reg(12, ldx16);
@@ -366,12 +366,12 @@ impl BenchmarkRunner {
 
         let t0 = Instant::now();
         for i in 0..200i32 {
-            // Oscila o ponto (x, y) cruzando o plano divisor a cada iteração
+            // Oscillate point (x, y) across the partition line on every iteration
             let sign = if i % 2 == 0 { 1 } else { -1 };
             let x16 = (100 + sign * ((i % 37) + 1)) * 65536 + (sign * 16384);
             let y16 = (-50 - sign * ((i % 29) + 1)) * 65536 - (sign * 8192);
 
-            // 1. Executa ROM_POINT_ON_SIDE_ENTRY na CPU Setun-Doom
+            // 1. Execute ROM_POINT_ON_SIDE_ENTRY on Setun-Doom CPU
             machine
                 .memory
                 .write_word_fast(60, TernaryFixed::from_doom_fixed16(x16).raw_word());
@@ -381,8 +381,8 @@ impl BenchmarkRunner {
             machine.execute_rom_routine(crate::mmo::ROM_POINT_ON_SIDE_ENTRY, 32);
             let side_ternary = machine.memory.read_word_fast(69).as_i64() as i32;
 
-            // 2. Executa a sequência exata de instruções emitida por `clang --target=riscv32 -march=rv32im -O2`
-            // para `R_PointOnSide` com `FixedMul` inline (`mul + mulh + slli 16 + srli 16 + or`):
+            // 2. Execute exact instruction sequence emitted by `clang --target=riscv32 -march=rv32im -O2`
+            // for `R_PointOnSide` with inline `FixedMul` (`mul + mulh + slli 16 + srli 16 + or`):
             rv.write_reg(10, x16); // a0 = x
             rv.write_reg(11, y16); // a1 = y
             rv.write_reg(18, ldx16); // lw s2, 8(a2) (node->dx)
@@ -396,7 +396,7 @@ impl BenchmarkRunner {
             rv.write_reg(12, dx); // sub a2, a0, a4
             rv.write_reg(8, dy); // sub s0, a1, a5
 
-            // FixedMul(node->dy >> 16, dx) em RV32IM:
+            // FixedMul(node->dy >> 16, dx) in RV32IM:
             let ldy_s = ldy16 >> 16;
             rv.write_reg(10, ldy_s); // srai a0, a3, 16
             let prod_left = (ldy_s as i64).wrapping_mul(dx as i64);
@@ -409,7 +409,7 @@ impl BenchmarkRunner {
             let left = (left_hi << 16) | (((left_lo as u32) >> 16) as i32);
             rv.write_reg(9, left); // or s1, a6, a7
 
-            // FixedMul(dy, node->dx >> 16) em RV32IM:
+            // FixedMul(dy, node->dx >> 16) in RV32IM:
             let ldx_s = ldx16 >> 16;
             rv.write_reg(11, ldx_s); // srai a1, s2, 16
             let prod_right = (dy as i64).wrapping_mul(ldx_s as i64);
@@ -428,7 +428,7 @@ impl BenchmarkRunner {
             rv.write_reg(10, side_rv32); // xori a0, a0, 1
             rv.step_branch_or_store(); // ret
 
-            // Garante que o resultado geométrico ternário e binário concordam exatamente!
+            // Ensure ternary and binary geometric results match exactly
             assert_eq!(side_ternary, side_rv32);
         }
         let elapsed_us = t0.elapsed().as_micros().max(1);
@@ -445,8 +445,8 @@ impl BenchmarkRunner {
         }
     }
 
-    /// 4. Benchmark do Loop Interno `R_DrawColumn` no Framebuffer VGA (`320x200`).
-    /// Compara `TernaryFixed` (`11.10`, escala $3^{10}$) contra `RV32I` (`16.16`, escala $2^{16}$).
+    /// 4. Benchmark of Inner Loop `R_DrawColumn` in VGA Framebuffer (`320x200`).
+    /// Compares `TernaryFixed` (`11.10`, scale $3^{10}$) against `RV32I` (`16.16`, scale $2^{16}$).
     fn bench_r_draw_column_kernel() -> IsaBenchmarkResult {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
@@ -455,13 +455,13 @@ impl BenchmarkRunner {
         mem.write_word_fast(600, step.raw_word());
 
         let asm = r#"
-            LOAD_IX_IMM IX0, 999        ; desenha 1000 texels verticais no Framebuffer VGA
-            LOAD_IX_IMM IX2, 0          ; IX2 = frac (mantido em registrador como no RV32I!)
+            LOAD_IX_IMM IX0, 999        ; render 1000 vertical texels in VGA Framebuffer
+            LOAD_IX_IMM IX2, 0          ; IX2 = frac (held in register as in RV32I)
         .col_loop:
-            ADD_IX IX2, 600             ; IX2 += fracstep (11.10 trits no registrador IX2)
-            SHF_IX_ACC IX2, -10         ; ACC = IX2 >> 10 trits (sem destruir IX2!)
-            STORE_INDEX IX0, 4600000    ; grava Tryte6 no Framebuffer VGA
-            BIX IX0, .col_loop          ; IX0 -= 1; se IX0 >= 0 salta sem poluir ACC!
+            ADD_IX IX2, 600             ; IX2 += fracstep (11.10 trits in register IX2)
+            SHF_IX_ACC IX2, -10         ; ACC = IX2 >> 10 trits (without destroying IX2)
+            STORE_INDEX IX0, 4600000    ; write Tryte6 to VGA Framebuffer
+            BIX IX0, .col_loop          ; IX0 -= 1; if IX0 >= 0 branch without polluting ACC
             HALT
         "#;
 
@@ -473,8 +473,8 @@ impl BenchmarkRunner {
         let elapsed_us = t0.elapsed().as_micros().max(1);
         assert!(cpu.halted && cpu.trap.is_none());
 
-        // Execução real em RV32I com 32 registradores usando fracstep 16.16 nativo (`0.85 * 65536 = 55706`):
-        // Observe que em RV32I `frac` permanece no registrador `x3` sem precisar de LOAD/STORE a cada iteração!
+        // Actual execution on RV32I with 32 registers using native 16.16 fracstep (`0.85 * 65536 = 55706`):
+        // Note that on RV32I `frac` remains in register `x3` without needing LOAD/STORE each iteration.
         let mut rv = Rv32iReferenceCpu::new();
         let step16 = (0.85f64 * 65536.0).round() as i32;
         rv.write_reg(1, 999); // li x1, 999
@@ -506,7 +506,7 @@ impl BenchmarkRunner {
         }
     }
 
-    /// 5. Stress Test de Alta Cadência (~2,4 Milhões de Instruções, mesma escala do Dhrystone do paper).
+    /// 5. High-Cadence Stress Test (~2.4 Million Instructions, same scale as paper's Dhrystone).
     fn bench_dhrystone_stress_2m_cycles() -> IsaBenchmarkResult {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
@@ -534,7 +534,7 @@ impl BenchmarkRunner {
         let elapsed_us = t0.elapsed().as_micros().max(1);
         assert!(cpu.halted && cpu.trap.is_none());
 
-        // Execução real em RV32I de 32 registradores (300.000 iterações):
+        // Actual execution on 32-register RV32I (300,000 iterations):
         let mut rv = Rv32iReferenceCpu::new();
         rv.write_reg(1, 299_999); // li x1, 299999
         rv.write_reg(2, 3); // li x2, 3
@@ -546,7 +546,7 @@ impl BenchmarkRunner {
             let s2 = (-s1).wrapping_sub(rv.regs[3]);
             rv.write_reg(4, -s1); // neg x4, x4
             rv.write_reg(4, s2); // sub x4, x4, x3
-            // CMP.T (x4 <=> x2) em RV32I: slt + slt + sub
+            // CMP.T (x4 <=> x2) in RV32I: slt + slt + sub
             let gt = if s2 > rv.regs[2] { 1 } else { 0 };
             let lt = if s2 < rv.regs[2] { 1 } else { 0 };
             rv.write_reg(5, gt);
@@ -562,7 +562,7 @@ impl BenchmarkRunner {
         tel.binary32_bit_flips = rv.bit_flips;
 
         IsaBenchmarkResult {
-            name: "5. Stress 2.4M (Escala Dhrystone)",
+            name: "5. Stress 2.4M (Dhrystone Scale)",
             ternary_instructions: cpu.cycles,
             binary_rv32i_instructions: rv.instructions,
             telemetry: tel,
@@ -570,8 +570,8 @@ impl BenchmarkRunner {
         }
     }
 
-    /// Compara a precisão e a simetria de arredondamento de `TernaryFixed` (`11.10`) contra
-    /// `fixed_t` binário (`16.16` do Doom).
+    /// Compares numerical precision and rounding symmetry of `TernaryFixed` (`11.10`) against
+    /// binary `fixed_t` (`16.16` from Doom).
     pub fn bench_fixed_point_precision() -> FixedPrecisionReport {
         let iterations = 1_000;
         let mut sum_sq_err_ternary = 0.0f64;
@@ -582,7 +582,7 @@ impl BenchmarkRunner {
         for i in 1..=iterations {
             let val_f64 = (i as f64) * 0.13729 - 68.5;
 
-            // Ponto fixo ternário 11.10: truncamento balanceado de 10 trits (arredonda para o inteiro mais próximo)
+            // Ternary fixed-point 11.10: balanced truncation of 10 trits (rounds to nearest integer)
             let tf_pos = TernaryFixed::from_f64(val_f64);
             let tf_neg = TernaryFixed::from_f64(-val_f64);
             let t_int_pos = tf_pos.to_int_balanced();
@@ -592,14 +592,14 @@ impl BenchmarkRunner {
             sum_sq_err_ternary += ((t_int_pos as f64) - nearest_int).powi(2);
             ternary_sym_err += (t_int_pos + t_int_neg).abs() as f64;
 
-            // Ponto fixo binário 16.16 do Doom: shift aritmético `>> 16` trunca sempre para -infinito!
+            // Doom binary fixed-point 16.16: arithmetic shift `>> 16` always truncates toward -infinity
             let bf_pos = (val_f64 * (DOOM_BINARY_FRACUNIT as f64)).round() as i32;
             let bf_neg = (-val_f64 * (DOOM_BINARY_FRACUNIT as f64)).round() as i32;
             let b_int_pos = bf_pos >> 16;
             let b_int_neg = bf_neg >> 16;
 
             sum_sq_err_binary += ((b_int_pos as f64) - nearest_int).powi(2);
-            // Em complemento de dois, `(x >> 16) + ((-x) >> 16)` dá -1 para quase todo x fracionário!
+            // In two's complement, `(x >> 16) + ((-x) >> 16)` produces -1 for nearly all fractional x
             binary_asym_bias += (b_int_pos + b_int_neg).abs() as f64;
         }
 
@@ -612,9 +612,9 @@ impl BenchmarkRunner {
         }
     }
 
-    /// Mede a taxa de quadros por segundo (FPS) do pipeline 3D completo:
-    /// Travessia BSP Tricótoma + Clipper de Oclusão em 16 palavras `Word21` +
-    /// `R_DrawColumn` (`320x200`) + Tradução `Tryte6 -> RGBA32` (`DG_DrawFrame`).
+    /// Measures frames per second (FPS) across the full 3D pipeline:
+    /// Trichotomous BSP Traversal + Occlusion Clipper across 16 `Word21` words +
+    /// `R_DrawColumn` (`320x200`) + Translation `Tryte6 -> RGBA32` (`DG_DrawFrame`).
     pub fn bench_bsp_and_vga_throughput(frames: usize) -> RenderThroughputReport {
         let mut mem = Memory::new();
         let mut rgba = vec![0u8; FB_SIZE * 4];
@@ -698,7 +698,7 @@ mod tests {
         assert!(b3.digit_flip_diff_pct() < -30.0);
 
         let prec = BenchmarkRunner::bench_fixed_point_precision();
-        // Simetria de sinal no ternário deve ser zero absoluto (0.0), enquanto no binário >> 16 há viés (~1.0)
+        // Sign symmetry in ternary must be absolute zero (0.0), whereas in binary >> 16 there is bias (~1.0)
         assert_eq!(prec.ternary_sign_symmetry_error, 0.0);
         assert!(prec.binary16_sign_asymmetry_bias > 0.9);
     }

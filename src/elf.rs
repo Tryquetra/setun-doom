@@ -1,72 +1,72 @@
 // Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
 // SPDX-License-Identifier: MIT
 
-//! Carregador de Executáveis Binários `ELF32` (`RV32I`) e Mapeamento na Memória Linear Ternária.
+//! `ELF32` (`RV32I`) Binary Executable Loader and Mapping onto Ternary Linear Memory.
 //!
-//! Este módulo implementa o parser de arquivos `ELF` de 32 bits Little-Endian para a
-//! arquitetura RISC-V (`EM_RISCV = 243`) e projeta os segmentos de código (`.text`),
-//! constantes (`.rodata`), dados inicializados (`.data`) e dados zerados (`.bss`)
-//! diretamente sobre o espaço de memória de $3^{14} = 4.782.969$ palavras da máquina Setun.
+//! This module implements a Little-Endian 32-bit `ELF` parser for the RISC-V architecture
+//! (`EM_RISCV = 243`) and maps code segments (`.text`), constants (`.rodata`), initialized
+//! data (`.data`), and zeroed data (`.bss`) directly onto the $3^{14} = 4,782,969$ word memory
+//! space of the Setun machine.
 //!
-//! Cada byte da imagem binária do programa é transcodificado para um [`Tryte6`] ternário
-//! balanceado (`[-128, +127]` dentro de `[-364, +364]`) e armazenado em uma célula [`Word21`]
-//! na memória da Setun, preservando alinhamentos de 1, 2 e 4 bytes para instruções
-//! `lb`, `lbu`, `lh`, `lhu`, `lw`, `sb`, `sh` e `sw`.
+//! Each byte of the program binary image is transcoded into a balanced ternary [`Tryte6`]
+//! (`[-128, +127]` inside `[-364, +364]`) and stored within a [`Word21`] cell in Setun memory,
+//! preserving 1, 2, and 4-byte alignments for instructions `lb`, `lbu`, `lh`, `lhu`, `lw`, `sb`,
+//! `sh`, and `sw`.
 
 use std::collections::HashMap;
 
 use crate::memory::{Memory, MemoryError, MEMORY_SIZE};
 use crate::word::{Tryte6, Word21};
 
-/// Constante mágica `\x7FELF` no início do cabeçalho ELF.
+/// Magic constant `\x7FELF` at the start of the ELF header.
 pub const ELF_MAGIC: [u8; 4] = [0x7F, b'E', b'L', b'F'];
 
-/// Classe ELF de 32 bits (`ELFCLASS32`).
+/// 32-bit ELF class (`ELFCLASS32`).
 pub const ELFCLASS32: u8 = 1;
 
-/// Codificação Little-Endian (`ELFDATA2LSB`).
+/// Little-Endian encoding (`ELFDATA2LSB`).
 pub const ELFDATA2LSB: u8 = 1;
 
-/// Identificador de máquina RISC-V (`EM_RISCV`).
+/// RISC-V machine identifier (`EM_RISCV`).
 pub const EM_RISCV: u16 = 243;
 
-/// Tipo de segmento carregável (`PT_LOAD`).
+/// Loadable segment type (`PT_LOAD`).
 pub const PT_LOAD: u32 = 1;
 
-/// Flag de seção alocável em memória (`SHF_ALLOC`).
+/// Allocatable section flag in memory (`SHF_ALLOC`).
 pub const SHF_ALLOC: u32 = 0x2;
 
-/// Flag de seção executável (`SHF_EXECINSTR`).
+/// Executable section flag (`SHF_EXECINSTR`).
 pub const SHF_EXECINSTR: u32 = 0x4;
 
-/// Tipo de seção `SHT_NOBITS` (`.bss`).
+/// Section type `SHT_NOBITS` (`.bss`).
 pub const SHT_NOBITS: u32 = 8;
 
-/// Tipo de seção `SHT_SYMTAB` (tabela de símbolos).
+/// Section type `SHT_SYMTAB` (symbol table).
 pub const SHT_SYMTAB: u32 = 2;
 
-/// Endereço base padrão na memória Setun onde o espaço virtual ELF é mapeado.
+/// Default base address in Setun memory where the ELF virtual address space is mapped.
 pub const DEFAULT_ELF_MEMORY_BASE: usize = 100_000;
 
-/// Topo padrão da pilha (`sp = x2`) no espaço virtual RV32I (2 MB acima da base do programa).
+/// Default stack top (`sp = x2`) in RV32I virtual address space (2 MB above the program base).
 pub const DEFAULT_RV32I_STACK_TOP: u32 = 0x0020_0000;
 
-/// Erros de leitura, validação ou mapeamento de um binário `ELF32`.
+/// Errors during reading, validation, or mapping of an `ELF32` binary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ElfError {
-    /// Arquivo menor que o cabeçalho mínimo ELF32 (52 bytes).
+    /// File smaller than the minimum ELF32 header (52 bytes).
     TooShort(usize),
-    /// Assinatura mágica `\x7FELF` inválida.
+    /// Invalid magic signature `\x7FELF`.
     InvalidMagic([u8; 4]),
-    /// Classe ELF diferente de 32 bits (`ELFCLASS32`).
+    /// ELF class different from 32-bit (`ELFCLASS32`).
     UnsupportedClass(u8),
-    /// Endianness diferente de Little-Endian (`ELFDATA2LSB`).
+    /// Endianness different from Little-Endian (`ELFDATA2LSB`).
     UnsupportedEndianness(u8),
-    /// Arquitetura alvo diferente de RISC-V (`EM_RISCV = 243`).
+    /// Target architecture different from RISC-V (`EM_RISCV = 243`).
     UnsupportedMachine(u16),
-    /// Offset ou tamanho de tabela de segmentos/seções fora dos limites do buffer.
+    /// Segment or section header table offset or size out of buffer bounds.
     MalformedHeader(&'static str),
-    /// Erro ao mapear bytes na memória ternária da Setun.
+    /// Error mapping bytes into Setun ternary memory.
     MemoryMap(MemoryError),
 }
 
@@ -76,68 +76,68 @@ impl From<MemoryError> for ElfError {
     }
 }
 
-/// Segmento carregável (`PT_LOAD`) extraído do cabeçalho de programa ELF32.
+/// Loadable segment (`PT_LOAD`) extracted from the ELF32 program header.
 #[derive(Clone, Debug)]
 pub struct ElfSegment {
-    /// Endereço virtual inicial (`p_vaddr`).
+    /// Starting virtual address (`p_vaddr`).
     pub vaddr: u32,
-    /// Tamanho em memória (`p_memsz`).
+    /// Memory size (`p_memsz`).
     pub mem_size: u32,
-    /// Flags de permissão (`PF_X = 1`, `PF_W = 2`, `PF_R = 4`).
+    /// Permission flags (`PF_X = 1`, `PF_W = 2`, `PF_R = 4`).
     pub flags: u32,
-    /// Bytes carregados do arquivo (`p_filesz`).
+    /// Bytes loaded from file (`p_filesz`).
     pub data: Vec<u8>,
 }
 
-/// Seção nomeada extraída da tabela de seções ELF32.
+/// Named section extracted from the ELF32 section table.
 #[derive(Clone, Debug)]
 pub struct ElfSection {
-    /// Nome da seção (ex.: `.text`, `.data`, `.rodata`, `.bss`).
+    /// Section name (e.g., `.text`, `.data`, `.rodata`, `.bss`).
     pub name: String,
-    /// Tipo da seção (`sh_type`).
+    /// Section type (`sh_type`).
     pub sh_type: u32,
-    /// Flags da seção (`sh_flags`).
+    /// Section flags (`sh_flags`).
     pub sh_flags: u32,
-    /// Endereço virtual (`sh_addr`).
+    /// Virtual address (`sh_addr`).
     pub vaddr: u32,
-    /// Tamanho em bytes (`sh_size`).
+    /// Size in bytes (`sh_size`).
     pub size: u32,
-    /// Conteúdo bruto da seção (vazio para `SHT_NOBITS`).
+    /// Raw section data (empty for `SHT_NOBITS`).
     pub data: Vec<u8>,
 }
 
-/// Imagem `ELF32` decodificada pronta para carga na memória Setun.
+/// Decoded `ELF32` image ready for loading into Setun memory.
 #[derive(Clone, Debug)]
 pub struct Elf32Image {
-    /// Endereço virtual de entrada (`e_entry`).
+    /// Entry virtual address (`e_entry`).
     pub entry_point: u32,
-    /// Segmentos `PT_LOAD` do binário.
+    /// Binary `PT_LOAD` segments.
     pub segments: Vec<ElfSegment>,
-    /// Seções alocáveis (`SHF_ALLOC`).
+    /// Allocatable sections (`SHF_ALLOC`).
     pub sections: Vec<ElfSection>,
-    /// Mapa de símbolos (`nome -> endereço virtual`).
+    /// Symbol map (`name -> virtual address`).
     pub symbols: HashMap<String, u32>,
 }
 
-/// Resumo do layout de memória após carregar a imagem ELF32 na memória Setun.
+/// Summary of memory layout after loading an ELF32 image into Setun memory.
 #[derive(Clone, Debug)]
 pub struct LoadedElfLayout {
-    /// Endereço de entrada efetivo (`PC` inicial em espaço virtual RV32I).
+    /// Effective entry address (initial `PC` in RV32I virtual address space).
     pub entry_point: u32,
-    /// Deslocamento base na memória linear da Setun (`0..MEMORY_SIZE`).
+    /// Base offset in Setun linear memory (`0..MEMORY_SIZE`).
     pub setun_base_offset: usize,
-    /// Menor endereço virtual carregado.
+    /// Lowest loaded virtual address.
     pub min_vaddr: u32,
-    /// Maior endereço virtual carregado (exclusivo).
+    /// Highest loaded virtual address (exclusive).
     pub max_vaddr: u32,
-    /// Quantidade total de células `Tryte6` gravadas na memória da Setun.
+    /// Total number of `Tryte6` cells written into Setun memory.
     pub total_trytes_written: usize,
-    /// Faixas de código executável (`(vaddr_inicio, vaddr_fim)`).
+    /// Executable code ranges (`(start_vaddr, end_vaddr)`).
     pub executable_ranges: Vec<(u32, u32)>,
 }
 
 impl Elf32Image {
-    /// Decodifica um buffer de bytes contendo um executável `ELF32` Little-Endian RISC-V.
+    /// Decodes a byte buffer containing a RISC-V Little-Endian `ELF32` executable.
     pub fn parse(bytes: &[u8]) -> Result<Self, ElfError> {
         if bytes.len() < 52 {
             return Err(ElfError::TooShort(bytes.len()));
@@ -295,8 +295,8 @@ impl Elf32Image {
         })
     }
 
-    /// Carrega a imagem `ELF32` na memória linear da Setun a partir de `base_offset`,
-    /// convertendo cada byte em um [`Tryte6`] centrado dentro de uma [`Word21`].
+    /// Loads the `ELF32` image into Setun linear memory starting at `base_offset`,
+    /// converting each byte into a centered [`Tryte6`] inside a [`Word21`].
     pub fn load_into_setun_memory(
         &self,
         memory: &mut Memory,
@@ -307,8 +307,8 @@ impl Elf32Image {
         let mut total_trytes_written = 0usize;
         let mut executable_ranges = Vec::new();
 
-        // Quando as seções alocáveis (.text, .rodata, .data, .bss) estão presentes,
-        // carregamos diretamente cada seção para evitar sobreposição de cabeçalhos PHDR.
+        // When allocatable sections (.text, .rodata, .data, .bss) are present,
+        // load each section directly to avoid PHDR header overlap.
         if !self.sections.is_empty() {
             for sec in &self.sections {
                 let start = sec.vaddr;
@@ -386,7 +386,7 @@ impl Elf32Image {
     }
 }
 
-/// Lê 1 byte armazenado como [`Tryte6`] centrado na memória da Setun em `base_offset + vaddr`.
+/// Reads 1 byte stored as a centered [`Tryte6`] in Setun memory at `base_offset + vaddr`.
 #[inline]
 pub fn read_elf_u8(memory: &Memory, base_offset: usize, vaddr: u32) -> Result<u8, MemoryError> {
     let addr = base_offset
@@ -397,8 +397,8 @@ pub fn read_elf_u8(memory: &Memory, base_offset: usize, vaddr: u32) -> Result<u8
     Ok(tryte.to_u8_centered())
 }
 
-/// Escreve 1 byte como [`Tryte6`] centrado na memória da Setun em `base_offset + vaddr`,
-/// retornando `(antiga_word21, nova_word21)` para contabilização de *Trit Flips*.
+/// Writes 1 byte as a centered [`Tryte6`] in Setun memory at `base_offset + vaddr`,
+/// returning `(old_word21, new_word21)` for *Trit Flips* accounting.
 #[inline]
 pub fn write_elf_u8(
     memory: &mut Memory,
@@ -415,7 +415,7 @@ pub fn write_elf_u8(
     Ok((old_word, new_word))
 }
 
-/// Lê um inteiro de 16 bits Little-Endian a partir de 2 células [`Tryte6`] consecutivas na memória Setun.
+/// Reads a 16-bit Little-Endian integer from 2 consecutive [`Tryte6`] cells in Setun memory.
 #[inline]
 pub fn read_elf_u16_le(
     memory: &Memory,
@@ -427,7 +427,7 @@ pub fn read_elf_u16_le(
     Ok(b0 | (b1 << 8))
 }
 
-/// Lê um inteiro de 32 bits Little-Endian a partir de 4 células [`Tryte6`] consecutivas na memória Setun.
+/// Reads a 32-bit Little-Endian integer from 4 consecutive [`Tryte6`] cells in Setun memory.
 #[inline]
 pub fn read_elf_u32_le(
     memory: &Memory,
@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn test_elf32_parse_and_tryte6_memory_load() {
         let elf_bytes = include_bytes!("../vendor/riscv_tests/elf/lw.elf");
-        let image = Elf32Image::parse(elf_bytes).expect("Falha ao decodificar lw.elf");
+        let image = Elf32Image::parse(elf_bytes).expect("Failed to parse lw.elf");
 
         assert_eq!(image.entry_point, 0x11100);
         assert!(image.symbols.contains_key("main"));
@@ -487,12 +487,12 @@ mod tests {
         let mut mem = Memory::new();
         let layout = image
             .load_into_setun_memory(&mut mem, DEFAULT_ELF_MEMORY_BASE)
-            .expect("Falha ao mapear ELF na memoria Setun");
+            .expect("Failed to map ELF into Setun memory");
 
         assert_eq!(layout.entry_point, 0x11100);
         assert!(layout.total_trytes_written > 0);
 
-        // Verifica que os dados na secao .data (`tdat`) foram armazenados como Tryte6 e reconstroem 0x00ff00ff
+        // Verify that data in the .data section (`tdat`) was stored as Tryte6 and reconstructs 0x00ff00ff
         let tdat_addr = *image.symbols.get("tdat").unwrap();
         let word0 = read_elf_u32_le(&mem, DEFAULT_ELF_MEMORY_BASE, tdat_addr).unwrap();
         let word1 = read_elf_u32_le(&mem, DEFAULT_ELF_MEMORY_BASE, tdat_addr + 4).unwrap();

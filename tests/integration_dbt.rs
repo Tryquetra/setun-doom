@@ -1,8 +1,8 @@
-//! Testes de integração externos (black-box) para a biblioteca Setun-Doom.
+//! External black-box integration tests for the Setun-Doom library.
 
 use setun_doom::{
-    dbt::{SetunDbtEngine, run_all_riscv_isa_tests},
-    TernaryFixed, Word21, Trit, Memory, Cpu, Opcode, Instruction,
+    dbt::{run_all_riscv_isa_tests, SetunDbtEngine},
+    Cpu, Instruction, Memory, Opcode, TernaryFixed, Trit, Word21,
 };
 
 #[test]
@@ -24,7 +24,7 @@ fn test_integration_public_api_cpu_pipeline() {
     let mut mem = Memory::new();
     let mut cpu = Cpu::new();
 
-    // Carrega pequeno programa de teste via instrução direta
+    // Loads a small test program via direct instruction encoding
     let instr1 = Instruction::new(Opcode::LoadImm, 0, 777);
     let instr2 = Instruction::new(Opcode::Halt, 0, 0);
 
@@ -32,17 +32,17 @@ fn test_integration_public_api_cpu_pipeline() {
     mem.write_word(1, instr2.encode()).expect("write instr2");
 
     let steps = cpu.run_ticks(&mut mem, 10);
-    assert_eq!(steps, 1); // 1 passo executado antes do HALT interromper o loop
+    assert_eq!(steps, 1); // 1 step executed before HALT interrupts the loop
     assert!(cpu.halted);
     assert_eq!(cpu.acc.as_i64(), 777);
 }
 
 #[test]
 fn test_integration_public_api_dbt_rv32im() {
-    let summary = run_all_riscv_isa_tests().expect("Falha ao executar suíte oficial RV32I");
+    let summary = run_all_riscv_isa_tests().expect("Failed to execute official RV32I test suite");
     assert_eq!(summary.tests.len(), 37);
     for (name, report) in &summary.tests {
-        assert!(report.is_riscv_test_pass(), "Teste {} falhou", name);
+        assert!(report.is_riscv_test_pass(), "Test {} failed", name);
     }
 
     let doom_elf = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");

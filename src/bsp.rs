@@ -1,65 +1,65 @@
-//! # Árvore BSP Tricótoma (`Ternary Binary Space Partitioning`) e Clipper de Oclusão em Trits
+//! # Trichotomous BSP Tree (`Ternary Binary Space Partitioning`) and Trit Occlusion Clipper
 //!
-//! No Doom clássico (1993), `R_RenderBSPNode` e `R_PointOnSide` dividem o mapa 2D por linhas
-//! de partição (`node_t`). Em máquinas binárias, o teste de lado devolve `0` (frente) ou `1` (trás),
-//! forçando pontos colineares a cair arbitrariamente em um dos lados.
+//! In classic Doom (1993), `R_RenderBSPNode` and `R_PointOnSide` partition the 2D map via partition
+//! lines (`node_t`). On binary hardware, the side test returns `0` (front) or `1` (back),
+//! forcing collinear points onto an arbitrary side.
 //!
-//! Na arquitetura **Setun-Doom**, o determinante do produto vetorial 2D em [`TernaryFixed`]
-//! produz um [`Trit`] natural no acumulador (`ACC`):
-//! - [`Trit::Negative`] (`-1`): Câmera está no subespaço **Traseiro** (`Back`).
-//! - [`Trit::Zero`] (`0`): Câmera está **Exatamente Colinear** à linha divisora (`On-Plane`).
-//! - [`Trit::Positive`] (`+1`): Câmera está no subespaço **Frontal** (`Front`).
+//! In the **Setun-Doom** architecture, the 2D cross product determinant in [`TernaryFixed`]
+//! yields a natural [`Trit`] in the accumulator (`ACC`):
+//! - [`Trit::Negative`] (`-1`): Camera is in the **Back** subspace.
+//! - [`Trit::Zero`] (`0`): Camera is **Collinear** with the partition line (`On-Plane`).
+//! - [`Trit::Positive`] (`+1`): Camera is in the **Front** subspace.
 //!
-//! Além disso, o **Clipper Horizontal de Oclusão (`solidsegs`)** armazena as 320 colunas da tela
-//! em **16 palavras [`Word21`]** ($16 \times 21 = 336$ trits), onde cada coluna $x \in [0, 319]$
-//! possui 1 trit indicando:
-//! - `-1` (`Negative`): Coluna totalmente fechada por parede sólida (oclusa).
-//! - `0` (`Zero`): Coluna parcialmente aberta (portal com *upper/lower texture*).
-//! - `+1` (`Positive`): Coluna totalmente aberta (céu/vazio).
+//! Additionally, the **Horizontal Occlusion Clipper (`solidsegs`)** stores the 320 screen columns
+//! in **16 [`Word21`] words** ($16 \times 21 = 336$ trits), where each column $x \in [0, 319]$
+//! has 1 trit indicating:
+//! - `-1` (`Negative`): Column fully sealed by a solid wall (occluded).
+//! - `0` (`Zero`): Column partially open (portal with upper or lower texture).
+//! - `+1` (`Positive`): Column fully open (sky or unrendered background).
 
 use crate::fixed::TernaryFixed;
 use crate::memory::FB_WIDTH;
 use crate::trit::Trit;
 use crate::word::{Word21, Tryte6};
 
-/// Identificador de um filho na árvore BSP: pode apontar para outro nó divisor ou para uma folha (Subsector).
+/// Identifier of a child in the BSP tree: points to either an internal splitter node or a leaf (Subsector).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BspChild {
-    /// Índice de um nó interno na tabela de nós BSP.
+    /// Index of an internal node in the BSP node table.
     Node(usize),
-    /// Índice de uma folha convexa (`Subsector`) contendo segmentos de parede (`Segs`).
+    /// Index of a convex leaf (`Subsector`) containing wall segments (`Segs`).
     Subsector(usize),
 }
 
-/// Linha divisora e metadados de um nó interno da Árvore BSP (`node_t` do Doom adaptado para `TernaryFixed`).
+/// Partition line and metadata of an internal BSP tree node (Doom `node_t` adapted for `TernaryFixed`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BspNode {
-    /// Coordenada X inicial da linha partidora (`11.10` trits).
+    /// Initial X coordinate of partition line (`11.10` trits).
     pub x: TernaryFixed,
-    /// Coordenada Y inicial da linha partidora (`11.10` trits).
+    /// Initial Y coordinate of partition line (`11.10` trits).
     pub y: TernaryFixed,
-    /// Vetor diretor $\Delta X$ da linha partidora (`11.10` trits).
+    /// Direction vector $\Delta X$ of partition line (`11.10` trits).
     pub dx: TernaryFixed,
-    /// Vetor diretor $\Delta Y$ da linha partidora (`11.10` trits).
+    /// Direction vector $\Delta Y$ of partition line (`11.10` trits).
     pub dy: TernaryFixed,
-    /// Subespaço frontal (`Trit::Positive`).
+    /// Front subspace (`Trit::Positive`).
     pub front_child: BspChild,
-    /// Subespaço traseiro (`Trit::Negative`).
+    /// Back subspace (`Trit::Negative`).
     pub back_child: BspChild,
 }
 
 impl BspNode {
-    /// Determina em qual dos 3 estados espaciais o ponto `(px, py)` está em relação à linha divisora
-    /// (`R_PointOnSide` tricótomo).
+    /// Determines which of the 3 spatial states the point `(px, py)` occupies relative to partition line
+    /// (trichotomous `R_PointOnSide`).
     ///
-    /// Calcula o sinal do produto vetorial 2D:
+    /// Computes the sign of the 2D cross product:
     /// $$C = (P_x - X) \cdot \Delta Y - (P_y - Y) \cdot \Delta X$$
-    /// - Retorna [`Trit::Positive`] (`+1`) se estiver na Frente.
-    /// - Retorna [`Trit::Zero`] (`0`) se estiver exatamente sobre a reta divisora.
-    /// - Retorna [`Trit::Negative`] (`-1`) se estiver Atrás.
+    /// - Returns [`Trit::Positive`] (`+1`) if in Front.
+    /// - Returns [`Trit::Zero`] (`0`) if exactly collinear on the partition line.
+    /// - Returns [`Trit::Negative`] (`-1`) if in Back.
     #[inline(always)]
     pub fn point_on_side(&self, px: TernaryFixed, py: TernaryFixed) -> Trit {
-        // Caminhos rápidos para linhas alinhadas aos eixos (otimização clássica de Carmack)
+        // Fast paths for axis-aligned lines (Carmack's classic optimization)
         if self.dx.raw_i64() == 0 {
             let diff_x = px - self.x;
             return if self.dy.raw_i64() > 0 {
@@ -85,45 +85,45 @@ impl BspNode {
     }
 }
 
-/// Segmento de parede convexo pertencente a um `Subsector` (`seg_t`).
+/// Convex wall segment belonging to a `Subsector` (`seg_t`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct WallSeg {
     pub id: usize,
-    /// Coluna inicial projetada na tela (`0..320`).
+    /// Starting screen column projected on display (`0..320`).
     pub screen_x0: usize,
-    /// Coluna final (inclusiva) projetada na tela (`0..320`).
+    /// Ending screen column (inclusive) projected on display (`0..320`).
     pub screen_x1: usize,
-    /// Indica se a parede é sólida (`true`, fecha totalmente a coluna) ou portal/janela (`false`).
+    /// Indicates whether wall is solid (`true`, fully seals column) or portal/window (`false`).
     pub solid: bool,
-    /// Cor base (`Tryte6`) da parede para rasterização.
+    /// Base color (`Tryte6`) of wall for rasterization.
     pub color: Tryte6,
-    /// Distância perpendicular média para cálculo de altura e iluminação.
+    /// Mean perpendicular distance for height projection and depth shading.
     pub distance: TernaryFixed,
 }
 
-/// Folha convexa da árvore BSP (`subsector_t`), contendo um intervalo de segmentos de parede.
+/// Convex leaf of the BSP tree (`subsector_t`), containing a span of wall segments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Subsector {
     pub id: usize,
     pub segs: Vec<WallSeg>,
 }
 
-/// Clipper Horizontal de Oclusão em Malha de Trits (`TernaryOcclusionClipper`).
+/// Horizontal Occlusion Clipper over Trit Mesh (`TernaryOcclusionClipper`).
 ///
-/// Armazena o estado das 320 colunas verticais do Framebuffer VGA em 16 palavras [`Word21`]
+/// Stores state of all 320 vertical VGA framebuffer columns across 16 [`Word21`] words
 /// ($16 \times 21 = 336$ trits):
-/// - [`Trit::Positive`] (`+1`): Coluna aberta.
-/// - [`Trit::Zero`] (`0`): Coluna parcialmente aberta (portal).
-/// - [`Trit::Negative`] (`-1`): Coluna totalmente oclusa (parede sólida já desenhada na frente).
+/// - [`Trit::Positive`] (`+1`): Open column.
+/// - [`Trit::Zero`] (`0`): Partially open column (portal).
+/// - [`Trit::Negative`] (`-1`): Fully occluded column (solid wall already rendered in front).
 pub struct TernaryOcclusionClipper {
-    /// 16 palavras de 21 trits cobrindo 336 colunas.
+    /// 16 words of 21 trits covering 336 columns.
     words: [Word21; 16],
-    /// Contagem de colunas que ainda não estão totalmente oclusas (`!= Trit::Negative`).
+    /// Count of columns that are not fully occluded (`!= Trit::Negative`).
     open_columns: usize,
 }
 
 impl TernaryOcclusionClipper {
-    /// Inicializa todas as 320 colunas da tela como totalmente abertas (`Trit::Positive`).
+    /// Initializes all 320 screen columns as fully open (`Trit::Positive`).
     pub fn new() -> Self {
         let all_open_trits = [Trit::Positive; 21];
         let all_open_word = Word21::from_trits(&all_open_trits);
@@ -133,19 +133,19 @@ impl TernaryOcclusionClipper {
         }
     }
 
-    /// Reinicia o clipper para o início de um novo quadro (`DG_DrawFrame`).
+    /// Resets the clipper for the start of a new frame (`DG_DrawFrame`).
     pub fn clear(&mut self) {
         *self = Self::new();
     }
 
-    /// Retorna `true` se todas as 320 colunas da tela já foram fechadas por paredes sólidas
-    /// (permitindo interromper a travessia da árvore BSP imediatamente).
+    /// Returns `true` if all 320 screen columns are sealed by solid walls
+    /// (allowing BSP traversal to terminate early).
     #[inline(always)]
     pub const fn is_screen_fully_occluded(&self) -> bool {
         self.open_columns == 0
     }
 
-    /// Retorna o estado ternário de visibilidade da coluna `x` (`0..320`).
+    /// Returns the ternary visibility state of column `x` (`0..320`).
     #[inline]
     pub fn column_state(&self, x: usize) -> Trit {
         assert!(x < FB_WIDTH);
@@ -155,16 +155,16 @@ impl TernaryOcclusionClipper {
         trits[trit_idx]
     }
 
-    /// Verifica se uma palavra inteira de 21 colunas está totalmente oclusa (`Word21::MIN_VAL`),
-    /// descartando 21 pixels de uma só vez em 1 comparação de `i64`.
+    /// Verifies if an entire chunk of 21 columns is fully occluded (`Word21::MIN_VAL`),
+    /// culling 21 pixels simultaneously with a single `i64` comparison.
     #[inline(always)]
     pub const fn is_chunk21_occluded(&self, chunk_idx: usize) -> bool {
         self.words[chunk_idx].as_i64() == Word21::MIN_VAL
     }
 
-    /// Testa e recorta um segmento de parede horizontal `[x0..=x1]`.
-    /// Retorna a lista de colunas `x` visíveis que devem ser efetivamente desenhadas,
-    /// e atualiza os trits para `Negative` (se `solid == true`) ou `Zero` (se `solid == false`).
+    /// Tests and clips a horizontal wall segment `[x0..=x1]`.
+    /// Returns the list of visible column indices `x` to be rasterized,
+    /// updating trits to `Negative` (if `solid == true`) or `Zero` (if `solid == false`).
     pub fn clip_and_mark_seg(&mut self, x0: usize, x1: usize, solid: bool) -> Vec<usize> {
         let start = x0.min(FB_WIDTH.saturating_sub(1));
         let end = x1.min(FB_WIDTH.saturating_sub(1));
@@ -198,7 +198,7 @@ impl Default for TernaryOcclusionClipper {
     }
 }
 
-/// Árvore BSP completa contendo nós divisores e subsectores convexos.
+/// Complete BSP tree containing splitter nodes and convex subsectors.
 pub struct BspTree {
     pub nodes: Vec<BspNode>,
     pub subsectors: Vec<Subsector>,
@@ -206,9 +206,9 @@ pub struct BspTree {
 }
 
 impl BspTree {
-    /// Percorre a árvore BSP da frente para trás (`Front-to-Back`) a partir da posição da câmera
-    /// `(cam_x, cam_y)`, alimentando o clipper ternário de oclusão e invocando `on_visible_seg`
-    /// apenas para os fragmentos de parede efetivamente visíveis.
+    /// Traverses the BSP tree in Front-to-Back order starting from camera position
+    /// `(cam_x, cam_y)`, updating the ternary occlusion clipper and invoking `on_visible_seg`
+    /// only for visible wall fragments.
     pub fn traverse_front_to_back<F>(
         &self,
         cam_x: TernaryFixed,
@@ -252,9 +252,9 @@ impl BspTree {
                 let node = &self.nodes[node_idx];
                 let side = node.point_on_side(cam_x, cam_y);
 
-                // Seleção tricótoma:
-                // - Positive (+1) ou Zero (0): visita Front primeiro, depois Back.
-                // - Negative (-1): visita Back primeiro, depois Front.
+                // Trichotomous dispatch:
+                // - Positive (+1) or Zero (0): visit Front first, then Back.
+                // - Negative (-1): visit Back first, then Front.
                 let (near, far) = match side {
                     Trit::Positive | Trit::Zero => (node.front_child, node.back_child),
                     Trit::Negative => (node.back_child, node.front_child),
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_bsp_point_on_side_trichotomy() {
-        // Linha divisora vertical em X = 10.0 apontando para +Y (dx = 0, dy = +1)
+        // Vertical partition line at X = 10.0 pointing toward +Y (dx = 0, dy = +1)
         let node = BspNode {
             x: TernaryFixed::from_int(10),
             y: TernaryFixed::from_int(0),
@@ -285,17 +285,17 @@ mod tests {
             back_child: BspChild::Subsector(1),
         };
 
-        // Ponto em X = 25 (Frente -> Positive)
+        // Point at X = 25 (Front -> Positive)
         assert_eq!(
             node.point_on_side(TernaryFixed::from_int(25), TernaryFixed::from_int(5)),
             Trit::Positive
         );
-        // Ponto exatamente sobre a linha X = 10 (Colinear -> Zero)
+        // Point collinear with line X = 10 (Collinear -> Zero)
         assert_eq!(
             node.point_on_side(TernaryFixed::from_int(10), TernaryFixed::from_int(99)),
             Trit::Zero
         );
-        // Ponto em X = -5 (Trás -> Negative)
+        // Point at X = -5 (Back -> Negative)
         assert_eq!(
             node.point_on_side(TernaryFixed::from_int(-5), TernaryFixed::from_int(5)),
             Trit::Negative
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn test_front_to_back_bsp_occlusion_culling() {
-        // Subsector 0 (Frontal, próximo): parede sólida cobrindo todas as colunas 0..=319
+        // Subsector 0 (Front, near): solid wall covering all columns 0..=319
         let near_sub = Subsector {
             id: 0,
             segs: vec![WallSeg {
@@ -317,7 +317,7 @@ mod tests {
             }],
         };
 
-        // Subsector 1 (Traseiro, distante): parede em 50..=150 que deve ser 100% descartada por oclusão!
+        // Subsector 1 (Back, far): wall at 50..=150 that must be 100% culled by occlusion
         let far_sub = Subsector {
             id: 1,
             segs: vec![WallSeg {
@@ -346,7 +346,7 @@ mod tests {
         let mut clipper = TernaryOcclusionClipper::new();
         let mut drawn_seg_ids = Vec::new();
 
-        // Câmera em X = +5 (lado Frontal -> visita Subsector 0 primeiro, fecha as 320 colunas e poda Subsector 1)
+        // Camera at X = +5 (Front side -> visits Subsector 0 first, seals 320 columns and culls Subsector 1)
         tree.traverse_front_to_back(
             TernaryFixed::from_int(5),
             TernaryFixed::ZERO,

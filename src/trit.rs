@@ -1,26 +1,26 @@
-//! Representação e lógica ternária balanceada (Trits no conjunto {-1, 0, +1}).
+//! Balanced ternary representation and logic (Trits in set {-1, 0, +1}).
 //!
-//! Inspirado na arquitetura eletromagnética do Setun (1958, Nikolai Brusentsov),
-//! cada trit assume exatamente um de três estados simétricos em torno de zero.
+//! Inspired by the electromagnetic architecture of the Setun (1958, Nikolai Brusentsov),
+//! each trit assumes exactly one of three states symmetric around zero.
 
 use core::fmt;
 use core::ops::{BitAnd, BitOr, BitXor, Mul, Neg, Not};
 
-/// Estado elementar de um dígito ternário balanceado (Trit).
+/// Elementary state of a balanced ternary digit (Trit).
 #[repr(i8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Trit {
-    /// Estado negativo (-1), historicamente representado por `'T'` ou `'-'`.
+    /// Negative state (-1), historically denoted by `'T'` or `'-'`.
     Negative = -1,
-    /// Estado neutro (0), representado por `'0'`.
+    /// Neutral state (0), denoted by `'0'`.
     #[default]
     Zero = 0,
-    /// Estado positivo (+1), representado por `'+'` ou `'1'`.
+    /// Positive state (+1), denoted by `'+'` or `'1'`.
     Positive = 1,
 }
 
 impl Trit {
-    /// Converte um inteiro assinado (`i8`) para `Trit` saturando na faixa `[-1, +1]`.
+    /// Converts a signed integer (`i8`) to `Trit` saturating to the range `[-1, +1]`.
     #[inline(always)]
     pub const fn from_i8(val: i8) -> Self {
         if val < 0 {
@@ -32,7 +32,7 @@ impl Trit {
         }
     }
 
-    /// Converte um inteiro (`i64`) em `Trit` pelo sinal exato ou resto balanceado.
+    /// Converts an integer (`i64`) to `Trit` by exact sign or balanced remainder.
     #[inline(always)]
     pub const fn from_i64_sign(val: i64) -> Self {
         if val < 0 {
@@ -44,19 +44,19 @@ impl Trit {
         }
     }
 
-    /// Retorna o valor numérico como `i8` (-1, 0 ou 1).
+    /// Returns the numeric value as `i8` (-1, 0, or 1).
     #[inline(always)]
     pub const fn as_i8(self) -> i8 {
         self as i8
     }
 
-    /// Retorna o valor numérico como `i64` (-1, 0 ou 1).
+    /// Returns the numeric value as `i64` (-1, 0, or 1).
     #[inline(always)]
     pub const fn as_i64(self) -> i64 {
         self as i64
     }
 
-    /// Inversão ternária (negação simétrica): -1 <-> +1, 0 -> 0.
+    /// Ternary inversion (symmetric negation): -1 <-> +1, 0 -> 0.
     #[inline(always)]
     pub const fn invert(self) -> Self {
         match self {
@@ -66,7 +66,7 @@ impl Trit {
         }
     }
 
-    /// Conjunção ternária (Kleene/Lukasiewicz MIN): porta lógica pura sem aritmética binária.
+    /// Ternary conjunction (Kleene/Lukasiewicz MIN): pure logic gate without binary arithmetic.
     #[inline(always)]
     pub const fn t_and(self, other: Self) -> Self {
         match (self, other) {
@@ -76,7 +76,7 @@ impl Trit {
         }
     }
 
-    /// Disjunção ternária (Kleene/Lukasiewicz MAX): porta lógica pura sem aritmética binária.
+    /// Ternary disjunction (Kleene/Lukasiewicz MAX): pure logic gate without binary arithmetic.
     #[inline(always)]
     pub const fn t_or(self, other: Self) -> Self {
         match (self, other) {
@@ -86,8 +86,8 @@ impl Trit {
         }
     }
 
-    /// Multiplicação ternária (isomorfa ao XOR ternário balanceado / modulador de sinal Setun):
-    /// implementada por chaveamento de estados puro sem multiplicação binária.
+    /// Ternary multiplication (isomorphic to balanced ternary XOR / Setun sign modulator):
+    /// implemented via pure state switching without binary multiplication.
     #[inline(always)]
     pub const fn t_mul(self, other: Self) -> Self {
         match (self, other) {
@@ -97,9 +97,9 @@ impl Trit {
         }
     }
 
-    /// Porta Consenso Ternária (`carry` de meio-somador):
-    /// Retorna `Positive` se ambos forem `Positive`, `Negative` se ambos forem `Negative`,
-    /// e `Zero` caso contrário.
+    /// Ternary Consensus gate (half-adder `carry`):
+    /// Returns `Positive` if both are `Positive`, `Negative` if both are `Negative`,
+    /// and `Zero` otherwise.
     #[inline(always)]
     pub const fn consensus(self, other: Self) -> Self {
         match (self, other) {
@@ -109,8 +109,8 @@ impl Trit {
         }
     }
 
-    /// Porta Soma-Módulo-3 (`sum` de meio-somador ternário balanceado):
-    /// Opera puramente por transições de estado no anel `{-1, 0, +1}`.
+    /// Sum-Modulo-3 gate (balanced ternary half-adder `sum`):
+    /// Operates purely via state transitions in the ring `{-1, 0, +1}`.
     #[inline(always)]
     pub const fn sum_mod3(self, other: Self) -> Self {
         match (self, other) {
@@ -121,16 +121,16 @@ impl Trit {
         }
     }
 
-    /// Meio-somador ternário balanceado (Half Adder de 1 trit) construído a partir das portas
-    /// `sum_mod3` e `consensus`. Retorna `(soma, carry_out)`.
+    /// Balanced ternary 1-trit half adder constructed from `sum_mod3` and `consensus` gates.
+    /// Returns `(sum, carry_out)`.
     #[inline(always)]
     pub const fn half_add(self, other: Self) -> (Self, Self) {
         (self.sum_mod3(other), self.consensus(other))
     }
 
-    /// Voto Majoritário Ternário (`majv.t` do artigo REBEL-6, Tabela II):
-    /// Se pelo menos 2 dos 3 trits `(self, b, c)` possuírem o mesmo estado `n`, retorna `n`;
-    /// caso todos os 3 sejam distintos (`-1, 0, +1`), retorna `Trit::Zero`.
+    /// Ternary Majority Vote (`majv.t` from REBEL-6 paper, Table II):
+    /// If at least 2 of the 3 trits `(self, b, c)` share state `n`, returns `n`;
+    /// if all 3 are distinct (`-1, 0, +1`), returns `Trit::Zero`.
     #[inline(always)]
     pub const fn majority_vote(self, b: Self, c: Self) -> Self {
         match (self, b, c) {
@@ -141,9 +141,9 @@ impl Trit {
         }
     }
 
-    /// Voto Minoritário Ternário (`minv.t` do artigo REBEL-6, Tabela II):
-    /// Quando dois trits são iguais e um é único, retorna o trit único (`cnt(n) == 1`).
-    /// Se todos os três forem iguais ou todos os três forem distintos (`-1, 0, +1`), retorna `Trit::Zero`.
+    /// Ternary Minority Vote (`minv.t` from REBEL-6 paper, Table II):
+    /// When two trits are equal and one is unique, returns the unique trit (`cnt(n) == 1`).
+    /// If all three are equal or all three are distinct (`-1, 0, +1`), returns `Trit::Zero`.
     #[inline(always)]
     pub const fn minority_vote(self, b: Self, c: Self) -> Self {
         match (self, b, c) {
@@ -154,9 +154,9 @@ impl Trit {
         }
     }
 
-    /// Adição Limiar de Trits (`SAT` / Operação Básica `B21` `000+-+` da Setun-70, Brusentsov 1970):
-    /// Porta linear de limiar (*Threshold Addition*) entre dois trits `S` (`self`) e `T` (`other`):
-    /// retorna `Positive (+1)` se `S + T > 0`, `Negative (-1)` se `S + T < 0` e `Zero (0)` se `S + T == 0`.
+    /// Trit Threshold Addition (`SAT` / Basic Operation `B21` `000+-+` of Setun-70, Brusentsov 1970):
+    /// Linear threshold addition gate between two trits `S` (`self`) and `T` (`other`):
+    /// returns `Positive (+1)` if `S + T > 0`, `Negative (-1)` if `S + T < 0`, and `Zero (0)` if `S + T == 0`.
     #[inline(always)]
     pub const fn threshold_add(self, other: Self) -> Self {
         match (self, other) {
@@ -172,9 +172,9 @@ impl Trit {
         }
     }
 
-    /// Inibição / Coalescência Ternária (`SIT` / Operação Básica `B20` `000+-0` da Setun-70):
-    /// Definida algebricamente por Brusentsov como `S + T * (1 - |S|)`:
-    /// preserva `self` (`S`) se `self != Zero`; caso `self == Zero`, assume o estado de `other` (`T`).
+    /// Ternary Masked Inhibition / Coalescence (`SIT` / Basic Operation `B20` `000+-0` of Setun-70):
+    /// Algebraically defined by Brusentsov as `S + T * (1 - |S|)`:
+    /// preserves `self` (`S`) if `self != Zero`; if `self == Zero`, adopts the state of `other` (`T`).
     #[inline(always)]
     pub const fn masked_inhibit(self, other: Self) -> Self {
         match self {
@@ -183,8 +183,8 @@ impl Trit {
         }
     }
 
-    /// Comparação Tricótoma de 1 trit (`cmp.t` elementar):
-    /// Retorna `Positive (+1)` se `self > other`, `Zero (0)` se `self == other`, `Negative (-1)` se `self < other`.
+    /// Elementary 1-trit trichotomous comparison (`cmp.t`):
+    /// Returns `Positive (+1)` if `self > other`, `Zero (0)` if `self == other`, `Negative (-1)` if `self < other`.
     #[inline(always)]
     pub const fn cmp_trit(self, other: Self) -> Self {
         match (self, other) {
@@ -198,8 +198,8 @@ impl Trit {
         }
     }
 
-    /// Comparação Tricótoma (`cmp.t` / operador `<=>` do artigo REBEL-6):
-    /// Retorna `Positive (+1)` se `a > b`, `Zero (0)` se `a == b`, `Negative (-1)` se `a < b`.
+    /// Trichotomous Comparison (`cmp.t` / `<=>` operator of REBEL-6 paper):
+    /// Returns `Positive (+1)` if `a > b`, `Zero (0)` if `a == b`, `Negative (-1)` if `a < b`.
     #[inline(always)]
     pub const fn cmp_t(a: i64, b: i64) -> Self {
         if a > b {
@@ -211,10 +211,10 @@ impl Trit {
         }
     }
 
-    /// Somador completo ternário estrutural (Full Adder de 1 trit):
-    /// Composto por dois meio-somadores (`half_add`) em cascata e uma porta `sum_mod3` de carry,
-    /// sem usar soma binária da CPU hospedeira.
-    /// Retorna `(soma, carry_out)` para `self + other + carry_in`.
+    /// Structural 1-trit ternary full adder:
+    /// Composed of two cascaded half-adders (`half_add`) and a carry `sum_mod3` gate,
+    /// without host CPU binary addition.
+    /// Returns `(sum, carry_out)` for `self + other + carry_in`.
     #[inline(always)]
     pub const fn full_add(self, other: Self, carry_in: Self) -> (Self, Self) {
         let (s1, c1) = self.half_add(other);
@@ -223,7 +223,7 @@ impl Trit {
         (sum, carry_out)
     }
 
-    /// Codificação dual-bit de 2 bits para armazenamento compacto:
+    /// 2-bit dual-bit encoding for compact storage:
     /// `0b00` -> Zero (0), `0b01` -> Positive (+1), `0b10` -> Negative (-1).
     #[inline(always)]
     pub const fn to_dual_bits(self) -> u8 {
@@ -234,7 +234,7 @@ impl Trit {
         }
     }
 
-    /// Decodifica um par de bits dual-bit (`u8` mascarado em `0b11`) em `Trit`.
+    /// Decodes a dual-bit pair (`u8` masked with `0b11`) into a `Trit`.
     #[inline(always)]
     pub const fn from_dual_bits(bits: u8) -> Self {
         match bits & 0b11 {
@@ -244,7 +244,7 @@ impl Trit {
         }
     }
 
-    /// Caractere canônico da notação ternária balanceada (`'-'`, `'0'`, `'+'`).
+    /// Canonical balanced ternary notation character (`'-'`, `'0'`, `'+'`).
     #[inline(always)]
     pub const fn to_char(self) -> char {
         match self {
@@ -254,7 +254,7 @@ impl Trit {
         }
     }
 
-    /// Converte caractere (`'-'`/`'T'`, `'0'`, `'+'`/`'1'`) para `Option<Trit>`.
+    /// Converts character (`'-'`/`'T'`, `'0'`, `'+'`/`'1'`) to `Option<Trit>`.
     #[inline(always)]
     pub const fn from_char(c: char) -> Option<Self> {
         match c {
@@ -340,17 +340,17 @@ mod tests {
 
     #[test]
     fn test_trit_full_adder() {
-        // 1 + 1 + 0 = -1 com carry +1 (pois 2 = 1*3 - 1)
+        // 1 + 1 + 0 = -1 with carry +1 (since 2 = 1*3 - 1)
         assert_eq!(
             Trit::Positive.full_add(Trit::Positive, Trit::Zero),
             (Trit::Negative, Trit::Positive)
         );
-        // -1 + -1 + -1 = 0 com carry -1 (pois -3 = -1*3 + 0)
+        // -1 + -1 + -1 = 0 with carry -1 (since -3 = -1*3 + 0)
         assert_eq!(
             Trit::Negative.full_add(Trit::Negative, Trit::Negative),
             (Trit::Zero, Trit::Negative)
         );
-        // 1 + -1 + 0 = 0 com carry 0
+        // 1 + -1 + 0 = 0 with carry 0
         assert_eq!(
             Trit::Positive.full_add(Trit::Negative, Trit::Zero),
             (Trit::Zero, Trit::Zero)

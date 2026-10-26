@@ -1,38 +1,38 @@
-//! # Montador Textual de Duas Passagens (`SetunAssembler`) e Disassembler
+//! # Two-Pass Textual Assembler (`SetunAssembler`) and Disassembler
 //!
-//! Traduz código-fonte assembly da arquitetura **Setun-Doom** com suporte a:
-//! - Labels simbólicos (`.loop:`, `render_col:`).
-//! - Registradores de índice (`IX0`..`IX8`).
-//! - Literais decimais (`-42`, `4600000`) e literais ternários balanceados (`0t+0-+0`).
-//! - Comentários iniciados por `;` ou `#`.
+//! Translates assembly source code for the **Setun-Doom** architecture with support for:
+//! - Symbolic labels (`.loop:`, `render_col:`).
+//! - Index registers (`IX0`..`IX8`).
+//! - Decimal literals (`-42`, `4600000`) and balanced ternary literals (`0t+0-+0`).
+//! - Comments initiated by `;` or `#`.
 
 use crate::cpu::{Instruction, Opcode, INDEX_REGISTER_COUNT};
 use crate::word::Word21;
 use std::collections::HashMap;
 
-/// Erro de montagem com número da linha e mensagem explicativa.
+/// Assembly error containing line number and descriptive message.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AsmError {
     pub line: usize,
     pub message: String,
 }
 
-/// Montador de duas passagens para a ISA Setun-Doom.
+/// Two-pass assembler for the Setun-Doom ISA.
 pub struct SetunAssembler;
 
 impl SetunAssembler {
-    /// Monta um programa em assembly textual Setun-Doom em um vetor de [`Instruction`].
+    /// Assembles Setun-Doom textual assembly source code into a vector of [`Instruction`].
     pub fn assemble(source: &str) -> Result<Vec<Instruction>, AsmError> {
         Self::assemble_at(source, 0)
     }
 
-    /// Monta um programa posicionando os endereços de labels a partir de `base_addr`.
+    /// Assembles a program positioning label addresses starting from `base_addr`.
     pub fn assemble_at(source: &str, base_addr: i64) -> Result<Vec<Instruction>, AsmError> {
         let mut labels: HashMap<String, i64> = HashMap::new();
         let mut cleaned_lines: Vec<(usize, String)> = Vec::new();
         let mut pc: i64 = base_addr;
 
-        // 1ª Passagem: Coleta de labels e contagem de endereços (PC)
+        // 1st Pass: Collect labels and count instruction addresses (PC)
         for (idx, raw_line) in source.lines().enumerate() {
             let line_num = idx + 1;
             let without_comment = raw_line
@@ -50,14 +50,14 @@ impl SetunAssembler {
                 if label_name.is_empty() {
                     return Err(AsmError {
                         line: line_num,
-                        message: "Label vazio".to_string(),
+                        message: "Empty label".to_string(),
                     });
                 }
                 labels.insert(label_name, pc);
                 continue;
             }
 
-            // Suporta label na mesma linha da instrução: "loop: ADD 100"
+            // Supports label on same line as instruction: "loop: ADD 100"
             if let Some((lbl, rest)) = without_comment.split_once(':') {
                 let label_name = lbl.trim().to_string();
                 labels.insert(label_name, pc);
@@ -72,7 +72,7 @@ impl SetunAssembler {
             }
         }
 
-        // 2ª Passagem: Emissão de instruções e resolução de símbolos
+        // 2nd Pass: Emit instructions and resolve symbols
         let mut program = Vec::with_capacity(cleaned_lines.len());
         for (offset, (line_num, line)) in cleaned_lines.into_iter().enumerate() {
             let instr_pc = base_addr + (offset as i64);
@@ -94,35 +94,35 @@ impl SetunAssembler {
         if tokens.is_empty() {
             return Err(AsmError {
                 line: line_num,
-                message: "Linha de instrucao vazia".to_string(),
+                message: "Empty instruction line".to_string(),
             });
         }
 
         let mnemonic = tokens[0].to_uppercase();
         let (opcode, mut reg_idx) = Self::parse_mnemonic(&mnemonic).ok_or_else(|| AsmError {
             line: line_num,
-            message: format!("Mnemonico desconhecido: '{}'", tokens[0]),
+            message: format!("Unknown mnemonic: '{}'", tokens[0]),
         })?;
 
         let mut operand: i64 = 0;
 
         if opcode == Opcode::Bceg {
-            // Sintaxe:
+            // Syntax:
             // BCEG IX0, target_eq, target_gt
-            // ou BCEG target_eq, target_gt (usa IX0 por padrão)
+            // or BCEG target_eq, target_gt (uses IX0 by default)
             let (eq_tok, gt_tok) = match tokens.len() {
                 3 => (tokens[1], tokens[2]),
                 4 => {
                     reg_idx = Self::parse_index_reg(tokens[1]).ok_or_else(|| AsmError {
                         line: line_num,
-                        message: format!("Registrador de indice invalido em BCEG: '{}'", tokens[1]),
+                        message: format!("Invalid index register in BCEG: '{}'", tokens[1]),
                     })?;
                     (tokens[2], tokens[3])
                 }
                 _ => {
                     return Err(AsmError {
                         line: line_num,
-                        message: "BCEG espera: BCEG [IXn,] <alvo_eq>, <alvo_gt>".to_string(),
+                        message: "BCEG expects: BCEG [IXn,] <target_eq>, <target_gt>".to_string(),
                     });
                 }
             };
@@ -144,14 +144,14 @@ impl SetunAssembler {
             3 => {
                 reg_idx = Self::parse_index_reg(tokens[1]).ok_or_else(|| AsmError {
                     line: line_num,
-                    message: format!("Registrador de indice invalido: '{}'", tokens[1]),
+                    message: format!("Invalid index register: '{}'", tokens[1]),
                 })?;
                 operand = Self::parse_operand(line_num, tokens[2], labels)?;
             }
             _ => {
                 return Err(AsmError {
                     line: line_num,
-                    message: "Excesso de operandos na instrucao".to_string(),
+                    message: "Excess operands in instruction".to_string(),
                 });
             }
         }
@@ -240,7 +240,7 @@ impl SetunAssembler {
         }
         token.parse::<i64>().map_err(|_| AsmError {
             line: line_num,
-            message: format!("Operando ou label invalido: '{}'", token),
+            message: format!("Invalid operand or label: '{}'", token),
         })
     }
 
@@ -259,7 +259,7 @@ impl SetunAssembler {
         Self::parse_operand(line_num, token, labels)
     }
 
-    /// Formata uma [`Instruction`] de volta para sua representação textual legível (Disassembler).
+    /// Formats an [`Instruction`] back into its human-readable textual representation (Disassembler).
     pub fn disassemble_instruction(instr: Instruction) -> String {
         let mnem = match instr.opcode {
             Opcode::Nop => "NOP",
@@ -371,21 +371,21 @@ mod tests {
     #[test]
     fn test_assembler_with_labels_and_ternary_literals() {
         let src = r#"
-            ; Soma de contagem regressiva em Setun-ASM usando salto tricotomo JMPP
+            ; Countdown sum in Setun-ASM using trichotomous jump JMPP
             LOAD_IX_IMM IX0, 5      ; IX0 = 5
             LOAD_IMM 0t0            ; ACC = 0
-            STORE 300               ; inicializa soma parcial MEM[300] = 0
+            STORE 300               ; initialize partial sum MEM[300] = 0
         .loop:
             MOV_IX_ACC IX0          ; ACC = IX0
             ADD 300                 ; ACC = IX0 + MEM[300]
-            STORE 300               ; atualiza soma parcial em MEM[300]
+            STORE 300               ; update partial sum in MEM[300]
             ADD_IX_IMM IX0, -1      ; IX0 -= 1
-            MOV_IX_ACC IX0          ; ACC = IX0 para inspecionar sinal
-            JMPP .loop              ; se IX0 > 0, repete
+            MOV_IX_ACC IX0          ; ACC = IX0 to inspect sign
+            JMPP .loop              ; if IX0 > 0, repeat
             HALT
         "#;
 
-        let program = SetunAssembler::assemble(src).expect("Falha na montagem");
+        let program = SetunAssembler::assemble(src).expect("Assembly failed");
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
         cpu.load_program(&mut mem, 0, &program);

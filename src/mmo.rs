@@ -1,16 +1,16 @@
-//! Subsistema de I/O Mapeado em Memória (MMO / MMIO), Controlador DMA/Loader de Arquivos Binários
-//! (`DOOM.WAD`) e Interface Nativa / FFI para `doomgeneric`.
+//! Memory-Mapped I/O Subsystem (MMO / MMIO), DMA Controller / Binary File Loader
+//! (`DOOM.WAD`), and Native C FFI Interface for `doomgeneric`.
 //!
-//! Este módulo implementa:
-//! 1. **DMA/Loader Ternário (`WadDmaLoader`)**: lê fluxos de bytes binários (ex: `DOOM.WAD`)
-//!    do disco ou de buffers em memória e transcodifica em palavras ternárias balanceadas (`Word21`),
-//!    suportando tanto:
-//!    - Modo `TrytePerByte` (1 byte binário -> 1 `Tryte6` de 6 trits centrado em `[-128, +127]`).
-//!    - Modo `PackedI32` (grupos de 4 bytes Little-Endian `i32` -> 1 `Word21` de 21 trits,
-//!      já que $3^{21} > 2^{32}$).
-//!    - Parser de cabeçalho WAD (`IWAD`/`PWAD`) capaz de localizar o lump `PLAYPAL` e atualizar
-//!      automaticamente a paleta VGA da memória.
-//! 2. **Ponte de Plataforma `doomgeneric`**: exporta as 5 funções obrigatórias com ABI C (`extern "C"`):
+//! This module implements:
+//! 1. **Ternary DMA / File Loader (`WadDmaLoader`)**: reads binary byte streams (e.g. `DOOM.WAD`)
+//!    from disk or in-memory buffers and transcodes into balanced ternary words (`Word21`),
+//!    supporting:
+//!    - `TrytePerByte` mode (1 binary byte -> 1 6-trit `Tryte6` centered in `[-128, +127]`).
+//!    - `PackedI32` mode (groups of 4 Little-Endian `i32` bytes -> 1 21-trit `Word21`,
+//!      since $3^{21} > 2^{32}$).
+//!    - WAD header parser (`IWAD`/`PWAD`) that locates the `PLAYPAL` lump and automatically
+//!      updates VGA memory palette entries.
+//! 2. **`doomgeneric` Platform Bridge**: exports the 5 required functions with C ABI (`extern "C"`):
 //!    - `DG_Init`
 //!    - `DG_DrawFrame`
 //!    - `DG_SleepMs`
@@ -29,37 +29,37 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Modos de transcodificação binário-para-ternário durante transferência DMA.
+/// Binary-to-ternary transcoding modes during DMA transfers.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DmaTranscodeMode {
-    /// Cada byte `u8` (`0..=255`) é transcodificado em uma palavra contendo um `Tryte6`
-    /// balanceado (`byte as i16 - 128` em `[-128, +127]`).
+    /// Each `u8` byte (`0..=255`) is transcoded into a word containing a balanced `Tryte6`
+    /// (`byte as i16 - 128` in `[-128, +127]`).
     TrytePerByte,
-    /// Cada bloco de 4 bytes Little-Endian (`i32`) é transcodificado diretamente em uma
-    /// `Word21` ternária balanceada (1 palavra de 21 trits por inteiro de 32 bits).
+    /// Each 4-byte Little-Endian block (`i32`) is transcoded directly into a
+    /// balanced ternary `Word21` (1 21-trit word per 32-bit integer).
     PackedI32LittleEndian,
 }
 
-/// Descritor de um Lump extraído do diretório de um arquivo WAD (`IWAD` ou `PWAD`).
+/// Descriptor of a lump extracted from a WAD file directory (`IWAD` or `PWAD`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WadLumpInfo {
-    /// Nome ASCII de até 8 caracteres do lump (ex: `"PLAYPAL"`, `"E1M1"`, `"VERTEXES"`).
+    /// ASCII name of up to 8 characters for lump (e.g. `"PLAYPAL"`, `"E1M1"`, `"VERTEXES"`).
     pub name: String,
-    /// Offset em bytes no arquivo WAD original.
+    /// Byte offset in original WAD file.
     pub file_pos: usize,
-    /// Tamanho em bytes do lump.
+    /// Byte size of lump.
     pub size: usize,
-    /// Endereço base na memória ternária onde o lump foi carregado (se mapeado).
+    /// Base address in ternary memory where lump was loaded (if mapped).
     pub ternary_addr: usize,
 }
 
-/// Controlador de DMA e Loader capaz de ler arquivos binários (`DOOM.WAD`) e transcodificar
-/// em palavras ternárias balanceadas na inicialização.
+/// DMA controller and loader capable of reading binary files (`DOOM.WAD`) and transcoding
+/// into balanced ternary words during initialization.
 pub struct WadDmaLoader;
 
 impl WadDmaLoader {
-    /// Transcodifica um slice de bytes binários para a memória ternária a partir de `base_addr`.
-    /// Retorna o número de palavras `Word21` gravadas na memória.
+    /// Transcodes a slice of binary bytes into ternary memory starting at `base_addr`.
+    /// Returns the count of `Word21` words written to memory.
     pub fn load_bytes(
         mem: &mut Memory,
         base_addr: usize,
@@ -104,7 +104,7 @@ impl WadDmaLoader {
         }
     }
 
-    /// Reconstrói bytes binários a partir de palavras ternárias carregadas em `TrytePerByte`.
+    /// Reconstructs binary bytes from ternary words loaded in `TrytePerByte` mode.
     pub fn read_bytes_tryte(mem: &Memory, base_addr: usize, len: usize) -> Result<Vec<u8>, MemoryError> {
         if base_addr + len > mem.raw_cells().len() {
             return Err(MemoryError::OutOfBounds((base_addr + len) as i64));
@@ -118,9 +118,9 @@ impl WadDmaLoader {
         Ok(out)
     }
 
-    /// Lê um arquivo binário de disco (como `DOOM.WAD` ou `DOOM1.WAD`), transcodifica seu conteúdo
-    /// para a memória ternária em `base_addr` e, caso seja um arquivo WAD válido contendo o lump
-    /// `PLAYPAL`, aplica automaticamente a paleta de 256 cores na região VGA da memória.
+    /// Reads a binary file from disk (e.g. `DOOM.WAD` or `DOOM1.WAD`), transcodes its contents
+    /// into ternary memory at `base_addr`, and if it contains a valid `PLAYPAL` lump,
+    /// automatically initializes the 256-color palette in memory.
     pub fn load_wad_file<P: AsRef<Path>>(
         mem: &mut Memory,
         path: P,
@@ -128,12 +128,12 @@ impl WadDmaLoader {
         mode: DmaTranscodeMode,
     ) -> Result<(usize, Vec<WadLumpInfo>), String> {
         let bytes = fs::read(path.as_ref())
-            .map_err(|e| format!("Falha ao ler arquivo WAD {:?}: {}", path.as_ref(), e))?;
+            .map_err(|e| format!("Failed to read WAD file {:?}: {}", path.as_ref(), e))?;
         Self::load_wad_from_slice(mem, &bytes, base_addr, mode)
     }
 
-    /// Analisa um buffer WAD (`IWAD`/`PWAD`), extrai seu diretório de lumps, carrega `PLAYPAL` se
-    /// presente e transcodifica a imagem binária completa para a memória ternária via DMA.
+    /// Parses a WAD buffer (`IWAD`/`PWAD`), extracts its lump directory, loads `PLAYPAL` if
+    /// present, and transcodes the entire binary image into ternary memory via DMA.
     pub fn load_wad_from_slice(
         mem: &mut Memory,
         bytes: &[u8],
@@ -141,7 +141,7 @@ impl WadDmaLoader {
         mode: DmaTranscodeMode,
     ) -> Result<(usize, Vec<WadLumpInfo>), String> {
         let words_written = Self::load_bytes(mem, base_addr, bytes, mode)
-            .map_err(|e| format!("Erro de DMA ao carregar WAD: {:?}", e))?;
+            .map_err(|e| format!("DMA error loading WAD: {:?}", e))?;
 
         let mut lumps = Vec::new();
         if bytes.len() >= 12 && (&bytes[0..4] == b"IWAD" || &bytes[0..4] == b"PWAD") {
@@ -194,36 +194,36 @@ impl WadDmaLoader {
     }
 }
 
-/// Evento de teclado enfileirado para consumo por `DG_GetKey`.
+/// Key event enqueued for consumption by `DG_GetKey`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct KeyEvent {
-    /// `true` se a tecla foi pressionada (`1`), `false` se foi liberada (`0`).
+    /// `true` if key pressed (`1`), `false` if released (`0`).
     pub pressed: bool,
-    /// Código de tecla compatível com `doomkeys.h`.
+    /// Key code compatible with `doomkeys.h`.
     pub doom_key: u8,
 }
 
-/// Endereços de entrada da ROM de Firmware Ternário residente na `SetunMemory`.
+/// Entry point addresses for Ternary Firmware ROM resident in `SetunMemory`.
 pub const ROM_FIXED_MUL_ENTRY: i64 = 100;
 pub const ROM_FIXED_DIV_ENTRY: i64 = 120;
 pub const ROM_POINT_ON_SIDE_ENTRY: i64 = 140;
 pub const ROM_APROX_DIST_ENTRY: i64 = 220;
 
-/// Máquina Virtual Integrada (`SetunDoomMachine`) unificando CPU, Memória, Framebuffer RGBA,
-/// Relógio Monotônico e Fila de Eventos de Teclado para integração com `doomgeneric`.
+/// Integrated Virtual Machine (`SetunDoomMachine`) unifying CPU, Memory, RGBA Framebuffer,
+/// Monotonic Clock, and Keyboard Event Queue for integration with `doomgeneric`.
 pub struct SetunDoomMachine {
     pub cpu: Cpu,
     pub memory: Memory,
     pub start_instant: Instant,
     pub key_queue: VecDeque<KeyEvent>,
-    /// Buffer RGBA (`320 * 200 * 4` bytes) atualizado a cada chamada de `DG_DrawFrame`.
+    /// RGBA buffer (`320 * 200 * 4` bytes) updated on each `DG_DrawFrame` call.
     pub rgba_frame: Vec<u8>,
-    /// Contador de quadros renderizados.
+    /// Rendered frames counter.
     pub frames_drawn: u64,
 }
 
 impl SetunDoomMachine {
-    /// Cria e inicializa a máquina Setun-Doom completa e grava o Firmware ROM ternário na memória.
+    /// Creates and initializes full Setun-Doom machine and writes ternary Firmware ROM to memory.
     pub fn new() -> Self {
         let mut machine = Self {
             cpu: Cpu::new(),
@@ -237,8 +237,8 @@ impl SetunDoomMachine {
         machine
     }
 
-    /// Compila e carrega na `SetunMemory` as sub-rotinas de firmware em código de máquina
-    /// ternário de 21 trits (`ROM_FIXED_MUL`, `ROM_FIXED_DIV`, `ROM_POINT_ON_SIDE`).
+    /// Assembles and loads 21-trit firmware subroutines into `SetunMemory`
+    /// (`ROM_FIXED_MUL`, `ROM_FIXED_DIV`, `ROM_POINT_ON_SIDE`).
     fn install_firmware_rom(&mut self) {
         use crate::assembler::SetunAssembler;
 
@@ -249,7 +249,7 @@ impl SetunDoomMachine {
             HALT
         "#;
         let mul_prog = SetunAssembler::assemble_at(mul_asm, ROM_FIXED_MUL_ENTRY)
-            .expect("Falha ao montar ROM_FIXED_MUL na inicializacao");
+            .expect("Failed to assemble ROM_FIXED_MUL during initialization");
         self.cpu
             .load_program(&mut self.memory, ROM_FIXED_MUL_ENTRY, &mul_prog);
 
@@ -260,7 +260,7 @@ impl SetunDoomMachine {
             HALT
         "#;
         let div_prog = SetunAssembler::assemble_at(div_asm, ROM_FIXED_DIV_ENTRY)
-            .expect("Falha ao montar ROM_FIXED_DIV na inicializacao");
+            .expect("Failed to assemble ROM_FIXED_DIV during initialization");
         self.cpu
             .load_program(&mut self.memory, ROM_FIXED_DIV_ENTRY, &div_prog);
 
@@ -317,11 +317,11 @@ impl SetunDoomMachine {
             HALT
         "#;
         let pos_prog = SetunAssembler::assemble_at(pos_asm, ROM_POINT_ON_SIDE_ENTRY)
-            .expect("Falha ao montar ROM_POINT_ON_SIDE na inicializacao");
+            .expect("Failed to assemble ROM_POINT_ON_SIDE during initialization");
         self.cpu
             .load_program(&mut self.memory, ROM_POINT_ON_SIDE_ENTRY, &pos_prog);
 
-        // Constante 0.5 em TernaryFixed (11.10) em MEM[73] para P_AproxDistance
+        // Constant 0.5 in TernaryFixed (11.10) in MEM[73] for P_AproxDistance
         self.memory
             .write_word_fast(73, crate::fixed::TernaryFixed::from_f64(0.5).raw_word());
 
@@ -355,13 +355,13 @@ impl SetunDoomMachine {
             HALT
         "#;
         let dist_prog = SetunAssembler::assemble_at(dist_asm, ROM_APROX_DIST_ENTRY)
-            .expect("Falha ao montar ROM_APROX_DIST na inicializacao");
+            .expect("Failed to assemble ROM_APROX_DIST during initialization");
         self.cpu
             .load_program(&mut self.memory, ROM_APROX_DIST_ENTRY, &dist_prog);
     }
 
-    /// Executa uma rotina da ROM de firmware a partir de `entry_pc` até atingir `HALT`,
-    /// abortando imediatamente se qualquer `CpuTrap` ocorrer ou se não parar em `max_cycles`.
+    /// Executes a firmware ROM routine from `entry_pc` until reaching `HALT`,
+    /// aborting immediately if any `CpuTrap` occurs or if execution exceeds `max_cycles`.
     #[inline]
     pub fn execute_rom_routine(&mut self, entry_pc: i64, max_cycles: usize) {
         self.cpu.pc = entry_pc;
@@ -370,14 +370,14 @@ impl SetunDoomMachine {
         self.cpu.run_ticks(&mut self.memory, max_cycles);
         assert!(
             self.cpu.halted && self.cpu.trap.is_none(),
-            "Rotina ROM em PC={} nao concluiu em HALT limpo (halted={}, trap={:?})",
+            "ROM routine at PC={} did not terminate with clean HALT (halted={}, trap={:?})",
             entry_pc,
             self.cpu.halted,
             self.cpu.trap
         );
     }
 
-    /// Reinicia o relógio e os registradores de plataforma (`DG_Init`).
+    /// Resets clock and platform registers (`DG_Init`).
     pub fn dg_init(&mut self) {
         self.start_instant = Instant::now();
         self.key_queue.clear();
@@ -388,23 +388,23 @@ impl SetunDoomMachine {
             .write_word_fast(MMIO_KEY_STATE as i64, Word21::ZERO);
     }
 
-    /// Lê a faixa de memória de 64.000 `Tryte6` do framebuffer ternário e traduz para o buffer
-    /// RGBA (`320x200x4` bytes) consumível por uma janela gráfica no host (`DG_DrawFrame`).
+    /// Reads 64,000 `Tryte6` entries from ternary framebuffer and converts to
+    /// RGBA buffer (`320x200x4` bytes) consumable by host display window (`DG_DrawFrame`).
     pub fn dg_draw_frame(&mut self) -> &[u8] {
         self.memory.render_framebuffer_rgba(&mut self.rgba_frame);
         self.frames_drawn += 1;
         &self.rgba_frame
     }
 
-    /// Pausa a thread atual por `ms` milissegundos (`DG_SleepMs`).
+    /// Suspends current thread for `ms` milliseconds (`DG_SleepMs`).
     pub fn dg_sleep_ms(&self, ms: u32) {
         if ms > 0 {
             thread::sleep(Duration::from_millis(ms as u64));
         }
     }
 
-    /// Retorna o tempo decorrido desde `dg_init` em milissegundos e atualiza o registrador
-    /// mapeado em memória `MMIO_TICKS_MS` (`DG_GetTicksMs`).
+    /// Returns elapsed time since `dg_init` in milliseconds and updates memory-mapped
+    /// register `MMIO_TICKS_MS` (`DG_GetTicksMs`).
     pub fn dg_get_ticks_ms(&mut self) -> u32 {
         let elapsed = self.start_instant.elapsed().as_millis() as u32;
         self.memory
@@ -412,18 +412,18 @@ impl SetunDoomMachine {
         elapsed
     }
 
-    /// Enfileira um evento de tecla no controlador de teclado e reflete no MMIO.
+    /// Enqueues a key event into keyboard controller and reflects state in MMIO.
     pub fn push_key_event(&mut self, pressed: bool, doom_key: u8) {
         self.key_queue.push_back(KeyEvent { pressed, doom_key });
-        // Codifica estado no MMIO_KEY_STATE: sinal (+1 = pressionado, -1 = solto) * (doom_key + 1)
+        // Encodes state into MMIO_KEY_STATE: sign (+1 = pressed, -1 = released) * (doom_key + 1)
         let sign = if pressed { 1i64 } else { -1i64 };
         let encoded = sign * ((doom_key as i64) + 1);
         self.memory
             .write_word_fast(MMIO_KEY_STATE as i64, Word21::new(encoded));
     }
 
-    /// Desenfileira o próximo evento de teclado (`DG_GetKey`).
-    /// Retorna `Some((pressed, doom_key))` se houver tecla pendente, ou `None` se a fila estiver vazia.
+    /// Dequeues next keyboard event (`DG_GetKey`).
+    /// Returns `Some((pressed, doom_key))` if key pending, or `None` if queue empty.
     pub fn dg_get_key(&mut self) -> Option<(i32, u8)> {
         if let Some(ev) = self.key_queue.pop_front() {
             Some((if ev.pressed { 1 } else { 0 }, ev.doom_key))
@@ -434,7 +434,7 @@ impl SetunDoomMachine {
         }
     }
 
-    /// Carrega um buffer WAD na região padrão `WAD_DMA_BASE` via DMA.
+    /// Loads a WAD buffer into default `WAD_DMA_BASE` region via DMA.
     pub fn load_wad_bytes(&mut self, bytes: &[u8]) -> Result<(usize, Vec<WadLumpInfo>), String> {
         WadDmaLoader::load_wad_from_slice(
             &mut self.memory,
@@ -444,18 +444,18 @@ impl SetunDoomMachine {
         )
     }
 
-    /// Carrega um programa de instruções na memória ternária e posiciona `PC` em `base_addr`.
+    /// Loads an instruction slice into ternary memory positioning `PC` at `base_addr`.
     pub fn load_program(&mut self, base_addr: i64, instructions: &[crate::cpu::Instruction]) {
         self.cpu.load_program(&mut self.memory, base_addr, instructions);
     }
 
-    /// Executa um único passo da CPU (`step()`).
+    /// Executes single CPU step (`step()`).
     #[inline(always)]
     pub fn step(&mut self) -> bool {
         self.cpu.step(&mut self.memory)
     }
 
-    /// Executa até `count` ciclos da CPU (`run_ticks(count)`).
+    /// Executes up to `count` CPU cycles (`run_ticks(count)`).
     pub fn run_ticks(&mut self, count: usize) -> usize {
         self.cpu.run_ticks(&mut self.memory, count)
     }
@@ -467,19 +467,19 @@ impl Default for SetunDoomMachine {
     }
 }
 
-/// Instância global thread-safe para atendimento direto das chamadas C FFI do `doomgeneric`.
+/// Global thread-safe instance for direct servicing of `doomgeneric` C FFI calls.
 static GLOBAL_MACHINE: OnceLock<Mutex<SetunDoomMachine>> = OnceLock::new();
 
-/// Obtém referência ao mutex da máquina global Setun-Doom.
+/// Returns a reference to the global Setun-Doom machine mutex.
 pub fn global_machine() -> &'static Mutex<SetunDoomMachine> {
     GLOBAL_MACHINE.get_or_init(|| Mutex::new(SetunDoomMachine::new()))
 }
 
 // ============================================================================
-// Bindings C FFI para integração direta com `doomgeneric`
+// C FFI bindings for direct integration with `doomgeneric`
 // ============================================================================
 
-/// Inicializa a plataforma Setun-Doom para o loop principal do `doomgeneric`.
+/// Initializes Setun-Doom platform for `doomgeneric` main loop.
 #[no_mangle]
 pub extern "C" fn DG_Init() {
     if let Ok(mut machine) = global_machine().lock() {
@@ -487,9 +487,9 @@ pub extern "C" fn DG_Init() {
     }
 }
 
-/// Traduz os 64.000 `Tryte6` do framebuffer ternário para o buffer RGBA de janela gráfica.
-/// Se um ponteiro opcional `out_rgba_buffer` (`*mut u8` de 256.000 bytes) for fornecido pelo host,
-/// copia também os pixels RGBA para o buffer externo.
+/// Translates 64,000 `Tryte6` entries from ternary framebuffer to RGBA window buffer.
+/// If optional pointer `out_rgba_buffer` (`*mut u8` of 256,000 bytes) is provided by host,
+/// also copies RGBA pixels to external buffer.
 #[no_mangle]
 pub extern "C" fn DG_DrawFrame() {
     if let Ok(mut machine) = global_machine().lock() {
@@ -497,11 +497,11 @@ pub extern "C" fn DG_DrawFrame() {
     }
 }
 
-/// Variante FFI estendida que copia o framebuffer RGBA renderizado diretamente para um buffer C
-/// `out_rgba` de `320 * 200 * 4 = 256.000` bytes.
+/// Extended FFI variant copying rendered RGBA framebuffer directly to C buffer
+/// `out_rgba` of `320 * 200 * 4 = 256,000` bytes.
 ///
 /// # Safety
-/// `out_rgba` deve ser nulo ou apontar para pelo menos `256.000` bytes válidos para escrita.
+/// `out_rgba` must be null or point to at least 256,000 valid writable bytes.
 #[no_mangle]
 pub unsafe extern "C" fn DG_DrawFrameToBuffer(out_rgba: *mut u8) {
     if let Ok(mut machine) = global_machine().lock() {
@@ -512,7 +512,7 @@ pub unsafe extern "C" fn DG_DrawFrameToBuffer(out_rgba: *mut u8) {
     }
 }
 
-/// Suspende a execução por `ms` milissegundos.
+/// Suspends execution for `ms` milliseconds.
 #[no_mangle]
 pub extern "C" fn DG_SleepMs(ms: u32) {
     if let Ok(machine) = global_machine().lock() {
@@ -522,7 +522,7 @@ pub extern "C" fn DG_SleepMs(ms: u32) {
     }
 }
 
-/// Retorna a contagem de milissegundos desde `DG_Init`.
+/// Returns millisecond count elapsed since `DG_Init`.
 #[no_mangle]
 pub extern "C" fn DG_GetTicksMs() -> u32 {
     if let Ok(mut machine) = global_machine().lock() {
@@ -532,11 +532,11 @@ pub extern "C" fn DG_GetTicksMs() -> u32 {
     }
 }
 
-/// Consulta a fila de eventos de teclado do `doomgeneric`.
-/// Preenche `*pressed` (`1` ou `0`) e `*doom_key` e retorna `1` se havia evento na fila, ou `0` caso contrário.
+/// Queries `doomgeneric` keyboard event queue.
+/// Populates `*pressed` (`1` or `0`) and `*doom_key` returning `1` if event was queued, or `0` otherwise.
 ///
 /// # Safety
-/// `pressed` e `doom_key` devem ser ponteiros válidos e alinhados caso a fila contenha eventos.
+/// `pressed` and `doom_key` must be valid aligned pointers when events are present in queue.
 #[no_mangle]
 pub unsafe extern "C" fn DG_GetKey(pressed: *mut i32, doom_key: *mut u8) -> i32 {
     if pressed.is_null() || doom_key.is_null() {
@@ -552,12 +552,12 @@ pub unsafe extern "C" fn DG_GetKey(pressed: *mut i32, doom_key: *mut u8) -> i32 
     0
 }
 
-/// Define o título da janela gráfica (`DG_SetWindowTitle` do `doomgeneric`).
+/// Sets graphics window title (`DG_SetWindowTitle` from `doomgeneric`).
 #[no_mangle]
 pub extern "C" fn DG_SetWindowTitle(_title: *const core::ffi::c_char) {}
 
-/// Enfileira um evento de tecla vindo da janela SDL2/X11 diretamente no registrador
-/// `MMIO_KEY_STATE` e na fila do controlador de teclado da máquina Setun-Doom.
+/// Enqueues key event from SDL2/X11 window directly into `MMIO_KEY_STATE` register
+/// and keyboard controller queue of Setun-Doom machine.
 #[no_mangle]
 pub extern "C" fn setun_PushKeyEvent(pressed: i32, doom_key: u8) {
     if let Ok(mut machine) = global_machine().lock() {
@@ -566,20 +566,20 @@ pub extern "C" fn setun_PushKeyEvent(pressed: i32, doom_key: u8) {
 }
 
 // ============================================================================
-// Ponte de Aritmética Ternária e Framebuffer para o motor C do `doomgeneric`
+// Ternary Arithmetic and Framebuffer Bridge for Doom C engine
 // ============================================================================
 
-/// Substitui `FixedMul(fixed_t a, fixed_t b)` do `m_fixed.c` do Doom:
-/// Grava os operandos em `MEM[50..51]`, executa o programa ternário `ROM_FIXED_MUL_ENTRY`
-/// via `Cpu::step_checked()` (ciclo Fetch-Decode-Execute completo usando o multiplicador
-/// físico de 42 trits e telemetria sem viés de base $3^{10}$ vs $2^{16}$) e lê `MEM[52]`.
+/// Replaces `FixedMul(fixed_t a, fixed_t b)` in Doom `m_fixed.c`:
+/// Writes operands into `MEM[50..51]`, executes ternary program `ROM_FIXED_MUL_ENTRY`
+/// via `Cpu::step_checked()` (full Fetch-Decode-Execute cycle using physical 42-trit multiplier
+/// and unbiased $3^{10}$ vs $2^{16}$ telemetry), and reads `MEM[52]`.
 #[no_mangle]
 pub extern "C" fn setun_FixedMul(a: i32, b: i32) -> i32 {
     let ta = crate::fixed::TernaryFixed::from_doom_fixed16(a);
     let tb = crate::fixed::TernaryFixed::from_doom_fixed16(b);
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex da SetunDoomMachine corrompido em setun_FixedMul");
+        .expect("Corrupted SetunDoomMachine mutex in setun_FixedMul");
     machine.memory.write_word_fast(50, ta.raw_word());
     machine.memory.write_word_fast(51, tb.raw_word());
     machine.execute_rom_routine(ROM_FIXED_MUL_ENTRY, 8);
@@ -587,8 +587,8 @@ pub extern "C" fn setun_FixedMul(a: i32, b: i32) -> i32 {
     crate::fixed::TernaryFixed::from_raw(prod_word).to_doom_fixed16()
 }
 
-/// Substitui `FixedDiv(fixed_t a, fixed_t b)` do `m_fixed.c` do Doom:
-/// Grava os operandos em `MEM[50..51]` e executa o programa ternário `ROM_FIXED_DIV_ENTRY`
+/// Replaces `FixedDiv(fixed_t a, fixed_t b)` in Doom `m_fixed.c`:
+/// Writes operands into `MEM[50..51]` and executes ternary program `ROM_FIXED_DIV_ENTRY`
 /// via `Cpu::step_checked()`.
 #[no_mangle]
 pub extern "C" fn setun_FixedDiv(a: i32, b: i32) -> i32 {
@@ -599,7 +599,7 @@ pub extern "C" fn setun_FixedDiv(a: i32, b: i32) -> i32 {
     let tb = crate::fixed::TernaryFixed::from_doom_fixed16(b);
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex da SetunDoomMachine corrompido em setun_FixedDiv");
+        .expect("Corrupted SetunDoomMachine mutex in setun_FixedDiv");
     machine.memory.write_word_fast(50, ta.raw_word());
     machine.memory.write_word_fast(51, tb.raw_word());
     machine.execute_rom_routine(ROM_FIXED_DIV_ENTRY, 8);
@@ -607,10 +607,10 @@ pub extern "C" fn setun_FixedDiv(a: i32, b: i32) -> i32 {
     crate::fixed::TernaryFixed::from_raw(quot_word).to_doom_fixed16()
 }
 
-/// Executa `R_PointOnSide` / `R_PointOnSegSide` / `P_PointOnLineSide` do Doom
-/// inteiramente dentro da CPU Setun-Doom via `ROM_POINT_ON_SIDE_ENTRY` (`PC=140`),
-/// mantendo todos os valores intermediários (`dx`, `dy`, `left`, `right`) em `TernaryFixed` (`11.10`)
-/// sem dupla quantização `16.16 <-> 11.10` no meio do determinante.
+/// Executes Doom `R_PointOnSide` / `R_PointOnSegSide` / `P_PointOnLineSide`
+/// entirely inside Setun-Doom CPU via `ROM_POINT_ON_SIDE_ENTRY` (`PC=140`),
+/// maintaining all intermediate values (`dx`, `dy`, `left`, `right`) in `TernaryFixed` (`11.10`)
+/// without intermediate `16.16 <-> 11.10` double quantization.
 #[no_mangle]
 pub extern "C" fn setun_PointOnSide(
     x: i32,
@@ -629,7 +629,7 @@ pub extern "C" fn setun_PointOnSide(
 
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex da SetunDoomMachine corrompido em setun_PointOnSide");
+        .expect("Corrupted SetunDoomMachine mutex in setun_PointOnSide");
     machine.memory.write_word_fast(60, tx);
     machine.memory.write_word_fast(61, ty);
     machine.memory.write_word_fast(62, tlx);
@@ -640,16 +640,16 @@ pub extern "C" fn setun_PointOnSide(
     machine.memory.read_word_fast(69).as_i64() as i32
 }
 
-/// Executa `P_AproxDistance(dx, dy)` do `p_maputl.c` inteiramente na CPU Setun-Doom
-/// via `ROM_APROX_DIST_ENTRY` (`PC=220`), usando `STI.T` para valor absoluto ternário,
-/// `CMP_T` para mínimo e `ADD`/`SUB`/`MUL` em `TernaryFixed` (`11.10`).
+/// Executes Doom `P_AproxDistance(dx, dy)` in `p_maputl.c` entirely inside Setun-Doom CPU
+/// via `ROM_APROX_DIST_ENTRY` (`PC=220`), using `STI.T` for ternary absolute value,
+/// `CMP_T` for minimum and `ADD`/`SUB`/`MUL` in `TernaryFixed` (`11.10`).
 #[no_mangle]
 pub extern "C" fn setun_AproxDistance(dx: i32, dy: i32) -> i32 {
     let tdx = crate::fixed::TernaryFixed::from_doom_fixed16(dx).raw_word();
     let tdy = crate::fixed::TernaryFixed::from_doom_fixed16(dy).raw_word();
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_AproxDistance");
+        .expect("Corrupted mutex in setun_AproxDistance");
     machine.memory.write_word_fast(70, tdx);
     machine.memory.write_word_fast(71, tdy);
     machine.execute_rom_routine(ROM_APROX_DIST_ENTRY, 32);
@@ -657,12 +657,12 @@ pub extern "C" fn setun_AproxDistance(dx: i32, dy: i32) -> i32 {
     crate::fixed::TernaryFixed::from_raw(res_word).to_doom_fixed16()
 }
 
-/// Executa o interpolador DDA de colunas de parede/sprite `R_DrawColumn` do `r_draw.c`
-/// usando acumulador `TernaryFixed` (`11.10` trits, escala $3^{10} = 59.049$) e o somador
-/// Ripple-Carry de 21 estágios (`Word21::gate_ripple_carry_add`) a cada pixel vertical.
+/// Executes column DDA interpolator `R_DrawColumn` from `r_draw.c`
+/// using `TernaryFixed` accumulator (`11.10` trits, scale $3^{10} = 59,049$) and 21-stage
+/// ripple-carry adder (`Word21::gate_ripple_carry_add`) per vertical pixel.
 ///
 /// # Safety
-/// `dest`, `dc_source` e `dc_colormap` devem ser ponteiros válidos para o framebuffer e lumps do Doom.
+/// `dest`, `dc_source`, and `dc_colormap` must be valid pointers to Doom framebuffer and lumps.
 #[no_mangle]
 pub unsafe extern "C" fn setun_DrawColumn(
     dc_x: i32,
@@ -682,17 +682,17 @@ pub unsafe extern "C" fn setun_DrawColumn(
     }
     assert!(
         !dc_source.is_null() && !dc_colormap.is_null() && !dest_start.is_null(),
-        "Ponteiro nulo em setun_DrawColumn"
+        "Null pointer in setun_DrawColumn"
     );
     assert!(
         dc_x >= 0 && (dc_x as usize) < crate::memory::FB_WIDTH && dc_yl >= 0 && (dc_yh as usize) < crate::memory::FB_HEIGHT,
-        "Coordenadas fora de faixa em setun_DrawColumn: x={}, yl={}, yh={}",
+        "Coordinates out of range in setun_DrawColumn: x={}, yl={}, yh={}",
         dc_x,
         dc_yl,
         dc_yh
     );
 
-    // Passo e coordenada inicial em TernaryFixed (11.10 trits, escala 3^10 = 59049)
+    // Initial step and coordinate in TernaryFixed (11.10 trits, scale 3^10 = 59049)
     let frac16_init = dc_texturemid.wrapping_add((dc_yl - centery).wrapping_mul(dc_iscale));
     let mut t_frac = crate::fixed::TernaryFixed::from_doom_fixed16(frac16_init).raw_word();
     let t_step = crate::fixed::TernaryFixed::from_doom_fixed16(dc_iscale).raw_word();
@@ -702,14 +702,14 @@ pub unsafe extern "C" fn setun_DrawColumn(
 
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_DrawColumn");
+        .expect("Corrupted mutex in setun_DrawColumn");
 
     let mut dest_ptr = dest_start;
     let mut y = dc_yl as usize;
     let x = dc_x as usize;
 
     for _ in 0..=count {
-        // Extrai a linha inteira de textura deslocando 10 trits fisicamente nos fios (sem divisao binaria)
+        // Extracts texture line by shifting 10 trits physically across wires
         let int_row = t_frac.shift_trits(-10).as_i64();
         let tex_row = (int_row.rem_euclid(128)) as usize;
         let raw_texel = *dc_source.add(tex_row) as usize;
@@ -720,7 +720,7 @@ pub unsafe extern "C" fn setun_DrawColumn(
         machine.memory.raw_cells_mut()[crate::memory::FRAMEBUFFER_BASE + fb_offset] =
             Tryte6::from_palette_index(lit_color).as_i64();
 
-        // Avança frac += fracstep usando o somador Ripple-Carry de 21 portas `Trit::full_add`
+        // Steps frac += fracstep using 21-gate `Trit::full_add` ripple-carry adder
         let (next_t_frac, _cout, carries) =
             t_frac.gate_ripple_carry_add(t_step, crate::trit::Trit::Zero);
         let next_b_frac16 = b_frac16.wrapping_add(b_step16);
@@ -740,12 +740,12 @@ pub unsafe extern "C" fn setun_DrawColumn(
     machine.cpu.acc = t_frac;
 }
 
-/// Executa o interpolador de colunas com mapeamento de cores `R_DrawTranslatedColumn` do `r_draw.c`
-/// (usado para sprites de jogadores e variações de monstros) usando acumulador `TernaryFixed`
-/// e o somador Ripple-Carry de 21 portas `Trit::full_add`.
+/// Executes color-translated column interpolator `R_DrawTranslatedColumn` from `r_draw.c`
+/// (used for player sprites and monster variants) using `TernaryFixed` accumulator
+/// and 21-gate `Trit::full_add` ripple-carry adder.
 ///
 /// # Safety
-/// Ponteiros devem ser válidos para leitura e escrita no framebuffer.
+/// Pointers must be valid for reading and writing in framebuffer.
 #[no_mangle]
 pub unsafe extern "C" fn setun_DrawTranslatedColumn(
     dc_x: i32,
@@ -769,7 +769,7 @@ pub unsafe extern "C" fn setun_DrawTranslatedColumn(
             && !dc_colormap.is_null()
             && !dc_translation.is_null()
             && !dest_start.is_null(),
-        "Ponteiro nulo em setun_DrawTranslatedColumn"
+        "Null pointer in setun_DrawTranslatedColumn"
     );
 
     let frac16_init = dc_texturemid.wrapping_add((dc_yl - centery).wrapping_mul(dc_iscale));
@@ -781,7 +781,7 @@ pub unsafe extern "C" fn setun_DrawTranslatedColumn(
 
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_DrawTranslatedColumn");
+        .expect("Corrupted mutex in setun_DrawTranslatedColumn");
 
     let mut dest_ptr = dest_start;
     let mut y = dc_yl as usize;
@@ -818,11 +818,11 @@ pub unsafe extern "C" fn setun_DrawTranslatedColumn(
     machine.cpu.acc = t_frac;
 }
 
-/// Executa o rasterizador de invisibilidade/espectros `R_DrawFuzzColumn` do `r_draw.c`
-/// usando o somador Ripple-Carry de 21 portas `Trit::full_add` para avançar `frac` a cada pixel.
+/// Executes fuzz/invisibility column rasterizer `R_DrawFuzzColumn` from `r_draw.c`
+/// using 21-gate `Trit::full_add` ripple-carry adder to advance `frac` per pixel.
 ///
 /// # Safety
-/// Ponteiros devem ser válidos.
+/// Pointers must be valid.
 #[no_mangle]
 pub unsafe extern "C" fn setun_DrawFuzzColumn(
     dc_x: i32,
@@ -847,7 +847,7 @@ pub unsafe extern "C" fn setun_DrawFuzzColumn(
             && !fuzzoffset.is_null()
             && !fuzzpos_ptr.is_null()
             && !dest_start.is_null(),
-        "Ponteiro nulo em setun_DrawFuzzColumn"
+        "Null pointer in setun_DrawFuzzColumn"
     );
 
     let frac16_init = dc_texturemid.wrapping_add((dc_yl - centery).wrapping_mul(dc_iscale));
@@ -859,7 +859,7 @@ pub unsafe extern "C" fn setun_DrawFuzzColumn(
 
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_DrawFuzzColumn");
+        .expect("Corrupted mutex in setun_DrawFuzzColumn");
 
     let mut dest_ptr = dest_start;
     let mut y = dc_yl as usize;
@@ -901,12 +901,12 @@ pub unsafe extern "C" fn setun_DrawFuzzColumn(
     machine.cpu.acc = t_frac;
 }
 
-/// Executa o interpolador DDA de planos horizontais (pisos e tetos) `R_DrawSpan` do `r_draw.c`
-/// usando acumuladores `TernaryFixed` (`11.10` trits) e o somador Ripple-Carry de 21 estágios
-/// (`Word21::gate_ripple_carry_add`) para `(u, v)` a cada pixel horizontal.
+/// Executes horizontal span (floors and ceilings) DDA interpolator `R_DrawSpan` from `r_draw.c`
+/// using `TernaryFixed` accumulators (`11.10` trits) and 21-stage ripple-carry adder
+/// (`Word21::gate_ripple_carry_add`) for `(u, v)` coordinates per pixel.
 ///
 /// # Safety
-/// `dest_start`, `ds_source` e `ds_colormap` devem ser ponteiros válidos.
+/// `dest_start`, `ds_source`, and `ds_colormap` must be valid pointers.
 #[no_mangle]
 pub unsafe extern "C" fn setun_DrawSpan(
     ds_y: i32,
@@ -926,14 +926,14 @@ pub unsafe extern "C" fn setun_DrawSpan(
     }
     assert!(
         !ds_source.is_null() && !ds_colormap.is_null() && !dest_start.is_null(),
-        "Ponteiro nulo em setun_DrawSpan"
+        "Null pointer in setun_DrawSpan"
     );
     assert!(
         ds_x1 >= 0
             && (ds_x2 as usize) < crate::memory::FB_WIDTH
             && ds_y >= 0
             && (ds_y as usize) < crate::memory::FB_HEIGHT,
-        "Coordenadas fora de faixa em setun_DrawSpan: y={}, x1={}, x2={}",
+        "Coordinates out of range in setun_DrawSpan: y={}, x1={}, x2={}",
         ds_y,
         ds_x1,
         ds_x2
@@ -949,14 +949,14 @@ pub unsafe extern "C" fn setun_DrawSpan(
 
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_DrawSpan");
+        .expect("Corrupted mutex in setun_DrawSpan");
 
     let mut dest_ptr = dest_start;
     let y = ds_y as usize;
     let mut x = ds_x1 as usize;
 
     for _ in 0..=count {
-        // Extrai as coordenadas inteiras de textura (u, v) deslocando 10 trits fisicamente nos fios
+        // Extracts integer texture coordinates (u, v) by shifting 10 trits physically across wires
         let u_int = (tx_frac.shift_trits(-10).as_i64().rem_euclid(64)) as usize;
         let v_int = (ty_frac.shift_trits(-10).as_i64().rem_euclid(64)) as usize;
         let spot = (v_int * 64) + u_int;
@@ -996,30 +996,30 @@ pub unsafe extern "C" fn setun_DrawSpan(
     machine.cpu.acc = tx_frac;
 }
 
-/// Sincroniza a paleta `PLAYPAL` de 256 cores RGB vinda de `I_SetPalette` do `doomgeneric`
-/// com a região `PALETTE_BASE` da memória ternária Setun-Doom.
+/// Synchronizes 256-color RGB `PLAYPAL` palette from `I_SetPalette` in `doomgeneric`
+/// with the `PALETTE_BASE` region of Setun-Doom ternary memory.
 ///
 /// # Safety
-/// `rgb_palette` deve apontar para 768 bytes (`256 * 3`).
+/// `rgb_palette` must point to 768 bytes (`256 * 3`).
 #[no_mangle]
 pub unsafe extern "C" fn setun_SyncPalette(rgb_palette: *const u8) {
     assert!(
         !rgb_palette.is_null(),
-        "Ponteiro nulo passado para setun_SyncPalette"
+        "Null pointer passed to setun_SyncPalette"
     );
     let slice = core::slice::from_raw_parts(rgb_palette, 768);
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_SyncPalette");
+        .expect("Corrupted mutex in setun_SyncPalette");
     machine.memory.load_playpal(slice);
 }
 
-/// Transfere os `64.000` bytes do `I_VideoBuffer` (`320x200` índices de paleta do Doom)
-/// para os `64.000` `Tryte6` mapeados em `FRAMEBUFFER_BASE` (`4_600_000..4_664_000`) da memória
-/// ternária Setun-Doom e renderiza o buffer RGBA32 de saída para exibição gráfica.
+/// Copies 64,000 bytes from `I_VideoBuffer` (`320x200` Doom palette indices)
+/// to 64,000 `Tryte6` mapped at `FRAMEBUFFER_BASE` (`4_600_000..4_664_000`) in
+/// Setun-Doom ternary memory and renders output RGBA32 buffer for display.
 ///
 /// # Safety
-/// `video_buffer_320x200` deve apontar para `64.000` bytes e `out_rgba_320x200` para `256.000` bytes.
+/// `video_buffer_320x200` must point to 64,000 bytes and `out_rgba_320x200` to 256,000 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn setun_BlitVideoBuffer(
     video_buffer_320x200: *const u8,
@@ -1027,12 +1027,12 @@ pub unsafe extern "C" fn setun_BlitVideoBuffer(
 ) {
     assert!(
         !video_buffer_320x200.is_null(),
-        "Ponteiro nulo em setun_BlitVideoBuffer"
+        "Null pointer in setun_BlitVideoBuffer"
     );
     let vbuf = core::slice::from_raw_parts(video_buffer_320x200, FB_SIZE);
     let mut machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_BlitVideoBuffer");
+        .expect("Corrupted mutex in setun_BlitVideoBuffer");
     for (i, &pal_idx) in vbuf.iter().enumerate() {
         let tryte = Tryte6::from_palette_index(pal_idx);
         machine.memory.raw_cells_mut()[crate::memory::FRAMEBUFFER_BASE + i] = tryte.as_i64();
@@ -1043,7 +1043,7 @@ pub unsafe extern "C" fn setun_BlitVideoBuffer(
     }
 }
 
-/// Estrutura exportada via C ABI contendo o estado dos registradores e telemetria para o HUD.
+/// Structure exported via C ABI containing register state and telemetry for HUD overlay.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
 pub struct SetunLiveTelemetrySnapshot {
@@ -1061,10 +1061,10 @@ pub struct SetunLiveTelemetrySnapshot {
     pub acc_trits: [i8; 21],
 }
 
-/// Coleta uma captura instantânea atômica do estado dos registradores e telemetria para o HUD gráfico.
+/// Collects an atomic live snapshot of register state and telemetry for HUD overlay.
 ///
 /// # Safety
-/// `out_snap` deve apontar para uma área de memória válida alinhada para [`SetunLiveTelemetrySnapshot`].
+/// `out_snap` must point to valid aligned memory for [`SetunLiveTelemetrySnapshot`].
 #[no_mangle]
 pub unsafe extern "C" fn setun_GetLiveTelemetrySnapshot(out_snap: *mut SetunLiveTelemetrySnapshot) {
     if out_snap.is_null() {
@@ -1072,7 +1072,7 @@ pub unsafe extern "C" fn setun_GetLiveTelemetrySnapshot(out_snap: *mut SetunLive
     }
     let machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_GetLiveTelemetrySnapshot");
+        .expect("Corrupted mutex in setun_GetLiveTelemetrySnapshot");
     let tel = machine.cpu.telemetry;
     let acc_word = machine.cpu.acc;
     let mut trits_arr = [0i8; 21];
@@ -1096,13 +1096,13 @@ pub unsafe extern "C" fn setun_GetLiveTelemetrySnapshot(out_snap: *mut SetunLive
     };
 }
 
-/// Imprime no terminal um resumo ao vivo da telemetria ternária acumulada pela CPU Setun-Doom
-/// durante a execução do `doomgeneric`.
+/// Prints a live summary of accumulated ternary telemetry to terminal
+/// during `doomgeneric` execution.
 #[no_mangle]
 pub extern "C" fn setun_PrintTelemetry(frame_num: u32) {
     let machine = global_machine()
         .lock()
-        .expect("Mutex corrompido em setun_PrintTelemetry");
+        .expect("Corrupted mutex in setun_PrintTelemetry");
     let tel = machine.cpu.telemetry;
     println!(
         "[Setun-Doom Frame {:>4}] ISA Instrs: {:>8} | Gate Carries: {:>8} | Trit Flips: {:>9} (Half: {:>9}, Full: {:>7}) vs RV32I Bit Flips: {:>9} ({:+.2}% Flips | {:+.2}% Energy dV^2)",
@@ -1127,17 +1127,17 @@ mod tests {
     fn test_wad_dma_transcode_and_playpal_extraction() {
         let mut mem = Memory::new();
 
-        // Constrói uma imagem IWAD sintética com 1 lump chamado "PLAYPAL" de 768 bytes
+        // Constructs synthetic IWAD image with 1 lump named "PLAYPAL" of 768 bytes
         let mut wad = Vec::new();
         wad.extend_from_slice(b"IWAD");
         wad.extend_from_slice(&(1i32.to_le_bytes())); // 1 lump
-        wad.extend_from_slice(&(28i32.to_le_bytes())); // diretório no offset 28 + 768 = 796? Vamos colocar dados em 12..780 e diretório em 780
+        wad.extend_from_slice(&(28i32.to_le_bytes()));
 
-        // Reajusta offset do diretório para 12 + 768 = 780
+        // Directory offset: 12 + 768 = 780
         wad.truncate(8);
         wad.extend_from_slice(&(780i32.to_le_bytes()));
 
-        // Dados de PLAYPAL (768 bytes = 256 * 3)
+        // PLAYPAL data (768 bytes = 256 * 3)
         for i in 0..256 {
             wad.push(i as u8); // R
             wad.push((255 - i) as u8); // G
@@ -1145,7 +1145,7 @@ mod tests {
         }
         assert_eq!(wad.len(), 780);
 
-        // Entrada do diretório (16 bytes): filepos=12, size=768, name="PLAYPAL\0"
+        // Directory entry (16 bytes): filepos=12, size=768, name="PLAYPAL\0"
         wad.extend_from_slice(&(12i32.to_le_bytes()));
         wad.extend_from_slice(&(768i32.to_le_bytes()));
         wad.extend_from_slice(b"PLAYPAL\0");
@@ -1162,7 +1162,7 @@ mod tests {
         assert_eq!(lumps.len(), 1);
         assert_eq!(lumps[0].name, "PLAYPAL");
 
-        // Verifica que os bytes podem ser recuperados perfeitamente da memória ternária
+        // Verifies bytes can be recovered from ternary memory
         let recovered = WadDmaLoader::read_bytes_tryte(&mem, WAD_DMA_BASE, wad.len()).unwrap();
         assert_eq!(recovered, wad);
     }
@@ -1174,7 +1174,7 @@ mod tests {
         let ticks = DG_GetTicksMs();
         assert!(ticks >= 1);
 
-        // Escreve no framebuffer da máquina global e testa DG_DrawFrameToBuffer
+        // Writes to global machine framebuffer and tests DG_DrawFrameToBuffer
         {
             let mut machine = global_machine().lock().unwrap();
             machine.memory.set_palette_entry(42, 10, 200, 30);

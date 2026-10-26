@@ -1,11 +1,14 @@
-//! Interface gráfica nativa SDL2 para visualização interativa da banca de testes Setun-Doom.
+// Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
+// SPDX-License-Identifier: MIT
+
+//! Native SDL2 graphical interface for interactive visualization of the Setun-Doom testbench.
 //!
-//! Exibe uma janela SDL2 (640x400) com o frame do teste de mesa renderizado
-//! e permite controle interativo da câmera pelo teclado:
-//! - W / S: avança e recua na cena BSP
-//! - A / D: translada a câmera lateralmente
-//! - Espaço / Enter: alterna cena ou injeta ciclos na ULA
-//! - ESC / Q: fecha a janela
+//! Displays an SDL2 window (640x400) showing the rendered testbench frame
+//! and enables interactive keyboard camera control:
+//! - W / S: move forward and backward in BSP scene
+//! - A / D: translate camera sideways
+//! - Space / Enter: reset scene or inject ALU cycles
+//! - ESC / Q: close window
 
 use std::ffi::{c_char, c_void, CString};
 use std::ptr;
@@ -16,7 +19,7 @@ const SDL_WINDOW_SHOWN: u32 = 0x00000004;
 const SDL_RENDERER_ACCELERATED: u32 = 0x00000002;
 const SDL_RENDERER_PRESENTVSYNC: u32 = 0x00000004;
 const SDL_TEXTUREACCESS_STREAMING: i32 = 1;
-const SDL_PIXELFORMAT_ABGR8888: u32 = 376840196; // SDL_PIXELFORMAT_RGBA32 / ABGR8888 compativel com memory.rs
+const SDL_PIXELFORMAT_ABGR8888: u32 = 376840196; // SDL_PIXELFORMAT_RGBA32 / ABGR8888 compatible with memory.rs
 
 const SDL_QUIT: u32 = 0x100;
 const SDL_KEYDOWN: u32 = 0x300;
@@ -100,7 +103,7 @@ extern "C" {
     fn SDL_Delay(ms: u32);
 }
 
-/// Janela gráfica interativa da banca de testes.
+/// Interactive testbench graphical window.
 pub struct BenchGui {
     window: *mut c_void,
     renderer: *mut c_void,
@@ -110,11 +113,11 @@ pub struct BenchGui {
 }
 
 impl BenchGui {
-    /// Inicializa a janela gráfica SDL2 (resolução virtual 640x400 para 320x200 da Setun).
+    /// Initializes the SDL2 graphical window (640x400 virtual resolution for Setun's 320x200).
     pub fn new(title: &str) -> Option<Self> {
         unsafe {
             if SDL_Init(SDL_INIT_VIDEO) != 0 {
-                eprintln!("[GUI] Falha ao inicializar subsistema de vídeo SDL2.");
+                eprintln!("[GUI] Failed to initialize SDL2 video subsystem.");
                 return None;
             }
             let c_title = CString::new(title).unwrap_or_default();
@@ -127,7 +130,7 @@ impl BenchGui {
                 SDL_WINDOW_SHOWN,
             );
             if window.is_null() {
-                eprintln!("[GUI] Falha ao criar janela SDL2.");
+                eprintln!("[GUI] Failed to create SDL2 window.");
                 SDL_Quit();
                 return None;
             }
@@ -138,7 +141,7 @@ impl BenchGui {
                 SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC,
             );
             if renderer.is_null() {
-                eprintln!("[GUI] Falha ao criar renderizador acelerado SDL2.");
+                eprintln!("[GUI] Failed to create accelerated SDL2 renderer.");
                 SDL_DestroyWindow(window);
                 SDL_Quit();
                 return None;
@@ -152,7 +155,7 @@ impl BenchGui {
                 FB_HEIGHT as i32,
             );
             if texture.is_null() {
-                eprintln!("[GUI] Falha ao criar textura streaming 320x200.");
+                eprintln!("[GUI] Failed to create 320x200 streaming texture.");
                 SDL_DestroyRenderer(renderer);
                 SDL_DestroyWindow(window);
                 SDL_Quit();
@@ -169,7 +172,7 @@ impl BenchGui {
         }
     }
 
-    /// Atualiza o buffer de pixels na tela.
+    /// Updates the pixel buffer on screen.
     pub fn present_frame(&mut self, rgba_buffer: &[u8]) {
         assert_eq!(rgba_buffer.len(), FB_SIZE * 4);
         unsafe {
@@ -185,7 +188,7 @@ impl BenchGui {
         }
     }
 
-    /// Trata eventos da janela. Retorna false se o usuário solicitou sair (ESC, Q ou fechar janela).
+    /// Handles window events. Returns false if user requested exit (ESC, Q, or close window).
     pub fn poll_events(&mut self) -> bool {
         let mut event = SDL_Event { event_type: 0 };
         unsafe {
@@ -214,7 +217,7 @@ impl BenchGui {
         true
     }
 
-    /// Pequena pausa para controle de taxa de quadros (60 FPS).
+    /// Short delay for frame rate pacing (60 FPS).
     pub fn delay(&self, ms: u32) {
         unsafe {
             SDL_Delay(ms);

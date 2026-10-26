@@ -1,45 +1,45 @@
-//! Unidade Central de Processamento (`Setun-Doom CPU`), Conjunto de Instruções (ISA)
-//! e Ciclo Fetch-Decode-Execute.
+//! Central Processing Unit (`Setun-Doom CPU`), Instruction Set Architecture (ISA),
+//! and Fetch-Decode-Execute Pipeline.
 //!
-//! Layout de Instrução de 21 trits (`Word21`):
-//! - **Trits `[0..13]` (14 trits)**: Operando ou Endereço imediato ($3^{14} = 4.782.969$ posições).
-//! - **Trits `[14..15]` (2 trits)**: Registrador de Índice Alvo ($3^2 = 9$ registradores, codificados
-//!   em `[-4..+4]` ou mapeados em `0..8`).
-//! - **Trits `[16..20]` (5 trits)**: Opcode ($3^5 = 243$ instruções possíveis, em `[-121..+121]`).
+//! 21-trit Instruction Layout (`Word21`):
+//! - **Trits `[0..13]` (14 trits)**: Immediate operand or address ($3^{14} = 4,782,969$ locations).
+//! - **Trits `[14..15]` (2 trits)**: Target index register ($3^2 = 9$ registers, encoded
+//!   in `[-4..+4]` or mapped to `0..8`).
+//! - **Trits `[16..20]` (5 trits)**: Opcode ($3^5 = 243$ possible instructions, in `[-121..+121]`).
 //!
-//! Desvios Condicionais Tricótomos:
-//! O Setun dispensa registradores de flags binários (Zero/Sign/Carry/Overflow). Os saltos
-//! inspecionam diretamente o estado intrínseco do Acumulador (`ACC.sign_trit()`):
-//! - `JMPN`: desvia se `ACC < 0` (`Trit::Negative`).
-//! - `JMPZ`: desvia se `ACC == 0` (`Trit::Zero`).
-//! - `JMPP`: desvia se `ACC > 0` (`Trit::Positive`).
-//! - `JMP`: desvio incondicional.
+//! Trichotomous Conditional Branches:
+//! The Setun architecture dispenses with binary status flag registers (Zero/Sign/Carry/Overflow). Branches
+//! directly inspect the intrinsic ternary state of the accumulator (`ACC.sign_trit()`):
+//! - `JMPN`: branches if `ACC < 0` (`Trit::Negative`).
+//! - `JMPZ`: branches if `ACC == 0` (`Trit::Zero`).
+//! - `JMPP`: branches if `ACC > 0` (`Trit::Positive`).
+//! - `JMP`: unconditional branch.
 
 use crate::fixed::TernaryFixed;
 use crate::memory::{Memory, INITIAL_STACK_POINTER, MEMORY_SIZE};
 use crate::trit::Trit;
 use crate::word::{extract_trit_field, Word21, POW3};
 
-/// Quantidade de registradores de índice na arquitetura Setun-Doom ($3^2 = 9$).
+/// Number of index registers in the Setun-Doom architecture ($3^2 = 9$).
 pub const INDEX_REGISTER_COUNT: usize = 9;
 
-/// Opcodes de 5 trits da arquitetura Setun-Doom (`[-121, +121]`).
+/// 5-trit opcodes of the Setun-Doom architecture (`[-121, +121]`).
 #[repr(i8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Opcode {
-    /// Sem operação (`0`).
+    /// No operation (`0`).
     Nop = 0,
     /// `ACC = ACC + MEM[operand]` (`+1`).
     Add = 1,
     /// `ACC = ACC - MEM[operand]` (`-1`).
     Sub = -1,
-    /// `ACC = FixedMul(ACC, MEM[operand])` em ponto fixo ternário `11.10`.
-    /// Por padrão (`reg_idx == 0`, estilo Setun-58 `++0`), copia o multiplicando `ACC` anterior para `R`;
-    /// se `reg_idx == 1`, deposita o resto fracionário de 10 trits em `R` (`+2`).
+    /// `ACC = FixedMul(ACC, MEM[operand])` in 11.10 balanced ternary fixed point.
+    /// By default (`reg_idx == 0`, Setun-58 `++0` style), copies previous multiplicand `ACC` to `R`;
+    /// if `reg_idx == 1`, deposits 10-trit fractional remainder into `R` (`+2`).
     Mul = 2,
-    /// `ACC = FixedDiv(ACC, MEM[operand])` em ponto fixo ternário `11.10` (`-2`).
+    /// `ACC = FixedDiv(ACC, MEM[operand])` in 11.10 balanced ternary fixed point (`-2`).
     Div = -2,
-    /// `ACC = -ACC` (inversão instantânea de todos os 21 trits) (`+3`).
+    /// `ACC = -ACC` (instantaneous inversion of all 21 trits) (`+3`).
     Neg = 3,
 
     /// `ACC = MEM[operand]` (`+4`).
@@ -51,85 +51,85 @@ pub enum Opcode {
     /// `MEM[operand + IX[reg]] = ACC` (`-5`).
     StoreIndex = -5,
 
-    /// Salto incondicional: `PC = operand` (`+6`).
+    /// Unconditional jump: `PC = operand` (`+6`).
     Jmp = 6,
-    /// Salto tricótomo negativo (`reg_idx == 0`: salta se `ACC < 0`; `reg_idx == 1`: salta se `ACC >= 0` / `JMP_GE`) (`-7`).
+    /// Trichotomous negative jump (`reg_idx == 0`: jumps if `ACC < 0`; `reg_idx == 1`: jumps if `ACC >= 0` / `JMP_GE`) (`-7`).
     JmpN = -7,
-    /// Salto tricótomo zero (`reg_idx == 0`: salta se `ACC == 0`; `reg_idx == 1`: salta se `ACC != 0` / `JMP_NE`) (`+7`).
+    /// Trichotomous zero jump (`reg_idx == 0`: jumps if `ACC == 0`; `reg_idx == 1`: jumps if `ACC != 0` / `JMP_NE`) (`+7`).
     JmpZ = 7,
-    /// Salto tricótomo positivo (`reg_idx == 0`: salta se `ACC > 0`; `reg_idx == 1`: salta se `ACC <= 0` / `JMP_LE`) (`+8`).
+    /// Trichotomous positive jump (`reg_idx == 0`: jumps if `ACC > 0`; `reg_idx == 1`: jumps if `ACC <= 0` / `JMP_LE`) (`+8`).
     JmpP = 8,
-    /// Branch Compare Equal or Greater (`bceg` do REBEL-2):
-    /// Compara `ACC` com `IX[reg]` (ou usa `ACC` direto) e despacha em 3 vias em 1 único ciclo
-    /// usando dois offsets relativos de 7 trits empacotados nos 14 trits do operando:
-    /// - Se `ACC == IX[reg]`: `PC = PC_atual + offset_eq` (trits `0..6`, `-1093..+1093`)
-    /// - Se `ACC > IX[reg]`:  `PC = PC_atual + offset_gt` (trits `7..13`, `-1093..+1093`)
-    /// - Se `ACC < IX[reg]`:  segue para `PC + 1` (`+19`).
+    /// Branch Compare Equal or Greater (`bceg` from REBEL-2):
+    /// Compares `ACC` with `IX[reg]` (or uses direct `ACC`) and dispatches 3 ways in a single cycle
+    /// using two 7-trit relative offsets packed inside the 14-trit operand:
+    /// - If `ACC == IX[reg]`: `PC = current_PC + offset_eq` (trits `0..6`, `-1093..+1093`)
+    /// - If `ACC > IX[reg]`:  `PC = current_PC + offset_gt` (trits `7..13`, `-1093..+1093`)
+    /// - If `ACC < IX[reg]`:  falls through to `PC + 1` (`+19`).
     Bceg = 19,
 
-    /// Empilha `ACC`: `MEM[SP] = ACC; SP -= 1` (`+9`).
+    /// Push `ACC`: `MEM[SP] = ACC; SP -= 1` (`+9`).
     Push = 9,
-    /// Desempilha em `ACC`: `SP += 1; ACC = MEM[SP]` (`-9`).
+    /// Pop into `ACC`: `SP += 1; ACC = MEM[SP]` (`-9`).
     Pop = -9,
-    /// Chamada de sub-rotina: empilha `PC` de retorno e salta para `operand` (`+10`).
+    /// Subroutine call: pushes return `PC` and jumps to `operand` (`+10`).
     Call = 10,
-    /// Retorno de sub-rotina: desempilha endereço e restaura `PC` (`-10`).
+    /// Subroutine return: pops address and restores `PC` (`-10`).
     Ret = -10,
 
-    /// Carrega constante imediata de 14 trits no `ACC`: `ACC = operand` (`+11`).
+    /// Loads 14-trit immediate constant into `ACC`: `ACC = operand` (`+11`).
     LoadImm = 11,
-    /// Soma constante imediata de 14 trits ao `ACC`: `ACC = ACC + operand` (`-11`).
+    /// Adds 14-trit immediate constant to `ACC`: `ACC = ACC + operand` (`-11`).
     AddImm = -11,
-    /// Carrega constante imediata de 14 trits no registrador de índice `IX[reg]` (`+12`).
+    /// Loads 14-trit immediate constant into index register `IX[reg]` (`+12`).
     LoadIxImm = 12,
-    /// Soma constante imediata ao registrador de índice `IX[reg]` (`-12`).
+    /// Adds immediate constant to index register `IX[reg]` (`-12`).
     AddIxImm = -12,
-    /// Copia `ACC` para `IX[reg]` (se `reg == 8`, atualiza também o registrador multiplicador `R`) (`+13`).
+    /// Copies `ACC` to `IX[reg]` (if `reg == 8`, also updates multiplier register `R`) (`+13`).
     MovAccToIx = 13,
-    /// Copia `IX[reg]` para `ACC` (se `reg == 8`, lê o registrador multiplicador `R`) (`-13`).
+    /// Copies `IX[reg]` to `ACC` (if `reg == 8`, reads multiplier register `R`) (`-13`).
     MovIxToAcc = -13,
-    /// Deslocamento ternário de trits por `operand` posições:
-    /// se `reg_idx == 0`, desloca `ACC`; se `reg_idx > 0`, desloca `IX[reg_idx]` e grava em `ACC` (`+14`).
+    /// Ternary trit shift by `operand` positions:
+    /// if `reg_idx == 0`, shifts `ACC`; if `reg_idx > 0`, shifts `IX[reg_idx]` and stores in `ACC` (`+14`).
     Shift = 14,
-    /// Multiplicação inteira pura `ACC = ACC * MEM[operand]` (`-14`).
+    /// Pure integer multiplication: `ACC = ACC * MEM[operand]` (`-14`).
     MulInt = -14,
-    /// Divisão inteira pura `ACC = ACC / MEM[operand]` (`+15`).
+    /// Pure integer division: `ACC = ACC / MEM[operand]` (`+15`).
     DivInt = 15,
-    /// Comparação Tricótoma (`cmp.t` do artigo REBEL-6): `ACC = ACC <=> MEM[operand]` em `{-1, 0, +1}` (`+16`).
+    /// Trichotomous Comparison (`cmp.t` from REBEL-6 paper): `ACC = ACC <=> MEM[operand]` in `{-1, 0, +1}` (`+16`).
     CmpT = 16,
-    /// Votação Majoritária Ternária (`majv.t` do artigo REBEL-6):
-    /// `ACC = MajorityVote(ACC, IX[reg], MEM[operand])` trit-a-trit (`+17`).
+    /// Ternary Majority Vote (`majv.t` from REBEL-6 paper):
+    /// `ACC = MajorityVote(ACC, IX[reg], MEM[operand])` trit-by-trit (`+17`).
     MajvT = 17,
-    /// Votação Minoritária Ternária (`minv.t` do artigo REBEL-6):
-    /// `ACC = MinorityVote(ACC, IX[reg], MEM[operand])` trit-a-trit (`-17`).
+    /// Ternary Minority Vote (`minv.t` from REBEL-6 paper):
+    /// `ACC = MinorityVote(ACC, IX[reg], MEM[operand])` trit-by-trit (`-17`).
     MinvT = -17,
-    /// Soma palavra da memória diretamente ao registrador `IX[reg]`:
-    /// `IX[reg] = IX[reg] + MEM[operand]` sem destruir `ACC` (`+20`).
+    /// Adds memory word directly to register `IX[reg]`:
+    /// `IX[reg] = IX[reg] + MEM[operand]` without clobbering `ACC` (`+20`).
     AddIx = 20,
-    /// Decrementa `IX[reg]` em 1 e salta para `operand` se `IX[reg] >= 0` (`BIX` / laço de índice
-    /// estilo Setun sem sobrescrever `ACC`) (`-20`).
+    /// Decrements `IX[reg]` by 1 and jumps to `operand` if `IX[reg] >= 0` (`BIX` / index loop
+    /// Setun style without overwriting `ACC`) (`-20`).
     DecIxJmpGe = -20,
-    /// `R = MEM[operand]` (`PARCEL_TO_R` `+-+` da Setun-58 / `YRT` da Setun-70) (`+22`).
+    /// `R = MEM[operand]` (`PARCEL_TO_R` `+-+` from Setun-58 / `YRT` from Setun-70) (`+22`).
     LoadR = 22,
-    /// `ACC = ACC + FixedMul(MEM[operand], R)` (`MULTIPLICATION_POS` `+++` da Setun-58 / `LBT` `B25` da Setun-70) (`+24`).
+    /// `ACC = ACC + FixedMul(MEM[operand], R)` (`MULTIPLICATION_POS` `+++` from Setun-58 / `LBT` `B25` from Setun-70) (`+24`).
     MacPos = 24,
-    /// `ACC = ACC - FixedMul(MEM[operand], R)` (`MULTIPLICATION_NEG` `++-` da Setun-58) (`-24`).
+    /// `ACC = ACC - FixedMul(MEM[operand], R)` (`MULTIPLICATION_NEG` `++-` from Setun-58) (`-24`).
     MacNeg = -24,
-    /// Multiplicação trit-a-trit `ACC = ACC (*) MEM[operand]` (`SMT` `+-0` da Setun-58 / `B19` da Setun-70) (`+25`).
+    /// Trit-by-trit multiplication `ACC = ACC (*) MEM[operand]` (`SMT` `+-0` from Setun-58 / `B19` from Setun-70) (`+25`).
     Smt = 25,
-    /// Adição limiar trit-a-trit `ACC = ThresholdAdd(ACC, MEM[operand])` (`SAT` `B21` `000+-+` da Setun-70) (`-25`).
+    /// Trit-by-trit threshold addition `ACC = ThresholdAdd(ACC, MEM[operand])` (`SAT` `B21` `000+-+` from Setun-70) (`-25`).
     Sat = -25,
-    /// Inibição/Coalescência trit-a-trit `ACC = ACC + MEM[operand] * (1 - |ACC|)` (`SIT` `B20` `000+-0` da Setun-70) (`+26`).
+    /// Trit-by-trit masked inhibition/coalescence `ACC = ACC + MEM[operand] * (1 - |ACC|)` (`SIT` `B20` `000+-0` from Setun-70) (`+26`).
     Sit = 26,
-    /// Normalização de mantissa e contagem de zeros à esquerda:
+    /// Mantissa normalization and leading zero count:
     /// `(ACC, IX[reg]) = ACC.normalize_leading()` (`NORM.T` / `CLZ.T`) (`+27`).
     NormT = 27,
-    /// Parada controlada da CPU (`HALT`) (`+40`).
+    /// Controlled CPU halt (`HALT`) (`+40`).
     Halt = 40,
 }
 
 impl Opcode {
-    /// Decodifica um campo de 5 trits (`-121..=+121`) em um `Opcode`.
+    /// Decodes a 5-trit field (`-121..=+121`) into an `Opcode`.
     #[inline(always)]
     pub const fn from_trit_field(val: i64) -> Option<Self> {
         match val {
@@ -179,19 +179,19 @@ impl Opcode {
     }
 }
 
-/// Instrução decodificada da arquitetura Setun-Doom.
+/// Decoded instruction of Setun-Doom architecture.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Instruction {
-    /// Opcode de 5 trits.
+    /// 5-trit Opcode.
     pub opcode: Opcode,
-    /// Índice do registrador alvo (`0..=8`, mapeado dos 2 trits `[-4..+4]`).
+    /// Target register index (`0..=8`, mapped from 2 trits `[-4..+4]`).
     pub reg_idx: usize,
-    /// Operando ou endereço imediato de 14 trits (`[-2_391_484, +2_391_484]`).
+    /// 14-trit immediate operand or address (`[-2_391_484, +2_391_484]`).
     pub operand: i64,
 }
 
 impl Instruction {
-    /// Cria uma nova instrução verificando o índice de registrador (`0..9`).
+    /// Creates a new instruction validating register index (`0..9`).
     #[inline(always)]
     pub const fn new(opcode: Opcode, reg_idx: usize, operand: i64) -> Self {
         assert!(reg_idx < INDEX_REGISTER_COUNT);
@@ -202,19 +202,19 @@ impl Instruction {
         }
     }
 
-    /// Codifica a instrução em uma palavra ternária `Word21`:
+    /// Encodes instruction into a 21-trit balanced word:
     /// `word = operand + (reg_trits * 3^14) + (opcode * 3^16)`.
     #[inline(always)]
     pub const fn encode(self) -> Word21 {
         let reg_balanced = (self.reg_idx as i64) - 4; // 0..8 -> -4..+4 (2 trits)
         let op_balanced = self.opcode as i64; // 5 trits
-        // Garante que o operando esteja na faixa balanceada de 14 trits [-2_391_484, +2_391_484]
+        // Ensures operand stays in 14-trit balanced range [-2_391_484, +2_391_484]
         let operand_balanced = crate::word::wrap_balanced::<14>(self.operand);
         let raw = operand_balanced + reg_balanced * POW3[14] + op_balanced * POW3[16];
         Word21::new(raw)
     }
 
-    /// Decodifica uma `Word21` em `Instruction` extraindo os campos de 14, 2 e 5 trits.
+    /// Decodes a `Word21` into `Instruction` extracting 14, 2, and 5-trit fields.
     #[inline(always)]
     pub const fn decode(word: Word21) -> Option<Self> {
         let raw = word.as_i64();
@@ -234,8 +234,8 @@ impl Instruction {
         })
     }
 
-    /// Converte o operando balanceado de 14 trits para um endereço linear `0..4_782_969`
-    /// quando usado para endereçamento de memória alta (como Framebuffer).
+    /// Converts 14-trit balanced operand to linear address `0..4_782_969`
+    /// when used for high-memory addressing (such as VGA Framebuffer).
     #[inline(always)]
     pub const fn operand_as_address(self) -> i64 {
         if self.operand < 0 {
@@ -245,8 +245,8 @@ impl Instruction {
         }
     }
 
-    /// Empacota dois offsets relativos de 7 trits (`offset_eq` e `offset_gt`, cada um em `[-1093..+1093]`)
-    /// dentro de um operando de 14 trits para a instrução `BCEG`.
+    /// Packs two 7-trit relative offsets (`offset_eq` and `offset_gt`, each in `[-1093..+1093]`)
+    /// into a 14-trit operand for the `BCEG` instruction.
     #[inline(always)]
     pub const fn pack_bceg_offsets(offset_eq: i64, offset_gt: i64) -> i64 {
         let eq7 = crate::word::wrap_balanced::<7>(offset_eq);
@@ -254,7 +254,7 @@ impl Instruction {
         eq7 + gt7 * POW3[7]
     }
 
-    /// Desempacota os dois offsets relativos de 7 trits (`(offset_eq, offset_gt)`) do operando `BCEG`.
+    /// Unpacks two 7-trit relative offsets (`(offset_eq, offset_gt)`) from a `BCEG` operand.
     #[inline(always)]
     pub const fn unpack_bceg_offsets(operand: i64) -> (i64, i64) {
         let eq7 = extract_trit_field(operand, 0, 7);
@@ -262,7 +262,7 @@ impl Instruction {
         (eq7, gt7)
     }
 
-    /// Constrói diretamente uma instrução `BCEG` comparando `ACC` com `IX[reg_idx]`.
+    /// Constructs a `BCEG` instruction comparing `ACC` with `IX[reg_idx]`.
     #[inline(always)]
     pub const fn new_bceg(reg_idx: usize, offset_eq: i64, offset_gt: i64) -> Self {
         Self::new(
@@ -273,41 +273,41 @@ impl Instruction {
     }
 }
 
-/// Exceções / Armadilhas de Hardware da CPU Setun-Doom (`CpuTrap`).
-/// Impede falhas silenciosas (como decodificação inválida tratada como `HALT`,
-/// divisão por zero ignorada ou acesso fora da faixa de 14 trits de memória).
+/// Hardware Traps and Exceptions for Setun-Doom CPU (`CpuTrap`).
+/// Prevents silent failures (such as invalid decoding treated as `HALT`,
+/// ignored division by zero, or memory access outside 14-trit address space).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CpuTrap {
-    /// Palavra de instrução contém código de operação ou registrador inválido.
+    /// Instruction word contains invalid opcode or register index.
     InvalidInstruction { pc: i64, raw_word: Word21 },
-    /// Tentativa de divisão por zero em `Opcode::Div` ou `Opcode::DivInt`.
+    /// Attempted division by zero in `Opcode::Div` or `Opcode::DivInt`.
     DivisionByZero { pc: i64, opcode: Opcode },
-    /// Violação de limites no barramento de memória de 14 trits.
+    /// Boundary violation on 14-trit memory bus.
     MemoryFault {
         pc: i64,
         error: crate::memory::MemoryError,
     },
 }
 
-/// Telemetria de eficiência energética e chaveamento de estado (*Digit Flips*) baseada na
-/// metodologia da Seção IV.B do artigo **REBEL-6** (IEEE ISMVL 2025), livre de viés de escala.
+/// Power efficiency and state switching telemetry (*Digit Flips*) based on
+/// Section IV.B methodology from **REBEL-6** paper (IEEE ISMVL 2025).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PowerTelemetry {
-    /// Total de trits que mudaram de estado ao atualizar registradores (`Word21`).
+    /// Total trits that changed state when updating registers (`Word21`).
     pub ternary_trit_flips: u64,
-    /// Quantidade de transições ternárias de meia-excursão (`-1 <-> 0` ou `0 <-> +1`).
+    /// Count of half-swing ternary transitions (`-1 <-> 0` or `0 <-> +1`).
     pub ternary_half_swings: u64,
-    /// Quantidade de transições ternárias de excursão completa (`-1 <-> +1`).
+    /// Count of full-swing ternary transitions (`-1 <-> +1`).
     pub ternary_full_swings: u64,
-    /// Total de bits que mudariam em registradores binários de 32 bits (`RV32I` complemento de dois)
-    /// executando as operações equivalentes na representação nativa de cada base.
+    /// Total bits that would toggle in 32-bit binary registers (`RV32I` two's complement)
+    /// executing equivalent operations in native base representations.
     pub binary32_bit_flips: u64,
-    /// Propagações de carry ativas medidas nos estágios `Trit::full_add` da ALU ternária.
+    /// Active carry propagations measured across `Trit::full_add` stages in ternary ALU.
     pub adder_carry_propagations: u64,
 }
 
 impl PowerTelemetry {
-    /// Contabiliza uma escrita de registrador inteiro de `prev` para `next`.
+    /// Records an integer register write from `prev` to `next`.
     #[inline(always)]
     pub fn record_transition(&mut self, prev: Word21, next: Word21) {
         if prev == next {
@@ -321,9 +321,9 @@ impl PowerTelemetry {
         self.binary32_bit_flips += b_flips as u64;
     }
 
-    /// Contabiliza uma transição pareada 1-para-1 de ponto fixo comparando a transição
-    /// `prev_ternary -> next_ternary` em `Word21` (`11.10`, escala $3^{10} = 59.049$)
-    /// contra a transição exata correspondente `prev_binary16 -> next_binary16` em `RV32I` (`16.16`, escala $2^{16} = 65.536$).
+    /// Records a 1-to-1 paired fixed-point transition comparing
+    /// `prev_ternary -> next_ternary` in `Word21` (`11.10`, scale $3^{10} = 59,049$)
+    /// against corresponding exact transition `prev_binary16 -> next_binary16` in `RV32I` (`16.16`, scale $2^{16} = 65,536$).
     #[inline(always)]
     pub fn record_fixed16_transition(
         &mut self,
@@ -344,8 +344,8 @@ impl PowerTelemetry {
         }
     }
 
-    /// Calcula a redução percentual de *Digit Flips* da arquitetura ternária em relação ao binário 32-bit
-    /// (ex: `33.24` significa `-33.24%` de chaveamento dinâmico como reportado no artigo REBEL-6).
+    /// Computes percentage reduction of *Digit Flips* for ternary architecture versus 32-bit binary
+    /// (e.g. `33.24` indicates `33.24%` dynamic switching savings as reported in REBEL-6 paper).
     pub fn digit_flip_reduction_pct(&self) -> f64 {
         if self.binary32_bit_flips == 0 {
             return 0.0;
@@ -355,9 +355,9 @@ impl PowerTelemetry {
         ((b - t) / b) * 100.0
     }
 
-    /// Calcula a redução percentual de energia capacitiva dinâmica ($E \propto \Delta V^2$),
-    /// ponderando cada *Half-Swing* (`-1 <-> 0`, `0 <-> +1`) com $0{,}25\times$ a energia de um
-    /// *Full-Swing* (`-1 <-> +1` ou transição binária `0 <-> 1`).
+    /// Computes percentage reduction in dynamic capacitive switching energy ($E \propto \Delta V^2$),
+    /// weighting each *Half-Swing* (`-1 <-> 0`, `0 <-> +1`) with $0.25\times$ energy of a
+    /// *Full-Swing* (`-1 <-> +1` or binary `0 <-> 1` toggle).
     pub fn weighted_energy_reduction_pct(&self) -> f64 {
         if self.binary32_bit_flips == 0 {
             return 0.0;
@@ -369,30 +369,30 @@ impl PowerTelemetry {
     }
 }
 
-/// Estado arquitetural completo da CPU Setun-Doom.
+/// Full architectural state of Setun-Doom CPU.
 pub struct Cpu {
-    /// Acumulador principal de 21 trits (`ACC`).
+    /// 21-trit main accumulator (`ACC`).
     pub acc: Word21,
-    /// Registrador Multiplicador/Quociente (`R`) de 21 trits.
+    /// 21-trit multiplier/quotient register (`R`).
     pub r: Word21,
-    /// Contador de Programa (`PC`) apontando para o endereço da próxima instrução.
+    /// Program Counter (`PC`) pointing to address of next instruction.
     pub pc: i64,
-    /// Ponteiro de Pilha (`SP`).
+    /// Stack Pointer (`SP`).
     pub sp: i64,
-    /// Banco de 9 registradores de índice (`IX[0..9]`), endereçados por 2 trits (`-4..+4`).
+    /// Bank of 9 index registers (`IX[0..9]`), addressed by 2 trits (`-4..+4`).
     pub index_regs: [Word21; INDEX_REGISTER_COUNT],
-    /// Indica se a CPU encontrou uma instrução `HALT` legítima.
+    /// Indicates whether CPU encountered a legitimate `HALT` instruction.
     pub halted: bool,
-    /// Armadilha de hardware disparada caso ocorra erro de execução (nunca falha silenciosamente).
+    /// Hardware trap raised if execution error occurs (silent failure prohibited).
     pub trap: Option<CpuTrap>,
-    /// Contador total de ciclos/instruções executadas.
+    /// Total count of executed cycles/instructions.
     pub cycles: u64,
-    /// Telemetria comparativa de chaveamento de estados (*Trit Flips* vs *Bit Flips* binários).
+    /// Comparative state switching telemetry (*Trit Flips* vs binary *Bit Flips*).
     pub telemetry: PowerTelemetry,
 }
 
 impl Cpu {
-    /// Inicializa a CPU com registradores zerados e `SP` no topo da RAM.
+    /// Initializes CPU with zeroed registers and `SP` at top of RAM.
     pub fn new() -> Self {
         Self {
             acc: Word21::ZERO,
@@ -407,7 +407,7 @@ impl Cpu {
         }
     }
 
-    /// Reinicia o estado da CPU preservando ou definindo o ponto de entrada `entry_pc`.
+    /// Resets CPU state setting entry point `entry_pc`.
     pub fn reset(&mut self, entry_pc: i64) {
         self.acc = Word21::ZERO;
         self.r = Word21::ZERO;
@@ -439,21 +439,21 @@ impl Cpu {
         self.index_regs[idx] = next;
     }
 
-    /// Carrega uma fatia de instruções codificadas na memória a partir de `base_addr`
-    /// e posiciona `PC` em `base_addr`.
+    /// Loads a slice of encoded instructions into memory starting at `base_addr`
+    /// and positions `PC` at `base_addr`.
     pub fn load_program(&mut self, mem: &mut Memory, base_addr: i64, instructions: &[Instruction]) {
         for (offset, instr) in instructions.iter().enumerate() {
             mem.write_word(base_addr + (offset as i64), instr.encode())
-                .expect("Falha ao carregar programa na memoria ternaria");
+                .expect("Failed to load program into ternary memory");
         }
         self.pc = base_addr;
         self.halted = false;
         self.trap = None;
     }
 
-    /// Executa um único ciclo Fetch-Decode-Execute com verificação estrita de erros (`CpuTrap`).
-    /// Retorna `Ok(true)` se a instrução executou e a CPU segue ativa, `Ok(false)` se atingiu `HALT`,
-    /// ou `Err(CpuTrap)` se ocorrer instrução inválida, divisão por zero ou violação de memória.
+    /// Executes a single Fetch-Decode-Execute cycle with strict error verification (`CpuTrap`).
+    /// Returns `Ok(true)` if instruction executed and CPU continues running, `Ok(false)` on `HALT`,
+    /// or `Err(CpuTrap)` on invalid instruction, division by zero, or memory violation.
     #[inline]
     pub fn step_checked(&mut self, mem: &mut Memory) -> Result<bool, CpuTrap> {
         if let Some(trap) = self.trap {
@@ -465,7 +465,7 @@ impl Cpu {
 
         let instr_pc = self.pc;
 
-        // 1. FETCH (verificado em 14 trits)
+        // 1. FETCH (validated within 14 trits)
         let instr_word = mem.read_word(instr_pc).map_err(|error| {
             let t = CpuTrap::MemoryFault {
                 pc: instr_pc,
@@ -476,7 +476,7 @@ impl Cpu {
         })?;
         self.pc += 1;
 
-        // 2. DECODE (proibido tratar opcode inválido como HALT silencioso)
+        // 2. DECODE (treating invalid opcode as silent HALT is prohibited)
         let Some(instr) = Instruction::decode(instr_word) else {
             let t = CpuTrap::InvalidInstruction {
                 pc: instr_pc,
@@ -486,7 +486,7 @@ impl Cpu {
             return Err(t);
         };
 
-        // Helper para leitura/escrita verificada de operandos
+        // Helper for checked reading and writing of operands
         let read_mem = |mem: &Memory, addr: i64| -> Result<Word21, CpuTrap> {
             mem.read_word(addr).map_err(|error| CpuTrap::MemoryFault {
                 pc: instr_pc,
@@ -526,9 +526,9 @@ impl Cpu {
                 }
 
                 Opcode::Mul => {
-                    // Unifica MUL e MUL_ZERO (++0 da Setun-58 / L*T B26 da Setun-70):
-                    // Por padrão (`reg_idx == 0`), copia o multiplicando `ACC` anterior para `R`;
-                    // se `reg_idx == 1`, deposita o resto fracionário de 10 trits em `R`.
+                    // Unifies MUL and MUL_ZERO (++0 of Setun-58 / L*T B26 of Setun-70):
+                    // By default (`reg_idx == 0`), copies previous multiplicand `ACC` to `R`;
+                    // if `reg_idx == 1`, deposits 10-trit fractional remainder in `R`.
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
                     let prev_acc = self.acc;
@@ -538,7 +538,7 @@ impl Cpu {
                     self.telemetry.adder_carry_propagations += carries as u64;
                     let (prod, rem) = a.fixed_mul_with_rem(b);
 
-                    // Comparação pareada 1-para-1 sem viés de base (prev_16 -> next_16):
+                    // Paired 1-to-1 comparison without base bias (prev_16 -> next_16):
                     let a16 = a.to_doom_fixed16();
                     let b16 = b.to_doom_fixed16();
                     let bin_prod16 = (((a16 as i64) * (b16 as i64)) >> 16)
@@ -587,7 +587,7 @@ impl Cpu {
                 }
 
                 Opcode::Neg => {
-                    // Inversão física de 21 portas `Trit::invert` (`sti.t` do artigo REBEL-6)
+                    // Physical 21-gate `Trit::invert` inversion (`sti.t` from REBEL-6 paper)
                     self.set_acc(self.acc.gate_invert_trits());
                 }
 
@@ -620,7 +620,7 @@ impl Cpu {
                 }
 
                 Opcode::JmpN => {
-                    // reg_idx == 0: salta se ACC < 0 (JMPN); reg_idx == 1: salta se ACC >= 0 (JMP_GE)
+                    // reg_idx == 0: jumps if ACC < 0 (JMPN); reg_idx == 1: jumps if ACC >= 0 (JMP_GE)
                     let is_neg = self.acc.sign_trit() == Trit::Negative;
                     if is_neg ^ (instr.reg_idx == 1) {
                         self.pc = instr.operand_as_address();
@@ -628,7 +628,7 @@ impl Cpu {
                 }
 
                 Opcode::JmpZ => {
-                    // reg_idx == 0: salta se ACC == 0 (JMPZ); reg_idx == 1: salta se ACC != 0 (JMP_NE)
+                    // reg_idx == 0: jumps if ACC == 0 (JMPZ); reg_idx == 1: jumps if ACC != 0 (JMP_NE)
                     let is_zero = self.acc.sign_trit() == Trit::Zero;
                     if is_zero ^ (instr.reg_idx == 1) {
                         self.pc = instr.operand_as_address();
@@ -636,7 +636,7 @@ impl Cpu {
                 }
 
                 Opcode::JmpP => {
-                    // reg_idx == 0: salta se ACC > 0 (JMPP); reg_idx == 1: salta se ACC <= 0 (JMP_LE)
+                    // reg_idx == 0: jumps if ACC > 0 (JMPP); reg_idx == 1: jumps if ACC <= 0 (JMP_LE)
                     let is_pos = self.acc.sign_trit() == Trit::Positive;
                     if is_pos ^ (instr.reg_idx == 1) {
                         self.pc = instr.operand_as_address();
@@ -644,7 +644,7 @@ impl Cpu {
                 }
 
                 Opcode::Bceg => {
-                    // Instrução BCEG operando via comparador físico de 21 trits (`gate_cmp_t`):
+                    // BCEG instruction operating via 21-trit physical magnitude comparator (`gate_cmp_t`):
                     let rhs = self.index_regs[instr.reg_idx];
                     let cmp = self.acc.gate_cmp_t(rhs);
                     let (offset_eq, offset_gt) = Instruction::unpack_bceg_offsets(instr.operand);
@@ -725,7 +725,7 @@ impl Cpu {
                 }
 
                 Opcode::Shift => {
-                    // reg_idx == 0: desloca ACC; reg_idx > 0: desloca IX[reg_idx] para ACC sem destruir IX
+                    // reg_idx == 0: shifts ACC; reg_idx > 0: shifts IX[reg_idx] into ACC without clobbering IX
                     let src = if instr.reg_idx == 0 {
                         self.acc
                     } else {
@@ -851,28 +851,28 @@ impl Cpu {
                 }
 
                 Opcode::Smt => {
-                    // Setun-58 (+-0) / Setun-70 B19 (SMT): multiplicação trit-a-trit
+                    // Setun-58 (+-0) / Setun-70 B19 (SMT): trit-by-trit multiplication
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
                     self.set_acc(self.acc.tritwise_mul(val));
                 }
 
                 Opcode::Sat => {
-                    // Setun-70 B21 (SAT 000+-+): adição limiar trit-a-trit
+                    // Setun-70 B21 (SAT 000+-+): trit-by-trit threshold addition
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
                     self.set_acc(self.acc.tritwise_sat(val));
                 }
 
                 Opcode::Sit => {
-                    // Setun-70 B20 (SIT 000+-0): S + T * (1 - |S|) trit-a-trit
+                    // Setun-70 B20 (SIT 000+-0): S + T * (1 - |S|) trit-by-trit
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
                     self.set_acc(self.acc.tritwise_sit(val));
                 }
 
                 Opcode::NormT => {
-                    // NORM.T / CLZ.T (+27): Normaliza a mantissa do ACC e grava os trits deslocados em IX[reg]
+                    // NORM.T / CLZ.T (+27): Normalizes ACC mantissa and writes shifted trit count to IX[reg]
                     let prev_acc = self.acc;
                     let (norm_acc, shift_count) = prev_acc.normalize_leading();
                     let count_word = Word21::new(shift_count as i64);
@@ -903,16 +903,16 @@ impl Cpu {
         }
     }
 
-    /// Executa um único ciclo Fetch-Decode-Execute (`step()`).
-    /// Aborta ruidosamente (panic) se qualquer `CpuTrap` ocorrer (proibindo falha silenciosa).
+    /// Executes a single Fetch-Decode-Execute cycle (`step()`).
+    /// Aborts via panic if any `CpuTrap` occurs (silent failure prohibited).
     #[inline(always)]
     pub fn step(&mut self, mem: &mut Memory) -> bool {
         self.step_checked(mem)
-            .unwrap_or_else(|trap| panic!("ARMADILHA DE HARDWARE SETUN-DOOM: {:?}", trap))
+            .unwrap_or_else(|trap| panic!("SETUN-DOOM HARDWARE TRAP: {:?}", trap))
     }
 
-    /// Executa até `count` ciclos da CPU ou até encontrar uma instrução `HALT` legítima.
-    /// Aborta ruidosamente caso ocorra qualquer `CpuTrap`.
+    /// Executes up to `count` CPU cycles or until reaching a legitimate `HALT` instruction.
+    /// Aborts via panic if any `CpuTrap` occurs.
     pub fn run_ticks(&mut self, mem: &mut Memory, count: usize) -> usize {
         let mut executed = 0;
         while executed < count {
@@ -952,7 +952,7 @@ mod tests {
 
         for &orig in &cases {
             let word = orig.encode();
-            let decoded = Instruction::decode(word).expect("Falha ao decodificar instrucao");
+            let decoded = Instruction::decode(word).expect("Failed to decode instruction");
             assert_eq!(decoded.opcode, orig.opcode);
             assert_eq!(decoded.reg_idx, orig.reg_idx);
             assert_eq!(decoded.operand_as_address(), orig.operand_as_address());
@@ -964,29 +964,29 @@ mod tests {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
 
-        // Programa que testa JMPN, JMPZ e JMPP inspecionando diretamente o sinal de ACC:
-        // Endereço 100: valor -50
-        // Endereço 101: valor 0
-        // Endereço 102: valor +50
-        // Endereço 200: resultado de sucesso
+        // Program testing JMPN, JMPZ, and JMPP by directly inspecting ACC sign:
+        // Address 100: value -50
+        // Address 101: value 0
+        // Address 102: value +50
+        // Address 200: success result location
         mem.write_word(100, Word21::new(-50)).unwrap();
         mem.write_word(101, Word21::new(0)).unwrap();
         mem.write_word(102, Word21::new(50)).unwrap();
 
         let prog = [
-            // 0: Carrega -50 e testa JMPN -> deve saltar para 3
+            // 0: Loads -50 and tests JMPN -> must jump to 3
             Instruction::new(Opcode::Load, 0, 100),
             Instruction::new(Opcode::JmpN, 0, 3),
-            Instruction::new(Opcode::Halt, 0, 0), // 2: Falha se não saltar
-            // 3: Neg (-(-50) = +50) e testa JMPP -> deve saltar para 6
+            Instruction::new(Opcode::Halt, 0, 0), // 2: Fails if branch not taken
+            // 3: Neg (-(-50) = +50) and tests JMPP -> must jump to 6
             Instruction::new(Opcode::Neg, 0, 0),
             Instruction::new(Opcode::JmpP, 0, 6),
-            Instruction::new(Opcode::Halt, 0, 0), // 5: Falha se não saltar
-            // 6: Subtrai MEM[102] (+50 - 50 = 0) e testa JMPZ -> deve saltar para 9
+            Instruction::new(Opcode::Halt, 0, 0), // 5: Fails if branch not taken
+            // 6: Subtracts MEM[102] (+50 - 50 = 0) and tests JMPZ -> must jump to 9
             Instruction::new(Opcode::Sub, 0, 102),
             Instruction::new(Opcode::JmpZ, 0, 9),
-            Instruction::new(Opcode::Halt, 0, 0), // 8: Falha se não saltar
-            // 9: Sucesso! Grava 777 no endereço 200 e para
+            Instruction::new(Opcode::Halt, 0, 0), // 8: Fails if branch not taken
+            // 9: Success! Writes 777 to address 200 and halts
             Instruction::new(Opcode::LoadImm, 0, 777),
             Instruction::new(Opcode::Store, 0, 200),
             Instruction::new(Opcode::Halt, 0, 0),
@@ -1004,7 +1004,7 @@ mod tests {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
 
-        // Sub-rotina em 50: escreve ACC no Framebuffer[IX[1]] e retorna
+        // Subroutine at 50: writes ACC to Framebuffer[IX[1]] and returns
         let sub = [
             Instruction::new(Opcode::StoreIndex, 1, FRAMEBUFFER_BASE as i64),
             Instruction::new(Opcode::Ret, 0, 0),
@@ -1035,30 +1035,30 @@ mod tests {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
 
-        // Testa CMP.T (<=>), MAJV.T (voto majoritário) e telemetria de Digit Flips
-        // quando números oscilam entre positivos e negativos (cenário destacado na Seção V.B do paper REBEL-6)
+        // Tests CMP.T (<=>), MAJV.T (majority vote), and Digit Flips telemetry
+        // when numbers alternate between positive and negative (scenario highlighted in Section V.B of REBEL-6 paper)
         mem.write_word(400, Word21::new(100)).unwrap();
         mem.write_word(401, Word21::new(-100)).unwrap();
 
         let prog = [
-            // Oscila ACC entre -1, 0, +1, -2, +2 para medir economia de digit flips vs complemento de dois
+            // Alternates ACC among -1, 0, +1, -2, +2 to measure digit flip savings versus two's complement
             Instruction::new(Opcode::LoadImm, 0, -1),
             Instruction::new(Opcode::LoadImm, 0, 1),
             Instruction::new(Opcode::LoadImm, 0, -1),
             Instruction::new(Opcode::LoadImm, 0, 0),
             Instruction::new(Opcode::LoadImm, 0, -1),
-            // Testa CMP.T: ACC (-1) <=> MEM[400] (100) -> -1
+            // Tests CMP.T: ACC (-1) <=> MEM[400] (100) -> -1
             Instruction::new(Opcode::CmpT, 0, 400),
             Instruction::new(Opcode::Store, 0, 410),
-            // Testa CMP.T: ACC (100) <=> MEM[401] (-100) -> +1
+            // Tests CMP.T: ACC (100) <=> MEM[401] (-100) -> +1
             Instruction::new(Opcode::Load, 0, 400),
             Instruction::new(Opcode::CmpT, 0, 401),
             Instruction::new(Opcode::Store, 0, 411),
-            // Testa MAJV.T e MINV.T:
+            // Tests MAJV.T and MINV.T:
             // ACC = +1, IX[0] = +1, MEM[401_sign] = -1 -> Majority = +1, Minority = -1
             Instruction::new(Opcode::LoadImm, 0, 1),
             Instruction::new(Opcode::LoadIxImm, 0, 1),
-            Instruction::new(Opcode::MajvT, 0, 410), // MEM[410] vale -1 -> Maj(+1, +1, -1) = +1
+            Instruction::new(Opcode::MajvT, 0, 410), // MEM[410] is -1 -> Maj(+1, +1, -1) = +1
             Instruction::new(Opcode::Store, 0, 412),
             Instruction::new(Opcode::MinvT, 0, 410), // Minv(+1, +1, -1) = -1
             Instruction::new(Opcode::Store, 0, 413),
@@ -1074,7 +1074,7 @@ mod tests {
         assert_eq!(mem.read_word(412).unwrap().as_i64(), 1);
         assert_eq!(mem.read_word(413).unwrap().as_i64(), -1);
 
-        // Verifica que os Trit Flips ternários são substancialmente menores que os Bit Flips binários de 32 bits
+        // Verifies that ternary Trit Flips are substantially lower than binary 32-bit Bit Flips
         assert!(cpu.telemetry.ternary_trit_flips < cpu.telemetry.binary32_bit_flips);
         assert!(cpu.telemetry.digit_flip_reduction_pct() > 50.0);
     }
@@ -1084,39 +1084,39 @@ mod tests {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
 
-        // Testa BCEG despachando para 3 rotas distintas em 1 única instrução:
-        // Compara ACC com IX[0] (que vale 10):
-        // - Caso 1: ACC = 5  (< 10) -> fallthrough (PC + 1) -> grava 111 em MEM[300]
-        // - Caso 2: ACC = 10 (== 10) -> salta offset_eq (+4) -> grava 222 em MEM[301]
-        // - Caso 3: ACC = 20 (> 10) -> salta offset_gt (+7) -> grava 333 em MEM[302]
+        // Tests BCEG dispatching to 3 distinct routes in a single instruction:
+        // Compares ACC with IX[0] (value 10):
+        // - Case 1: ACC = 5  (< 10) -> fallthrough (PC + 1) -> writes 111 to MEM[300]
+        // - Case 2: ACC = 10 (== 10) -> jumps offset_eq (+4) -> writes 222 to MEM[301]
+        // - Case 3: ACC = 20 (> 10) -> jumps offset_gt (+7) -> writes 333 to MEM[302]
         let prog = [
-            // 0: IX[0] = 10 (valor de referência para o BCEG)
+            // 0: IX[0] = 10 (reference value for BCEG)
             Instruction::new(Opcode::LoadIxImm, 0, 10),
-            // 1: Caso 1: ACC = 5 (< IX[0])
+            // 1: Case 1: ACC = 5 (< IX[0])
             Instruction::new(Opcode::LoadImm, 0, 5),
-            // 2: BCEG IX0, eq=+4 (vai p/ 6), gt=+7 (vai p/ 9) -> como 5 < 10, segue para 3!
+            // 2: BCEG IX0, eq=+4 (goes to 6), gt=+7 (goes to 9) -> since 5 < 10, falls through to 3
             Instruction::new_bceg(0, 4, 7),
-            // 3: Rota Less (< 10): grava 111 em MEM[300] e vai para o Caso 2 (PC = 5)
+            // 3: Route Less (< 10): writes 111 to MEM[300] and moves to Case 2 (PC = 5)
             Instruction::new(Opcode::LoadImm, 0, 111),
             Instruction::new(Opcode::Store, 0, 300),
-            // 5: Caso 2: ACC = 10 (== IX[0]) -> BCEG em 6 salta para eq (+3 -> PC = 9)
+            // 5: Case 2: ACC = 10 (== IX[0]) -> BCEG at 6 jumps to eq (+3 -> PC = 9)
             Instruction::new(Opcode::LoadImm, 0, 10),
-            // 6: BCEG IX0, eq=+3 (vai p/ 9), gt=+6 (vai p/ 12)
+            // 6: BCEG IX0, eq=+3 (goes to 9), gt=+6 (goes to 12)
             Instruction::new_bceg(0, 3, 6),
-            // 7..8: armadilha se não saltar
+            // 7..8: trap if branch not taken
             Instruction::new(Opcode::Halt, 0, 0),
             Instruction::new(Opcode::Halt, 0, 0),
-            // 9: Rota Equal (== 10): grava 222 em MEM[301] e testa Caso 3
+            // 9: Route Equal (== 10): writes 222 to MEM[301] and tests Case 3
             Instruction::new(Opcode::LoadImm, 0, 222),
             Instruction::new(Opcode::Store, 0, 301),
-            // 11: Caso 3: ACC = 20 (> IX[0])
+            // 11: Case 3: ACC = 20 (> IX[0])
             Instruction::new(Opcode::LoadImm, 0, 20),
-            // 12: BCEG IX0, eq=+2 (vai p/ 14), gt=+3 (vai p/ 15)
+            // 12: BCEG IX0, eq=+2 (goes to 14), gt=+3 (goes to 15)
             Instruction::new_bceg(0, 2, 3),
-            // 13..14: armadilha se não saltar para gt
+            // 13..14: trap if branch to gt not taken
             Instruction::new(Opcode::Halt, 0, 0),
             Instruction::new(Opcode::Halt, 0, 0),
-            // 15: Rota Greater (> 10): grava 333 em MEM[302] e para
+            // 15: Route Greater (> 10): writes 333 to MEM[302] and halts
             Instruction::new(Opcode::LoadImm, 0, 333),
             Instruction::new(Opcode::Store, 0, 302),
             Instruction::new(Opcode::Halt, 0, 0),
@@ -1136,7 +1136,7 @@ mod tests {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
 
-        // 1. Opcode inválido (99 nos 5 trits de topo) deve disparar CpuTrap::InvalidInstruction
+        // 1. Invalid opcode (99 in top 5 trits) must raise CpuTrap::InvalidInstruction
         let invalid_word = Word21::new(99 * crate::word::POW3[16]);
         mem.write_word(0, invalid_word).unwrap();
         let res1 = cpu.step_checked(&mut mem);
@@ -1148,7 +1148,7 @@ mod tests {
             })
         );
 
-        // 2. Divisão por zero em Opcode::DivInt deve disparar CpuTrap::DivisionByZero
+        // 2. Division by zero in Opcode::DivInt must raise CpuTrap::DivisionByZero
         cpu.reset(10);
         mem.write_word(500, Word21::ZERO).unwrap();
         let div_zero_prog = [
@@ -1166,7 +1166,7 @@ mod tests {
             })
         );
 
-        // 3. Acesso fora do espaço de 14 trits (ex: PC = 9_999_999) deve disparar CpuTrap::MemoryFault
+        // 3. Access outside 14-trit addressing space (e.g. PC = 9_999_999) must raise CpuTrap::MemoryFault
         cpu.reset(9_999_999);
         assert_eq!(
             cpu.step_checked(&mut mem),
@@ -1182,7 +1182,7 @@ mod tests {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
 
-        // 1. Verifica conversor recorrente 2->3 de Ramil Alvarez (1974) em portas lógicas
+        // 1. Verifies Ramil Alvarez (1974) 2->3 recurrent base converter across logic gates
         for sample in [0i32, 1, -1, 42, -42, 59_049, -59_049, i32::MAX, i32::MIN] {
             let (trits, carries) = Word21::alvarez_from_i32_gates(sample);
             let w = Word21::from_trits(&trits);
@@ -1192,19 +1192,19 @@ mod tests {
             }
         }
 
-        // 2. Verifica MUL_ZERO (++0), MAC_POS (+++ / LBT) e MAC_NEG (++-):
-        // Produto vetorial 2D estilo BSP: dx * ldy - dy * ldx
-        // Seja dx = 4.0, ldy = 3.0, dy = 2.0, ldx = 5.0 -> 4*3 - 2*5 = 12 - 10 = 2.0
+        // 2. Verifies MUL_ZERO (++0), MAC_POS (+++ / LBT), and MAC_NEG (++-):
+        // 2D BSP cross product: dx * ldy - dy * ldx
+        // Let dx = 4.0, ldy = 3.0, dy = 2.0, ldx = 5.0 -> 4*3 - 2*5 = 12 - 10 = 2.0
         mem.write_word(600, TernaryFixed::from_int(4).raw_word()).unwrap(); // dx = 4.0
         mem.write_word(601, TernaryFixed::from_int(3).raw_word()).unwrap(); // ldy = 3.0
         mem.write_word(602, TernaryFixed::from_int(2).raw_word()).unwrap(); // dy = 2.0
         mem.write_word(603, TernaryFixed::from_int(5).raw_word()).unwrap(); // ldx = 5.0
 
-        // 3. Verifica SMT (B19), SAT (B21) e SIT (B20) da Setun-70:
-        // Seja A = 0t+-0 e B = 0t+--
+        // 3. Verifies SMT (B19), SAT (B21), and SIT (B20) from Setun-70:
+        // Let A = 0t+-0 and B = 0t+--
         // SMT(+-0, +--) = (+*+, -*-, 0*-) = ++0 (+1*9 + 1*3 + 0 = 12)
         // SAT(+-0, +--) = (thresh(+,+), thresh(-,-), thresh(0,-)) = +-- (+1*9 - 1*3 - 1 = 5)
-        // SIT(+-0, +--) = (+, -, -) pois apenas o trit Zero em A assume o trit '-' de B = +-- (5)
+        // SIT(+-0, +--) = (+, -, -) since only the Zero trit in A adopts the '-' trit of B = +-- (5)
         let word_a = Word21::from_balanced_str("+-0").unwrap();
         let word_b = Word21::from_balanced_str("+--").unwrap();
         mem.write_word(610, word_a).unwrap();
@@ -1258,13 +1258,13 @@ mod tests {
         let mut mem = Memory::new();
         let mut cpu = Cpu::new();
 
-        // 1. Caso palavra zero: lz = 21, ACC = 0
-        // 2. Caso trit 20 ativo (+1): lz = 0, ACC inalterado
-        // 3. Caso 5 trits nulos a esquerda: lz = 5, ACC deslocado 5 posicoes
-        // 4. Caso negativo com simetria (-1): lz = 5, ACC deslocado 5 posicoes
+        // 1. Zero word case: lz = 21, ACC = 0
+        // 2. Active trit 20 case (+1): lz = 0, ACC unchanged
+        // 3. 5 leading zero trits case: lz = 5, ACC shifted 5 positions
+        // 4. Negative symmetric case (-1): lz = 5, ACC shifted 5 positions
         let mut trits_5z = [Trit::Zero; 21];
-        // 5 trits nulos a esquerda (indices 20..16 = 0)
-        // indice 15 = +1
+        // 5 leading zero trits (indices 20..16 = 0)
+        // index 15 = +1
         trits_5z[15] = Trit::Positive;
         trits_5z[13] = Trit::Negative;
         trits_5z[11] = Trit::Positive;
@@ -1274,26 +1274,26 @@ mod tests {
         mem.write_word(701, word_5_zeros_neg).unwrap();
 
         let prog = [
-            // Teste 1: NORM.T no zero
+            // Test 1: NORM.T on zero
             Instruction::new(Opcode::LoadImm, 0, 0),
             Instruction::new(Opcode::NormT, 1, 0), // IX1 = lz
-            Instruction::new(Opcode::Store, 0, 710), // grava ACC
+            Instruction::new(Opcode::Store, 0, 710), // writes ACC
             Instruction::new(Opcode::MovIxToAcc, 1, 0),
-            Instruction::new(Opcode::Store, 0, 711), // grava IX1
+            Instruction::new(Opcode::Store, 0, 711), // writes IX1
 
-            // Teste 2: NORM.T com 5 zeros a esquerda
+            // Test 2: NORM.T with 5 leading zeros
             Instruction::new(Opcode::Load, 0, 700),
             Instruction::new(Opcode::NormT, 2, 0), // IX2 = 5
-            Instruction::new(Opcode::Store, 0, 712), // grava ACC normalizado
+            Instruction::new(Opcode::Store, 0, 712), // writes normalized ACC
             Instruction::new(Opcode::MovIxToAcc, 2, 0),
-            Instruction::new(Opcode::Store, 0, 713), // grava IX2 (5)
+            Instruction::new(Opcode::Store, 0, 713), // writes IX2 (5)
 
-            // Teste 3: NORM.T com 5 zeros a esquerda negativo (simetria perfeita)
+            // Test 3: NORM.T with 5 leading zeros negative (exact symmetry)
             Instruction::new(Opcode::Load, 0, 701),
             Instruction::new(Opcode::NormT, 3, 0), // IX3 = 5
-            Instruction::new(Opcode::Store, 0, 714), // grava ACC normalizado
+            Instruction::new(Opcode::Store, 0, 714), // writes normalized ACC
             Instruction::new(Opcode::MovIxToAcc, 3, 0),
-            Instruction::new(Opcode::Store, 0, 715), // grava IX3 (5)
+            Instruction::new(Opcode::Store, 0, 715), // writes IX3 (5)
 
             Instruction::new(Opcode::Halt, 0, 0),
         ];

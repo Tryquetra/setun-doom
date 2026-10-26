@@ -1,10 +1,10 @@
 // ============================================================================
 // Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
 //
-// Driver de Plataforma `doomgeneric_setun.c`
-// Conecta o motor C do Doom (1993) à arquitetura ternária balanceada Setun-Doom
-// (`libsetun_doom.a` em Rust) e exibe em janela SDL2 interativa (ou headless).
-// Distribuído sob a licença MIT / GPL-2.0-or-later para compatibilidade com doomgeneric.
+// Platform Driver `doomgeneric_setun.c`
+// Connects 1993 Doom C engine to Setun-Doom balanced ternary architecture
+// (`libsetun_doom.a` in Rust) and displays in interactive SDL2 window (or headless).
+// Distributed under MIT / GPL-2.0-or-later license for compatibility with doomgeneric.
 // ============================================================================
 
 #include "doomkeys.h"
@@ -33,14 +33,14 @@ typedef struct {
     int8_t   acc_trits[21];
 } SetunLiveTelemetrySnapshot;
 
-// Funções exportadas pela nossa biblioteca Rust `libsetun_doom.a` (src/mmo.rs)
+// Functions exported by Rust library `libsetun_doom.a` (src/mmo.rs)
 extern void setun_BlitVideoBuffer(const uint8_t* video_buffer_320x200, uint8_t* out_rgba_320x200);
 extern void setun_PrintTelemetry(uint32_t frame_num);
 extern void setun_PushKeyEvent(int32_t pressed, uint8_t doom_key);
 extern void setun_GetLiveTelemetrySnapshot(SetunLiveTelemetrySnapshot* out_snap);
 
 static uint32_t     s_FrameCount = 0;
-static uint32_t     s_MaxFrames  = 0; // 0 = ilimitado
+static uint32_t     s_MaxFrames  = 0; // 0 = unlimited
 static int          s_Headless   = 0;
 static uint8_t      s_SetunRgba320x200[320 * 200 * 4];
 
@@ -48,7 +48,7 @@ static SDL_Window*   s_Window   = NULL;
 static SDL_Renderer* s_Renderer = NULL;
 static SDL_Texture*  s_Texture  = NULL;
 
-// Salva o quadro atual renderizado pelo Framebuffer Ternário Setun (Tryte6 -> RGBA) em arquivo PPM
+// Saves current frame rendered by Setun Ternary Framebuffer (Tryte6 -> RGBA) to PPM file
 static void save_ternary_frame_ppm(const char* path, const uint8_t* rgba)
 {
     FILE* f = fopen(path, "wb");
@@ -107,7 +107,7 @@ static uint8_t convert_sdl_key_to_doom(SDL_Keycode key)
     }
 }
 
-// Fonte bitmap 3x5 compacta para renderização de rótulos de telemetria sem dependência de bibliotecas externas
+// Compact 3x5 bitmap font for telemetry label rendering without external library dependencies
 static const uint16_t s_Font3x5[] = {
     [' '] = 0x0000,
     ['-'] = 0x01C0,
@@ -158,7 +158,7 @@ static void draw_tiny_text(SDL_Renderer* renderer, int x, int y, const char* str
 
 static int s_ShowHud = 1;
 
-// Desenha o painel HUD de telemetria ternária Setun sobre a janela gráfica SDL2
+// Renders Setun ternary telemetry HUD overlay across SDL2 graphics window
 static void render_setun_hud(SDL_Renderer* renderer)
 {
     SetunLiveTelemetrySnapshot snap;
@@ -166,23 +166,23 @@ static void render_setun_hud(SDL_Renderer* renderer)
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
-    // 1. Fundo do painel do osciloscópio (estilo terminal industrial âmbar/cinza escuro)
+    // 1. Oscilloscope panel background (amber / dark gray industrial terminal style)
     SDL_SetRenderDrawColor(renderer, 8, 12, 14, 230);
     SDL_Rect panel_rect = { 4, 3, 312, 42 };
     SDL_RenderFillRect(renderer, &panel_rect);
 
-    // Borda do painel
+    // Panel border
     SDL_SetRenderDrawColor(renderer, 35, 75, 70, 255);
     SDL_RenderDrawRect(renderer, &panel_rect);
 
-    // Rótulos de Seção em Inglês
+    // Section labels in English
     SDL_SetRenderDrawColor(renderer, 130, 160, 150, 255);
     draw_tiny_text(renderer, 8, 5, "SETUN ACCUMULATOR (21 TRITS)");
     draw_tiny_text(renderer, 145, 5, "ENERGY SAVE");
     draw_tiny_text(renderer, 245, 5, "BSP SIDE");
     draw_tiny_text(renderer, 8, 24, "ALU CARRY GATES PROPAGATION");
 
-    // 2. Lâmpadas de Néon dos 21 Trits da Word21 (Acumulador Setun)
+    // 2. Neon Lamps of 21 Trits of Word21 (Setun Accumulator)
     int led_start_x = 8;
     int led_y = 12;
     int led_w = 4;
@@ -202,7 +202,7 @@ static void render_setun_hud(SDL_Renderer* renderer)
         SDL_RenderFillRect(renderer, &led_rect);
     }
 
-    // 3. Barra de Economia de Energia Física (Delta V^2 Reduction %)
+    // 3. Physical Energy Savings Bar (Delta V^2 Reduction %)
     float reduction = snap.energy_reduction_pct;
     if (reduction < 0.0f) reduction = 0.0f;
     if (reduction > 100.0f) reduction = 100.0f;
@@ -224,13 +224,13 @@ static void render_setun_hud(SDL_Renderer* renderer)
     SDL_SetRenderDrawColor(renderer, 60, 80, 90, 255);
     SDL_RenderDrawRect(renderer, &bar_bg);
 
-    // Valor percentual textual (ex: "60%")
+    // Textual percentage value (e.g. "60%")
     char pct_buf[16];
     snprintf(pct_buf, sizeof(pct_buf), "%d%%", (int)reduction);
     SDL_SetRenderDrawColor(renderer, 0, 220, 255, 255);
     draw_tiny_text(renderer, bar_x + bar_max_w + 4, 13, pct_buf);
 
-    // 4. Indicador de Carry Gates e Pulsos da ALU
+    // 4. ALU Carry Gates and Pulse Train Indicator
     int pulse_x = 8;
     int pulse_y = 32;
     int pulse_count = (int)((snap.adder_carry_propagations / 1000) % 45);
@@ -240,7 +240,7 @@ static void render_setun_hud(SDL_Renderer* renderer)
         SDL_RenderFillRect(renderer, &p_rect);
     }
 
-    // 5. Indicador Tricótomo BSP (< = >) com Rótulo
+    // 5. Trichotomous BSP Indicator (< = >) with Label
     int bsp_x = 285;
     int bsp_y = 11;
     if (snap.acc_val > 0) {
@@ -293,7 +293,7 @@ int main(int argc, char **argv)
     }
 
     printf("================================================================\n");
-    printf(" INICIANDO DOOM (1993) SOBRE EMULADOR TERNARIO SETUN-DOOM (21-TRIT)\n");
+    printf(" LAUNCHING DOOM (1993) ON SETUN-DOOM 21-TRIT BALANCED TERNARY EMULATOR\n");
     printf("================================================================\n");
 
     if (!s_Headless) {
@@ -323,7 +323,7 @@ int main(int argc, char **argv)
                 }
             }
         } else {
-            fprintf(stderr, "[Aviso] SDL_Init falhou (%s); executando em modo headless.\n", SDL_GetError());
+            fprintf(stderr, "[Warning] SDL_Init failed (%s); running in headless mode.\n", SDL_GetError());
             s_Headless = 1;
         }
     }
@@ -361,7 +361,7 @@ int main(int argc, char **argv)
         if (s_MaxFrames > 0 && s_FrameCount >= s_MaxFrames) {
             save_ternary_frame_ppm("/home/robson/coding/setun-doom/setun_doom_frame.ppm", s_SetunRgba320x200);
             printf("================================================================\n");
-            printf(" Frame ternario 320x200 salvo em: setun_doom_frame.ppm\n");
+            printf(" 320x200 ternary frame saved to: setun_doom_frame.ppm\n");
             printf("================================================================\n");
             break;
         }

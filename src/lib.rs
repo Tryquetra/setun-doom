@@ -1,32 +1,36 @@
+// Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
+// SPDX-License-Identifier: MIT
+
 //! # Setun-Doom Architecture Emulator
 //!
-//! Emulador em Rust de uma arquitetura de computadores ternária balanceada inspirada no
-//! **Setun** (1958, Nikolai Brusentsov), escalada para 21/27 trits (`Setun-Doom ISA`)
-//! para viabilizar a execução do motor clássico do **Doom (1993)** via `doomgeneric`.
+//! Rust emulator for a balanced ternary computer architecture inspired by
+//! **Setun** (1958, Nikolai Brusentsov), scaled to 21/27 trits (`Setun-Doom ISA`)
+//! to execute the classic **Doom (1993)** engine via `doomgeneric`.
 //!
-//! ## Organização Modular
-//! - [`trit`]: Representação de `Trit` (`#[repr(i8)]` em `{-1, 0, +1}`), portas lógicas de
-//!   Kleene/Lukasiewicz, inversão simétrica e somador completo ternário.
-//! - [`word`]: Palavras longas `Word21` ($3^{21} \approx 1{,}046 \times 10^{10}$ estados) e
-//!   `Word27`, `Tryte6` de 6 trits (`[-364, +364]`) e codificação dual-bit.
-//! - [`fixed`]: Aritmética de ponto fixo ternário balanceado `TernaryFixed` (`11.10` trits,
-//!   fator de escala $3^{10} = 59.049$) substituindo o `fixed_t` `16.16` do Doom.
-//! - [`memory`]: Espaço de memória linear de $3^{14} = 4.782.969$ palavras e mapeamento de
-//!   Framebuffer VGA (`320x200 = 64.000` pixels em `Tryte6`).
-//! - [`cpu`]: Estado da máquina (`ACC`, `R`, `PC`, `SP`, 9 registradores de índice `IX`),
-//!   ISA de 21 trits e ciclo Fetch-Decode-Execute com desvios tricótomos (`JMPN`, `JMPZ`, `JMPP`).
-//! - [`mmo`]: Controlador DMA/Loader de arquivos binários (`DOOM.WAD`) e bindings FFI C
-//!   para as 5 rotinas de plataforma do `doomgeneric` (`DG_Init`, `DG_DrawFrame`, `DG_SleepMs`,
+//! ## Module Organization
+//! - [`trit`]: `Trit` representation (`#[repr(i8)]` in `{-1, 0, +1}`), Kleene/Lukasiewicz logic
+//!   gates, symmetric wire inversion, and full ternary adder.
+//! - [`word`]: Long words `Word21` ($3^{21} \approx 1.046 \times 10^{10}$ states) and
+//!   `Word27`, 6-trit `Tryte6` (`[-364, +364]`), and dual-bit encoding.
+//! - [`fixed`]: Balanced ternary fixed-point arithmetic `TernaryFixed` (`11.10` trits,
+//!   scale factor $3^{10} = 59,049$) replacing Doom's `16.16` `fixed_t`.
+//! - [`memory`]: Linear memory space of $3^{14} = 4,782,969$ words and VGA Framebuffer
+//!   mapping (`320x200 = 64,000` pixels in `Tryte6`).
+//! - [`cpu`]: Machine state (`ACC`, `R`, `PC`, `SP`, 9 index registers `IX`), 21-trit ISA,
+//!   and Fetch-Decode-Execute cycle with trichotomous branches (`JMPN`, `JMPZ`, `JMPP`).
+//! - [`mmo`]: DMA Controller / binary WAD file loader (`DOOM.WAD`) and C FFI bindings
+//!   for the 5 `doomgeneric` platform callbacks (`DG_Init`, `DG_DrawFrame`, `DG_SleepMs`,
 //!   `DG_GetTicksMs`, `DG_GetKey`).
-//! - [`bsp`]: Árvore BSP Tricótoma (`R_PointOnSide`, `R_RenderBSPNode`) e Clipper Horizontal
-//!   de Oclusão em malha de trits (`solidsegs` em 16 palavras `Word21`).
-//! - [`assembler`]: Montador textual de duas passagens (`SetunAssembler`) com suporte a labels,
-//!   registradores `IX0..IX8`, literais ternários `0t+0-` e disassembler reverso.
-//! - [`render`]: Rasterizador 3D de colunas (`R_DrawColumn`), pisos (`R_DrawSpan`) e cena BSP.
+//! - [`bsp`]: Trichotomous BSP tree (`R_PointOnSide`, `R_RenderBSPNode`) and horizontal occlusion
+//!   clipper across a trit mesh (`solidsegs` in 16 `Word21` words).
+//! - [`assembler`]: Two-pass text assembler (`SetunAssembler`) with label support,
+//!   `IX0..IX8` registers, `0t+0-` ternary literals, and reverse disassembler.
+//! - [`render`]: 3D column rasterizer (`R_DrawColumn`), floor rasterizer (`R_DrawSpan`), and BSP scene renderer.
 
 pub mod assembler;
 pub mod benchmarks;
 pub mod bsp;
+pub mod codegen;
 pub mod cpu;
 pub mod dbt;
 pub mod elf;

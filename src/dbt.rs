@@ -1,26 +1,26 @@
 // Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
 // SPDX-License-Identifier: MIT
 
-//! Tradutor Binário Dinâmico (`DBT / JIT`) de `RV32I` (32 bits) para `Setun-Doom` (`21 trits`).
+//! Dynamic Binary Translator (`DBT / JIT`) from `RV32I` (32 bits) to `Setun-Doom` (`21 trits`).
 //!
-//! Implementa o **Nível 1 de Emulação Ternária**:
-//! 1. **Decodificador completo da ISA base `RV32I`** (todas as 37 instruções de usuário + sistema).
-//! 2. **Banco de 32 Registradores `x0..x31` em [`Word21`]** mapeado na memória linear da Setun
-//!    (`DBT_REGISTER_FILE_BASE .. +32`), onde `x0` é fisicamente aterrado em `Word21::ZERO`.
-//! 3. **Compilador de Blocos Básicos com Fusão REBEL-6 / Setun**:
-//!    - Fusão de constantes de 32 bits (`LUI + ADDI -> LI.T` e `AUIPC + ADDI -> AIPC.T`) em uma
-//!      única operação de 21 trits (pois $[-2^{31}, 2^{31}-1] \subset [-5{,}23 \times 10^9, +5{,}23 \times 10^9]$).
-//!    - Fusão de comparações e desvios (`SLT/SLTI/SLTU/SLTIU + BEQ/BNE x0 -> BCEG`) usando o
-//!      comparador tricótomo de 21 portas [`Word21::gate_cmp`].
-//! 4. **Execução Estrita em Nível de Portas Ternárias (Zero Falsos Positivos)**:
-//!    - Todas as somas, subtrações, cálculos de endereço efetivo e reduções de faixa de 32 bits
-//!      operam exclusivamente pelo somador Ripple-Carry de 21 estágios ([`Word21::gate_ripple_carry_add`])
-//!      e pelo inversor físico ([`Word21::gate_invert`]).
-//!    - Todas as comparações assinadas e não-assinadas operam pelo comparador ternário
+//! Implements **Level 1 Ternary Emulation**:
+//! 1. **Complete decoder for base `RV32I` ISA** (all 37 user and system instructions).
+//! 2. **Register file of 32 `x0..x31` registers in [`Word21`]** mapped onto Setun linear memory
+//!    (`DBT_REGISTER_FILE_BASE .. +32`), where `x0` is physically grounded at `Word21::ZERO`.
+//! 3. **Basic block compiler with REBEL-6 / Setun fusion**:
+//!    - 32-bit constant fusion (`LUI + ADDI -> LI.T` and `AUIPC + ADDI -> AIPC.T`) into a single
+//!      21-trit operation (since $[-2^{31}, 2^{31}-1] \subset [-5.23 \times 10^9, +5.23 \times 10^9]$).
+//!    - Comparison and branch fusion (`SLT/SLTI/SLTU/SLTIU + BEQ/BNE x0 -> BCEG`) using the
+//!      21-gate trichotomous comparator [`Word21::gate_cmp`].
+//! 4. **Strict gate-level execution (Zero False Positives)**:
+//!    - All additions, subtractions, effective address calculations, and 32-bit range wraps
+//!      operate through the 21-stage Ripple-Carry adder ([`Word21::gate_ripple_carry_add`])
+//!      and the physical inverter ([`Word21::gate_invert`]).
+//!    - All signed and unsigned comparisons operate through the ternary comparator
 //!      ([`Word21::gate_cmp`]).
-//!    - Operações lógicas bit-a-bit de legado binário (`AND`, `OR`, `XOR`, `SLL`, `SRL`, `SRA`)
-//!      atravessam o conversor de base em hardware de J. Ramil Alvarez (1974) na [`Cpu`],
-//!      contabilizando todas as propagações físicas de carry.
+//!    - Bitwise logic operations from binary legacy (`AND`, `OR`, `XOR`, `SLL`, `SRL`, `SRA`)
+//!      pass through the hardware base converter by J. Ramil Alvarez (1974) in [`Cpu`],
+//!      recording all physical carry propagations.
 
 use std::collections::{HashMap, HashSet};
 
@@ -33,35 +33,35 @@ use crate::memory::{Memory, MemoryError};
 use crate::trit::Trit;
 use crate::word::Word21;
 
-/// Endereço base na memória Setun para o banco de 32 registradores `x0..x31` do `RV32I`.
+/// Base address in Setun memory for the `RV32I` register file `x0..x31`.
 pub const DBT_REGISTER_FILE_BASE: usize = 500;
 
-/// Endereço base na memória Setun para o cache de instruções traduzidas `Word21`.
+/// Base address in Setun memory for the translated `Word21` instruction cache.
 pub const DBT_CODE_CACHE_BASE: usize = 1_000;
 
-/// Capacidade máxima do cache de código traduzido na memória Setun.
+/// Maximum capacity of the translated code cache in Setun memory.
 pub const DBT_CODE_CACHE_LIMIT: usize = 90_000;
 
-/// Limite superior de `i32` (`+2.147.483.647`) representado em [`Word21`].
+/// Upper limit of `i32` (`+2,147,483,647`) represented in [`Word21`].
 const MAX_I32_WORD21: Word21 = Word21::new(i32::MAX as i64);
 
-/// Limite inferior de `i32` (`-2.147.483.648`) representado em [`Word21`].
+/// Lower limit of `i32` (`-2,147,483,648`) represented in [`Word21`].
 const MIN_I32_WORD21: Word21 = Word21::new(i32::MIN as i64);
 
-/// Módulo $2^{32} = +4.294.967.296$ representado em [`Word21`] (cabe folgadamente em $\pm 5{,}23 \times 10^9$).
+/// Modulus $2^{32} = +4,294,967,296$ represented in [`Word21`] (comfortably fits in $\pm 5.23 \times 10^9$).
 const POS_MOD32_WORD21: Word21 = Word21::new(4_294_967_296);
 
-/// Módulo negativo $-2^{32} = -4.294.967.296$ representado em [`Word21`].
+/// Negative modulus $-2^{32} = -4,294,967,296$ represented in [`Word21`].
 const NEG_MOD32_WORD21: Word21 = Word21::new(-4_294_967_296);
 
-/// Nomes padronizados ABI dos 32 registradores inteiros do `RV32I`.
+/// Standard ABI names of the 32 `RV32I` integer registers.
 pub const RV32I_REG_ABI_NAMES: [&str; 32] = [
     "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2", "a3", "a4",
     "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4",
     "t5", "t6",
 ];
 
-/// Instrução individual da ISA `RV32I` decodificada a partir de uma palavra de 32 bits.
+/// Individual instruction from the `RV32I` ISA decoded from a 32-bit word.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Rv32iInstr {
     Lui { rd: u8, imm: i32 },
@@ -101,7 +101,7 @@ pub enum Rv32iInstr {
     Sra { rd: u8, rs1: u8, rs2: u8 },
     Or { rd: u8, rs1: u8, rs2: u8 },
     And { rd: u8, rs1: u8, rs2: u8 },
-    // Extensão RV32M (Multiplicação e Divisão Inteira)
+    // RV32M Extension (Integer Multiplication and Division)
     Mul { rd: u8, rs1: u8, rs2: u8 },
     Mulh { rd: u8, rs1: u8, rs2: u8 },
     Mulhsu { rd: u8, rs1: u8, rs2: u8 },
@@ -116,7 +116,7 @@ pub enum Rv32iInstr {
 }
 
 impl Rv32iInstr {
-    /// Decodifica uma palavra binária de 32 bits Little-Endian em uma instrução [`Rv32iInstr`].
+    /// Decodes a 32-bit Little-Endian binary word into an [`Rv32iInstr`].
     pub fn decode(raw: u32) -> Result<Self, DbtError> {
         let opcode = raw & 0x7F;
         let rd = ((raw >> 7) & 0x1F) as u8;
@@ -212,7 +212,7 @@ impl Rv32iInstr {
                 (5, 0x20) => Ok(Self::Sra { rd, rs1, rs2 }),
                 (6, 0x00) => Ok(Self::Or { rd, rs1, rs2 }),
                 (7, 0x00) => Ok(Self::And { rd, rs1, rs2 }),
-                // Extensão RV32M (funct7 == 0x01)
+                // RV32M Extension (funct7 == 0x01)
                 (0, 0x01) => Ok(Self::Mul { rd, rs1, rs2 }),
                 (1, 0x01) => Ok(Self::Mulh { rd, rs1, rs2 }),
                 (2, 0x01) => Ok(Self::Mulhsu { rd, rs1, rs2 }),
@@ -232,7 +232,7 @@ impl Rv32iInstr {
                         _ => Ok(Self::Fence),
                     }
                 } else {
-                    // Instruções CSR (caso ocorram em prólogos bare-metal) tratadas como NOP
+                    // CSR instructions (when occurring in bare-metal prologues) treated as NOP
                     Ok(Self::Fence)
                 }
             }
@@ -241,37 +241,37 @@ impl Rv32iInstr {
     }
 }
 
-/// Modo de comparação na instrução fundida tricótoma `BCEG` (`SLT* + BEQ/BNE`).
+/// Comparison mode in fused trichotomous instruction `BCEG` (`SLT* + BEQ/BNE`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum FusedCmpKind {
-    /// Compara dois registradores com sinal (`SLT`).
+    /// Compare two signed registers (`SLT`).
     RegSigned { rs1: u8, rs2: u8 },
-    /// Compara dois registradores sem sinal (`SLTU`).
+    /// Compare two unsigned registers (`SLTU`).
     RegUnsigned { rs1: u8, rs2: u8 },
-    /// Compara registrador e imediato com sinal (`SLTI`).
+    /// Compare signed register and immediate (`SLTI`).
     ImmSigned { rs1: u8, imm: i32 },
-    /// Compara registrador e imediato sem sinal (`SLTIU`).
+    /// Compare unsigned register and immediate (`SLTIU`).
     ImmUnsigned { rs1: u8, imm: i32 },
 }
 
-/// Operação traduzida para a máquina ternária `Setun-Doom` (`REBEL-6 / Setun ISA`).
+/// Operation translated to the `Setun-Doom` ternary machine (`REBEL-6 / Setun ISA`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SetunTranslatedOp {
-    /// Carga direta de constante de 32 bits em 21 trits (`LI.T`), fundindo `LUI + ADDI`.
+    /// Direct load of 32-bit constant in 21 trits (`LI.T`), fusing `LUI + ADDI`.
     LiT {
         rd: u8,
         imm32: i32,
         intermediate_hi20: Option<i32>,
         rv32i_instrs: u8,
     },
-    /// Carga de endereço relativo ao PC em 21 trits (`AIPC.T`), fundindo `AUIPC + ADDI`.
+    /// Load PC-relative address in 21 trits (`AIPC.T`), fusing `AUIPC + ADDI`.
     AipcT {
         rd: u8,
         target_addr: i32,
         intermediate_hi20: Option<i32>,
         rv32i_instrs: u8,
     },
-    /// Salto condicional tricótomo fundido (`SLT/SLTI/SLTU/SLTIU [+ LI 0|1] + BEQ/BNE -> BCEG`).
+    /// Fused trichotomous conditional branch (`SLT/SLTI/SLTU/SLTIU [+ LI 0|1] + BEQ/BNE -> BCEG`).
     BcegFused {
         cmp_rd: u8,
         aux_li: Option<(u8, i32)>,
@@ -281,35 +281,35 @@ pub enum SetunTranslatedOp {
         fallthrough_pc: u32,
         rv32i_instrs: u8,
     },
-    /// Inversão de sinal pura por portas ternárias Setun (`NEG rd, rs2` / `STI.T`).
+    /// Pure sign inversion via Setun ternary gates (`NEG rd, rs2` / `STI.T`).
     NegT { rd: u8, rs: u8 },
-    /// Instrução base mapeada 1-para-1 para a ALU ternária de 21 trits.
+    /// Base instruction mapped 1-to-1 to the 21-trit ternary ALU.
     Single { instr: Rv32iInstr, pc: u32 },
 }
 
-/// Bloco básico traduzido e armazenado no cache de tradução dinâmica.
+/// Basic block translated and stored in dynamic translation cache.
 #[derive(Clone, Debug)]
 pub struct TranslatedBasicBlock {
-    /// Endereço inicial do bloco no espaço virtual `RV32I`.
+    /// Starting block address in `RV32I` virtual address space.
     pub start_pc: u32,
-    /// Operações ternárias Setun geradas para este bloco.
+    /// Ternary Setun operations generated for this block.
     pub ops: Vec<SetunTranslatedOp>,
-    /// Endereço base na memória Setun (`DBT_CODE_CACHE_BASE`) onde as `Instruction`s foram gravadas.
+    /// Base address in Setun memory (`DBT_CODE_CACHE_BASE`) where `Instruction`s were written.
     pub setun_cache_addr: usize,
 }
 
-/// Erros de execução ou tradução do motor DBT.
+/// Execution or translation errors from the DBT engine.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DbtError {
-    /// Erro ao carregar a imagem ELF32.
+    /// Error loading ELF32 image.
     Elf(ElfError),
-    /// Erro de acesso à memória linear da Setun.
+    /// Access error in Setun linear memory.
     Memory(MemoryError),
-    /// Instrução binária desconhecida ou corrompida.
+    /// Unknown or corrupted binary instruction.
     IllegalInstruction { raw: u32, pc: u32 },
-    /// Parada por `EBREAK`.
+    /// Stopped at `EBREAK`.
     Breakpoint { pc: u32 },
-    /// Limite máximo de ciclos/instruções atingido (prevenção de loop infinito em testes).
+    /// Maximum cycle/instruction limit exceeded (prevents infinite loop in tests).
     StepLimitExceeded(u64),
 }
 
@@ -325,45 +325,45 @@ impl From<MemoryError> for DbtError {
     }
 }
 
-/// Motivo de término da execução de um binário `RV32I` traduzido.
+/// Exit reason after executing a translated `RV32I` binary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DbtExitReason {
-    /// Encerrado via `ecall` (convenção `riscv-tests` ou syscall `exit`).
+    /// Terminated via `ecall` (`riscv-tests` convention or `exit` syscall).
     Ecall {
-        /// Código de saída em `a0` (`x10`, onde `0` = aprovação em `riscv-tests`).
+        /// Exit code in `a0` (`x10`, where `0` = pass in `riscv-tests`).
         a0_exit_code: i32,
-        /// Identificador do teste atual em `gp` (`x3`).
+        /// Current test ID in `gp` (`x3`).
         gp_test_id: i32,
-        /// Número da syscall em `a7` (`x17`).
+        /// Syscall number in `a7` (`x17`).
         a7_syscall: i32,
     },
-    /// Retorno da função `main` ao endereço sentinela `ra`.
+    /// Returned from `main` to sentinel `ra` address.
     ReturnedFromMain { a0_return_value: i32 },
 }
 
-/// Relatório completo de execução e telemetria de um programa `RV32I` sobre a máquina `Setun-Doom`.
+/// Comprehensive execution and telemetry report for an `RV32I` program on `Setun-Doom`.
 #[derive(Clone, Debug)]
 pub struct DbtExecutionReport {
-    /// Motivo de parada e códigos de retorno.
+    /// Stop reason and return codes.
     pub exit: DbtExitReason,
-    /// Total de instruções binárias `RV32I` originais equivalentes executadas.
+    /// Total equivalent original binary `RV32I` instructions executed.
     pub rv32i_instructions_executed: u64,
-    /// Total de instruções ternárias `Setun-Doom` efetivamente executadas (após fusões `LI.T`, `AIPC.T`, `BCEG`).
+    /// Total ternary `Setun-Doom` instructions actually executed (after `LI.T`, `AIPC.T`, `BCEG` fusions).
     pub setun_instructions_executed: u64,
-    /// Quantidade de fusões de imediatos (`LUI/AUIPC + ADDI`) executadas.
+    /// Quantity of immediate fusions (`LUI/AUIPC + ADDI`) executed.
     pub immediate_fusions_executed: u64,
-    /// Quantidade de fusões de saltos tricótomos (`SLT* + BEQ/BNE -> BCEG`) executadas.
+    /// Quantity of trichotomous branch fusions (`SLT* + BEQ/BNE -> BCEG`) executed.
     pub branch_fusions_executed: u64,
-    /// Quantidade de inversões diretas de sinal Setun (`NEG rd, rs2` / `STI.T`) executadas.
+    /// Quantity of direct Setun sign inversions (`NEG rd, rs2` / `STI.T`) executed.
     pub neg_fusions_executed: u64,
-    /// Telemetria física de comutação de estados (*Trit Flips*, *Half/Full-Swings*, *Bit Flips* e *Gate Carries*).
+    /// Physical state transition telemetry (*Trit Flips*, *Half/Full-Swings*, *Bit Flips*, and *Gate Carries*).
     pub telemetry: PowerTelemetry,
-    /// Saída capturada de `stdout` (syscall `write`).
+    /// Captured output from `stdout` (`write` syscall).
     pub stdout_buffer: Vec<u8>,
 }
 
 impl DbtExecutionReport {
-    /// Redução percentual de instruções executadas (`Setun` vs `RV32I`).
+    /// Percentage reduction of instructions executed (`Setun` vs `RV32I`).
     pub fn instruction_reduction_pct(&self) -> f64 {
         if self.rv32i_instructions_executed == 0 {
             return 0.0;
@@ -373,7 +373,7 @@ impl DbtExecutionReport {
         ((s - r) / r) * 100.0
     }
 
-    /// Verifica se o teste da suíte oficial do RISC-V passou (`a0 == 0` e `gp > 0`).
+    /// Checks if the official RISC-V test suite passed (`a0 == 0` and `gp > 0`).
     pub fn is_riscv_test_pass(&self) -> bool {
         match self.exit {
             DbtExitReason::Ecall {
@@ -386,40 +386,40 @@ impl DbtExecutionReport {
     }
 }
 
-/// Valor sentinela colocado em `ra` (`x1`) no início de `main` para detectar retorno limpo
-/// (mesma técnica do simulador `REBEL-6`, onde apenas um único trit é ativado: $-3^{16} = -43.046.721$).
+/// Sentinel value placed in `ra` (`x1`) at `main` start to detect clean return
+/// (same technique as the `REBEL-6` simulator, where only a single trit is set: $-3^{16} = -43,046,721$).
 pub const SENTINEL_RETURN_PC: u32 = 0xFFFFFFFE;
 
-/// Motor de Tradução Binária Dinâmica (`DBT`) que executa binários `ELF32` `RV32I` sobre a CPU e Memória Setun.
+/// Dynamic Binary Translation (`DBT`) engine executing `ELF32` `RV32I` binaries on Setun CPU and Memory.
 pub struct SetunDbtEngine {
-    /// CPU ternária balanceada Setun-Doom (acumulador, registrador R, conversor Alvarez e telemetria).
+    /// Balanced ternary Setun-Doom CPU (accumulator, R register, Alvarez converter, and telemetry).
     pub cpu: Cpu,
-    /// Memória linear ternária de $3^{14} = 4.782.969$ palavras.
+    /// Linear ternary memory of $3^{14} = 4,782,969$ words.
     pub memory: Memory,
-    /// Banco de 32 registradores arquiteturais `x0..x31` representados em [`Word21`].
+    /// Architectural register file of 32 `x0..x31` registers represented in [`Word21`].
     pub regs: [Word21; 32],
-    /// Contador de programa (`PC`) no espaço de endereçamento virtual `RV32I`.
+    /// Program counter (`PC`) in `RV32I` virtual address space.
     pub pc: u32,
-    /// Layout da imagem ELF32 carregada na memória Setun.
+    /// Loaded ELF32 image layout in Setun memory.
     pub layout: LoadedElfLayout,
-    /// Conjunto de endereços que são destinos estáticos de saltos/branches (para segurança de fusão).
+    /// Set of addresses that are static targets of jumps/branches (for fusion safety).
     branch_targets: HashSet<u32>,
-    /// Cache de blocos básicos já traduzidos (`start_pc -> TranslatedBasicBlock`).
+    /// Cache of already translated basic blocks (`start_pc -> TranslatedBasicBlock`).
     block_cache: HashMap<u32, TranslatedBasicBlock>,
-    /// Próximo endereço livre na região `DBT_CODE_CACHE_BASE` da memória Setun.
+    /// Next free address in the `DBT_CODE_CACHE_BASE` region of Setun memory.
     next_code_cache_addr: usize,
-    /// Contadores de instruções e fusões.
+    /// Instruction and fusion counters.
     pub rv32i_instructions_executed: u64,
     pub setun_instructions_executed: u64,
     pub immediate_fusions_executed: u64,
     pub branch_fusions_executed: u64,
     pub neg_fusions_executed: u64,
-    /// Buffer de console para syscall `write`.
+    /// Console buffer for `write` syscall.
     pub stdout_buffer: Vec<u8>,
 }
 
 impl SetunDbtEngine {
-    /// Cria uma nova instância do motor `SetunDbtEngine` e carrega um binário `ELF32` na memória ternária.
+    /// Creates a new `SetunDbtEngine` instance and loads an `ELF32` binary into ternary memory.
     pub fn from_elf_bytes(elf_bytes: &[u8]) -> Result<Self, DbtError> {
         let image = Elf32Image::parse(elf_bytes)?;
         let mut memory = Memory::new();
@@ -444,8 +444,8 @@ impl SetunDbtEngine {
             stdout_buffer: Vec::new(),
         };
 
-        // Inicializa o Stack Pointer (sp = x2) e o Return Address sentinela (ra = x1)
-        // sincronizados na memória Setun sem poluir a telemetria do programa de usuário.
+        // Initialize Stack Pointer (sp = x2) and sentinel Return Address (ra = x1)
+        // synchronized in Setun memory without polluting user program telemetry.
         let sp_word = Word21::new(DEFAULT_RV32I_STACK_TOP as i64);
         let ra_word = Word21::new(SENTINEL_RETURN_PC as i32 as i64);
         engine.regs[2] = sp_word;
@@ -459,7 +459,7 @@ impl SetunDbtEngine {
         Ok(engine)
     }
 
-    /// Lê o valor de um registrador `x0..x31` como [`Word21`] (`x0` retorna sempre `Word21::ZERO`).
+    /// Reads register `x0..x31` as [`Word21`] (`x0` always returns `Word21::ZERO`).
     #[inline(always)]
     pub fn read_reg(&self, reg: u8) -> Word21 {
         let idx = (reg & 0x1F) as usize;
@@ -470,8 +470,8 @@ impl SetunDbtEngine {
         }
     }
 
-    /// Escreve uma [`Word21`] no registrador `rd` (`x1..x31`), atualiza a célula correspondente
-    /// na memória Setun (`DBT_REGISTER_FILE_BASE + rd`) e contabiliza os *Trit Flips* vs *Bit Flips*.
+    /// Writes [`Word21`] into register `rd` (`x1..x31`), updates corresponding cell
+    /// in Setun memory (`DBT_REGISTER_FILE_BASE + rd`), and records *Trit Flips* vs *Bit Flips*.
     #[inline]
     pub fn write_reg(&mut self, rd: u8, new_val: Word21) -> Result<(), MemoryError> {
         let idx = (rd & 0x1F) as usize;
@@ -486,9 +486,9 @@ impl SetunDbtEngine {
         Ok(())
     }
 
-    /// Converte um inteiro binário `i32` para [`Word21`] através do conversor em hardware
-    /// de J. Ramil Alvarez (1974) (`Word21::alvarez_from_i32_gates`), acumulando todas as
-    /// propagações de carry das portas `Trit::full_add`.
+    /// Converts a binary `i32` integer to [`Word21`] through the hardware converter
+    /// by J. Ramil Alvarez (1974) (`Word21::alvarez_from_i32_gates`), accumulating all
+    /// carry propagations from `Trit::full_add` gates.
     #[inline]
     pub fn gate_alvarez_bin_to_ter(&mut self, val: i32) -> Word21 {
         let (trits, carries) = Word21::alvarez_from_i32_gates(val);
@@ -496,14 +496,14 @@ impl SetunDbtEngine {
         Word21::from_trits(&trits)
     }
 
-    /// Extrai o valor de 32 bits em complemento de dois a partir de uma [`Word21`].
+    /// Extracts the 32-bit two's complement value from a [`Word21`].
     #[inline(always)]
     pub fn gate_alvarez_ter_to_bin(&self, w: Word21) -> i32 {
         w.to_i32_saturating()
     }
 
-    /// Soma duas palavras `Word21` usando o somador físico Ripple-Carry de 21 portas (`Trit::full_add`)
-    /// e aplica o envelopamento de 32 bits (`[-2^31, 2^31 - 1]`) inteiramente via portas ternárias.
+    /// Adds two `Word21` words using the physical 21-gate Ripple-Carry adder (`Trit::full_add`)
+    /// and applies 32-bit wrapping (`[-2^31, 2^31 - 1]`) through ternary gates.
     #[inline]
     pub fn gate_add_i32(&mut self, a: Word21, b: Word21) -> Word21 {
         let (sum, _cout, carries) = a.gate_ripple_carry_add(b, Trit::Zero);
@@ -523,16 +523,16 @@ impl SetunDbtEngine {
         }
     }
 
-    /// Subtrai `b` de `a` invertendo os 21 fios de `b` (`Word21::gate_invert_trits`) e somando pelo
-    /// somador Ripple-Carry de 21 estágios (`gate_add_i32`).
+    /// Subtracts `b` from `a` by inverting the 21 wires of `b` (`Word21::gate_invert_trits`) and adding through
+    /// the 21-stage Ripple-Carry adder (`gate_add_i32`).
     #[inline]
     pub fn gate_sub_i32(&mut self, a: Word21, b: Word21) -> Word21 {
         let neg_b = b.gate_invert_trits();
         self.gate_add_i32(a, neg_b)
     }
 
-    /// Converte uma `Word21` assinada (`[-2^31, 2^31 - 1]`) para sua magnitude não-assinada
-    /// de 32 bits (`[0, 2^32 - 1]`) dentro de uma `Word21` usando o somador Ripple-Carry ternário.
+    /// Converts a signed `Word21` (`[-2^31, 2^31 - 1]`) to its 32-bit unsigned magnitude
+    /// (`[0, 2^32 - 1]`) inside a `Word21` using the ternary Ripple-Carry adder.
     #[inline]
     pub fn gate_to_unsigned32_word21(&mut self, w: Word21) -> Word21 {
         if w.sign_trit() == Trit::Negative {
@@ -544,7 +544,7 @@ impl SetunDbtEngine {
         }
     }
 
-    /// Compara duas `Word21` como inteiros de 32 bits sem sinal usando o comparador de 21 portas `gate_cmp_t`.
+    /// Compares two `Word21` values as unsigned 32-bit integers using the 21-gate comparator `gate_cmp_t`.
     #[inline]
     pub fn gate_cmp_u32(&mut self, a: Word21, b: Word21) -> Trit {
         let ua = self.gate_to_unsigned32_word21(a);
@@ -552,7 +552,7 @@ impl SetunDbtEngine {
         ua.gate_cmp_t(ub)
     }
 
-    /// Traduz (ou recupera do cache) o bloco básico iniciando em `start_pc`.
+    /// Translates (or retrieves from cache) the basic block starting at `start_pc`.
     pub fn get_or_translate_block(
         &mut self,
         start_pc: u32,
@@ -575,7 +575,7 @@ impl SetunDbtEngine {
             let next_pc = cur_pc.wrapping_add(4);
             let can_fuse_next = !self.branch_targets.contains(&next_pc);
 
-            // 1. Tentativa de Fusão LUI + ADDI -> LI.T (Constante completa de 32 bits em 21 trits)
+            // 1. Attempt LUI + ADDI -> LI.T fusion (complete 32-bit constant in 21 trits)
             if let Rv32iInstr::Lui { rd, imm: hi20 } = instr0 {
                 if rd != 0 && can_fuse_next {
                     if let Ok(raw1) =
@@ -607,7 +607,7 @@ impl SetunDbtEngine {
                 }
             }
 
-            // 2. Tentativa de Fusão AUIPC + ADDI -> AIPC.T (Endereço relativo completo em 21 trits)
+            // 2. Attempt AUIPC + ADDI -> AIPC.T fusion (complete PC-relative address in 21 trits)
             if let Rv32iInstr::Auipc { rd, imm: hi20 } = instr0 {
                 if rd != 0 && can_fuse_next {
                     if let Ok(raw1) =
@@ -640,7 +640,7 @@ impl SetunDbtEngine {
                 }
             }
 
-            // 3. Tentativa de Fusão Tricótoma SLT/SLTI/SLTU/SLTIU + [LI 0|1] + BEQ/BNE -> BCEG
+            // 3. Attempt Trichotomous SLT/SLTI/SLTU/SLTIU + [LI 0|1] + BEQ/BNE -> BCEG fusion
             let slt_candidate = match instr0 {
                 Rv32iInstr::Slt { rd, rs1, rs2 } if rd != 0 => {
                     Some((rd, FusedCmpKind::RegSigned { rs1, rs2 }))
@@ -663,7 +663,7 @@ impl SetunDbtEngine {
                         read_elf_u32_le(&self.memory, self.layout.setun_base_offset, next_pc)
                     {
                         if let Ok(instr1) = Rv32iInstr::decode(raw1) {
-                            // Caso 3a: Janela de 2 instruções (SLT* + BEQ/BNE cmp_rd, x0, offset)
+                            // Case 3a: 2-instruction window (SLT* + BEQ/BNE cmp_rd, x0, offset)
                             let branch_match_2 = match instr1 {
                                 Rv32iInstr::Bne { rs1, rs2, offset }
                                     if (rs1 == cmp_rd && rs2 == 0)
@@ -696,7 +696,7 @@ impl SetunDbtEngine {
                                 break;
                             }
 
-                            // Caso 3b: Janela de 3 instruções (SLT* + LI r_exp, 0|1 + BEQ/BNE cmp_rd, r_exp, offset)
+                            // Case 3b: 3-instruction window (SLT* + LI r_exp, 0|1 + BEQ/BNE cmp_rd, r_exp, offset)
                             if let Rv32iInstr::Addi {
                                 rd: exp_rd,
                                 rs1: 0,
@@ -719,18 +719,18 @@ impl SetunDbtEngine {
                                                     if (rs1 == cmp_rd && rs2 == exp_rd)
                                                         || (rs1 == exp_rd && rs2 == cmp_rd) =>
                                                 {
-                                                    // BNE salta quando cmp_rd != exp_imm:
-                                                    // se exp_imm == 0, salta quando cmp_rd == 1 (is_less == true)
-                                                    // se exp_imm == 1, salta quando cmp_rd == 0 (is_less == false)
+                                                    // BNE branches when cmp_rd != exp_imm:
+                                                    // if exp_imm == 0, branch when cmp_rd == 1 (is_less == true)
+                                                    // if exp_imm == 1, branch when cmp_rd == 0 (is_less == false)
                                                     Some((exp_imm == 0, offset))
                                                 }
                                                 Rv32iInstr::Beq { rs1, rs2, offset }
                                                     if (rs1 == cmp_rd && rs2 == exp_rd)
                                                         || (rs1 == exp_rd && rs2 == cmp_rd) =>
                                                 {
-                                                    // BEQ salta quando cmp_rd == exp_imm:
-                                                    // se exp_imm == 1, salta quando cmp_rd == 1 (is_less == true)
-                                                    // se exp_imm == 0, salta quando cmp_rd == 0 (is_less == false)
+                                                    // BEQ branches when cmp_rd == exp_imm:
+                                                    // if exp_imm == 1, branch when cmp_rd == 1 (is_less == true)
+                                                    // if exp_imm == 0, branch when cmp_rd == 0 (is_less == false)
                                                     Some((exp_imm == 1, offset))
                                                 }
                                                 _ => None,
@@ -764,10 +764,10 @@ impl SetunDbtEngine {
                 }
             }
 
-            // 4. Otimização Peephole: Inversão pura de sinal Setun (NEG rd, rs2 / STI.T)
-            // No RV32I padrão, 'neg rd, rs' é pseudo-instrução traduzida como 'sub rd, x0, rs'.
-            // Na máquina Setun, isso dispensa totalmente o somador e propagações de carry,
-            // executando diretamente via inversão física fio a fio dos 21 trits (+1 <-> -1).
+            // 4. Peephole Optimization: Pure Setun sign inversion (NEG rd, rs2 / STI.T)
+            // In standard RV32I, 'neg rd, rs' is a pseudo-instruction translated as 'sub rd, x0, rs'.
+            // On Setun, this dispenses with adders and carry propagation altogether,
+            // executing directly via physical wire-by-wire inversion of 21 trits (+1 <-> -1).
             if let Rv32iInstr::Sub { rd, rs1: 0, rs2 } = instr0 {
                 ops.push(SetunTranslatedOp::NegT { rd, rs: rs2 });
                 self.emit_setun_code_word(Opcode::Neg, rd as i64);
@@ -778,7 +778,7 @@ impl SetunDbtEngine {
                 continue;
             }
 
-            // 5. Tradução direta 1-para-1 para operação ternária da Setun
+            // 5. Direct 1-to-1 translation to Setun ternary operation
             ops.push(SetunTranslatedOp::Single {
                 instr: instr0,
                 pc: cur_pc,
@@ -814,7 +814,7 @@ impl SetunDbtEngine {
         Ok(block)
     }
 
-    /// Emite uma instrução codificada de 21 trits na região `DBT_CODE_CACHE_BASE` da memória Setun.
+    /// Emits a 21-trit encoded instruction into the `DBT_CODE_CACHE_BASE` region of Setun memory.
     fn emit_setun_code_word(&mut self, opcode: Opcode, operand: i64) {
         if self.next_code_cache_addr < DBT_CODE_CACHE_LIMIT {
             let clamped = operand.clamp(-7_000_000, 7_000_000);
@@ -826,8 +826,8 @@ impl SetunDbtEngine {
         }
     }
 
-    /// Executa o programa `RV32I` traduzido até encontrar uma chamada de saída (`ecall` / retorno de `main`)
-    /// ou atingir `max_steps`.
+    /// Executes the translated `RV32I` program until encountering an exit call (`ecall` / `main` return)
+    /// or reaching `max_steps`.
     pub fn run(&mut self, max_steps: u64) -> Result<DbtExecutionReport, DbtError> {
         while self.setun_instructions_executed < max_steps {
             if self.pc == SENTINEL_RETURN_PC {
@@ -847,8 +847,8 @@ impl SetunDbtEngine {
                         intermediate_hi20,
                         rv32i_instrs,
                     } => {
-                        // Na referência binária RV32I sem fusão, LUI grava hi20 e ADDI grava imm32.
-                        // Na Setun (LI.T), gravamos diretamente a Word21 de 21 trits em um único ciclo!
+                        // In unfused binary RV32I reference, LUI writes hi20 and ADDI writes imm32.
+                        // On Setun (LI.T), we write the 21-trit Word21 directly in a single cycle.
                         if let Some(hi20) = intermediate_hi20 {
                             if rd != 0 {
                                 let old_bin = self.read_reg(rd).to_i32_saturating();
@@ -953,11 +953,11 @@ impl SetunDbtEngine {
                     SetunTranslatedOp::NegT { rd, rs } => {
                         let val = self.read_reg(rs);
                         let inverted = if val == MIN_I32_WORD21 {
-                            // No complemento de dois de 32 bits, -(-2^31) transborda de volta para -2^31
+                            // In 32-bit two's complement, -(-2^31) overflows back to -2^31
                             MIN_I32_WORD21
                         } else {
-                            // Para todos os outros números em [-2^31 + 1, 2^31 - 1],
-                            // a inversão do Setun é 100% simétrica por portas de trits sem carry!
+                            // For all other numbers in [-2^31 + 1, 2^31 - 1],
+                            // Setun inversion is 100% symmetric through carryless trit gates.
                             val.gate_invert_trits()
                         };
                         self.write_reg(rd, inverted)?;
@@ -980,7 +980,7 @@ impl SetunDbtEngine {
                             }));
                         }
                         if self.pc != pc.wrapping_add(4) {
-                            // Salto tomado dentro do bloco
+                            // Branch taken inside block
                             break;
                         }
                     }
@@ -991,7 +991,7 @@ impl SetunDbtEngine {
         Err(DbtError::StepLimitExceeded(max_steps))
     }
 
-    /// Executa uma única instrução traduzida usando os circuitos de portas ternárias da Setun.
+    /// Executes a single translated instruction using Setun ternary gate circuits.
     fn execute_single_instr(
         &mut self,
         instr: Rv32iInstr,
@@ -1019,7 +1019,7 @@ impl SetunDbtEngine {
                 next_pc = target.to_i32_saturating() as u32;
             }
             Rv32iInstr::Jalr { rd, rs1, imm } => {
-                // Calcula o endereço alvo a partir de rs1 ANTES de sobrescrever rd (caso rd == rs1)
+                // Compute target address from rs1 BEFORE overwriting rd (in case rd == rs1)
                 let base = self.read_reg(rs1);
                 let target_sum = self.gate_add_i32(base, Word21::from_i32(imm));
                 let target_u32 = (target_sum.to_i32_saturating() as u32) & !1u32;
@@ -1280,7 +1280,7 @@ impl SetunDbtEngine {
                 let res = self.gate_alvarez_bin_to_ter(a_bin & b_bin);
                 self.write_reg(rd, res)?;
             }
-            // Extensão RV32M
+            // RV32M Extension
             Rv32iInstr::Mul { rd, rs1, rs2 } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
                 let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2));
@@ -1368,7 +1368,7 @@ impl SetunDbtEngine {
                 let a7 = self.read_reg(17).to_i32_saturating();
                 let gp = self.read_reg(3).to_i32_saturating();
 
-                // Syscall Linux/Newlib write(fd=a0, buf=a1, count=a2) quando a7 == 64
+                // Linux/Newlib write(fd=a0, buf=a1, count=a2) syscall when a7 == 64
                 if a7 == 64 {
                     for i in 0..a2 {
                         if let Ok(b) = read_elf_u8(
@@ -1381,7 +1381,7 @@ impl SetunDbtEngine {
                     }
                     self.write_reg(10, Word21::from_i32(a2 as i32))?;
                 } else {
-                    // Convenção riscv-tests ou exit(a0)
+                    // riscv-tests convention or exit(a0)
                     self.pc = next_pc;
                     return Ok(Some(DbtExitReason::Ecall {
                         a0_exit_code: a0,
@@ -1413,7 +1413,7 @@ impl SetunDbtEngine {
     }
 }
 
-/// Varre as faixas executáveis da imagem ELF para descobrir todos os destinos estáticos de desvios e saltos.
+/// Scans executable ranges in the ELF image to discover all static jump and branch targets.
 fn scan_static_branch_targets(
     memory: &Memory,
     layout: &LoadedElfLayout,
@@ -1451,7 +1451,7 @@ fn scan_static_branch_targets(
     targets
 }
 
-/// Mapeia uma instrução `RV32I` para o [`Opcode`] correspondente na ISA de 21 trits da Setun.
+/// Maps an `RV32I` instruction to the corresponding [`Opcode`] in Setun 21-trit ISA.
 fn map_rv32i_to_setun_opcode(instr: &Rv32iInstr) -> Opcode {
     match instr {
         Rv32iInstr::Lui { .. } | Rv32iInstr::Auipc { .. } => Opcode::Load,
@@ -1521,27 +1521,27 @@ fn decode_j_imm(raw: u32) -> i32 {
     ((imm21 << 11) as i32) >> 11
 }
 
-/// Resumo consolidado da execução de toda a suíte oficial de 37 microtestes `RV32I` sobre a Setun-Doom.
+/// Consolidated execution summary of the entire official 37 `RV32I` microtest suite on Setun-Doom.
 #[derive(Clone, Debug)]
 pub struct RiscvIsaSuiteSummary {
-    /// Resultados individuais dos 37 testes (`(nome_do_teste, DbtExecutionReport)`).
+    /// Individual results for the 37 tests (`(test_name, DbtExecutionReport)`).
     pub tests: Vec<(&'static str, DbtExecutionReport)>,
-    /// Total de instruções binárias `RV32I` equivalentes na suíte.
+    /// Total equivalent binary `RV32I` instructions in the suite.
     pub total_rv32i_instrs: u64,
-    /// Total de instruções ternárias `Setun-Doom` executadas na suíte.
+    /// Total ternary `Setun-Doom` instructions executed in the suite.
     pub total_setun_instrs: u64,
-    /// Total de fusões `LI.T` e `AIPC.T` executadas.
+    /// Total `LI.T` and `AIPC.T` fusions executed.
     pub total_immediate_fusions: u64,
-    /// Total de fusões tricótomas `BCEG` executadas.
+    /// Total trichotomous `BCEG` fusions executed.
     pub total_branch_fusions: u64,
-    /// Total de inversões de sinal Setun `NEG/STI.T` executadas.
+    /// Total Setun `NEG/STI.T` sign inversions executed.
     pub total_neg_fusions: u64,
-    /// Telemetria acumulada de todos os 37 testes.
+    /// Accumulated telemetry across all 37 tests.
     pub total_telemetry: PowerTelemetry,
 }
 
 impl RiscvIsaSuiteSummary {
-    /// Diferença percentual de instruções executadas na suíte inteira (`Setun` vs `RV32I`).
+    /// Percentage difference of instructions executed across the entire suite (`Setun` vs `RV32I`).
     pub fn instruction_diff_pct(&self) -> f64 {
         if self.total_rv32i_instrs == 0 {
             return 0.0;
@@ -1552,7 +1552,7 @@ impl RiscvIsaSuiteSummary {
     }
 }
 
-/// Lista estática dos 37 microtestes oficiais da especificação `RV32I` compilados em `ELF32`.
+/// Static list of 37 official tests from the `RV32I` specification compiled into `ELF32`.
 pub const RISCV_ISA_ELF_TESTS: [(&str, &[u8]); 37] = [
     ("add", include_bytes!("../vendor/riscv_tests/elf/add.elf")),
     ("addi", include_bytes!("../vendor/riscv_tests/elf/addi.elf")),
@@ -1593,7 +1593,7 @@ pub const RISCV_ISA_ELF_TESTS: [(&str, &[u8]); 37] = [
     ("xori", include_bytes!("../vendor/riscv_tests/elf/xori.elf")),
 ];
 
-/// Executa todos os 37 testes oficiais da ISA `RV32I` sobre o motor `SetunDbtEngine`.
+/// Executes all 37 official `RV32I` ISA tests on `SetunDbtEngine`.
 pub fn run_all_riscv_isa_tests() -> Result<RiscvIsaSuiteSummary, DbtError> {
     let mut results = Vec::with_capacity(RISCV_ISA_ELF_TESTS.len());
     let mut total_rv32i_instrs = 0u64;
@@ -1639,26 +1639,26 @@ mod tests {
     #[test]
     fn test_all_37_riscv_rv32i_official_isa_tests_on_setun_dbt() {
         let summary =
-            run_all_riscv_isa_tests().expect("Falha ao executar a suite de 37 testes RV32I");
+            run_all_riscv_isa_tests().expect("Failed to execute 37-test RV32I suite");
 
         assert_eq!(summary.tests.len(), 37);
 
         for (name, report) in &summary.tests {
             assert!(
                 report.is_riscv_test_pass(),
-                "Teste oficial RV32I '{}' falhou: {:?}",
+                "Official RV32I test '{}' failed: {:?}",
                 name,
                 report.exit
             );
             assert!(
                 report.telemetry.adder_carry_propagations > 0,
-                "Teste '{}' nao registrou propagacoes de carry nas portas ternarias",
+                "Test '{}' did not record carry propagations on ternary gates",
                 name
             );
         }
 
-        // Verifica que as fusões de imediatos (LI.T / AIPC.T) e saltos tricótomos (BCEG)
-        // reduziram efetivamente a contagem de instruções executadas frente ao RV32I binário.
+        // Verify that immediate (LI.T / AIPC.T) and trichotomous branch (BCEG) fusions
+        // reduced the executed instruction count compared to binary RV32I.
         assert!(summary.total_immediate_fusions > 0);
         assert!(summary.total_branch_fusions > 0);
         assert!(summary.total_setun_instrs < summary.total_rv32i_instrs);
@@ -1671,13 +1671,13 @@ mod tests {
     fn test_rv32m_extension_execution_on_setun_dbt() {
         let elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/rv32m_test.elf");
         let mut engine = SetunDbtEngine::from_elf_bytes(elf_bytes)
-            .expect("Falha ao carregar ELF de teste RV32M");
+            .expect("Failed to load RV32M test ELF");
         let report = engine
             .run(50_000)
-            .expect("Erro de execucao no teste RV32M");
+            .expect("Execution error in RV32M test");
         assert!(
             report.is_riscv_test_pass(),
-            "Teste de extensao RV32M falhou com exit: {:?}",
+            "RV32M extension test failed with exit: {:?}",
             report.exit
         );
     }
@@ -1686,13 +1686,13 @@ mod tests {
     fn test_rv32im_doom_benchmark_execution_on_setun_dbt() {
         let elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");
         let mut engine = SetunDbtEngine::from_elf_bytes(elf_bytes)
-            .expect("Falha ao carregar ELF do benchmark Doom RV32IM");
+            .expect("Failed to load Doom RV32IM benchmark ELF");
         let report = engine
             .run(5_000_000)
-            .expect("Erro de execucao no benchmark Doom RV32IM");
+            .expect("Execution error in Doom RV32IM benchmark");
         assert!(
             report.is_riscv_test_pass(),
-            "Benchmark Doom RV32IM falhou com exit: {:?}",
+            "Doom RV32IM benchmark failed with exit: {:?}",
             report.exit
         );
         let stdout_str = String::from_utf8_lossy(&report.stdout_buffer);
