@@ -68,7 +68,7 @@ make -C vendor/doomgeneric/doomgeneric -f Makefile.setun
   * Copyright (C) 1993-1996 **Id Software, Inc.** Distributed unmodified at no charge under the DOOM Shareware Distribution License.
 * **Academic & Historical Credits**:
   * **Setun (1958) & Setun-70 (1970)**: **Nikolai Petrovich Brusentsov**, **E. A. Zhogolev**, **S. P. Maslov**, and **José Ramil Alvarez** (Computing Center of Moscow State University / MGU); **Stanislav Maslovski** (Setun-70 ISA documentation); archival translations in [`Tryquetra/setun-papers-articles-translations`](https://github.com/Tryquetra/setun-papers-articles-translations) and [`Tryquetra/setun-emulator-original-isa`](https://github.com/Tryquetra/setun-emulator-original-isa).
-  * **REBEL-6 & REBEL-2 Extensions**: *"REBEL-6: Instruction Set Extensions on RV32I for Balanced Ternary Computing"* (IEEE ISMVL 2025, [`bos-lima/RV32IToREBEL`](https://github.com/bos-lima/RV32IToREBEL)) and *"REBEL-2"* (`BCEG` 3-way branch).
+  * **REBEL-6 & REBEL-2 Extensions**: *"REBEL-6: Instruction Set Extensions on RV32I for Balanced Ternary Computing"* (IEEE ISMVL 2025, [`Soppe/RV32IToREBEL`](https://github.com/Soppe/RV32IToREBEL)) and *"REBEL-2"* (`BCEG` 3-way branch).
 
 See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full compliance record.
 

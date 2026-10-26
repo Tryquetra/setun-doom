@@ -54,5 +54,5 @@ This document records the copyright notices, license terms, and academic attribu
 
 ### B. REBEL-6 & REBEL-2 Balanced Ternary RISC Extensions
 * **Papers & Reference Implementation**:
-  * *"REBEL-6: Instruction Set Extensions on RV32I for Balanced Ternary Computing"*, IEEE International Symposium on Multiple-Valued Logic (ISMVL), 2025, and reference repository [`bos-lima/RV32IToREBEL`](https://github.com/bos-lima/RV32IToREBEL) (instructions `CMP.T`, `MAJV.T`, `MINV.T`, `STI.T`, and the Digit Flips dynamic switching telemetry methodology).
+  * *"REBEL-6: Instruction Set Extensions on RV32I for Balanced Ternary Computing"*, IEEE International Symposium on Multiple-Valued Logic (ISMVL), 2025, and reference repository [`Soppe/RV32IToREBEL`](https://github.com/Soppe/RV32IToREBEL) (instructions `CMP.T`, `MAJV.T`, `MINV.T`, `STI.T`, and the Digit Flips dynamic switching telemetry methodology).
   * *"REBEL-2"* balanced ternary branch extension (`BCEG` single-cycle 3-way branch compare equal or greater).
