@@ -48,10 +48,10 @@ FixedMul
 ( fixed_t	a,
   fixed_t	b )
 {
-    return ((int64_t) a * (int64_t) b) >> FRACBITS;
+    int ahi = a >> FRACBITS;
+    int alo = a & ((1 << FRACBITS) - 1);
+    return (ahi * b) + ((alo * b) >> FRACBITS);
 }
-
-
 
 //
 // FixedDiv, C version.
@@ -65,11 +65,9 @@ fixed_t FixedDiv(fixed_t a, fixed_t b)
     }
     else
     {
-	int64_t result;
-
-	result = ((int64_t) a << 16) / b;
-
-	return (fixed_t) result;
+	int q = a / b;
+	int r = a % b;
+	return (q << FRACBITS) + ((r << FRACBITS) / b);
     }
 }
 #endif

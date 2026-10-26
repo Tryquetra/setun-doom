@@ -15,6 +15,7 @@ fn main() {
     }
 
     let mut input_files = Vec::new();
+    let mut include_dirs = Vec::new();
     let mut output_file = "a.setun".to_string();
     let mut entry_symbol = "main".to_string();
 
@@ -32,6 +33,15 @@ fn main() {
                     entry_symbol = args[i + 1].clone();
                     i += 1;
                 }
+            }
+            "-I" => {
+                if i + 1 < args.len() {
+                    include_dirs.push(args[i + 1].clone());
+                    i += 1;
+                }
+            }
+            arg if arg.starts_with("-I") => {
+                include_dirs.push(arg[2..].to_string());
             }
             arg if !arg.starts_with('-') => {
                 input_files.push(arg.to_string());
@@ -58,10 +68,14 @@ fn main() {
             let out_ll = tmp_dir.join(format!("{}.ll", file_stem));
 
             println!("  -> Compiling '{}' via host Clang (-O1 -emit-llvm)...", input);
-            let status = Command::new("clang")
-                .args(["-O1", "-S", "-emit-llvm", input, "-o", out_ll.to_str().unwrap()])
-                .status()
-                .expect("Failed to execute host clang command");
+            let mut clang_cmd = Command::new("clang");
+            clang_cmd.args(["-O1", "-S", "-emit-llvm", "-fno-builtin"]);
+            clang_cmd.arg("-Isrc/runtime");
+            for inc in &include_dirs {
+                clang_cmd.arg(format!("-I{}", inc));
+            }
+            clang_cmd.args([input, "-o", out_ll.to_str().unwrap()]);
+            let status = clang_cmd.status().expect("Failed to execute host clang command");
 
             if !status.success() {
                 eprintln!("Error: Clang compilation failed for '{}'", input);

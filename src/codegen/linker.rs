@@ -6,7 +6,7 @@
 //! - Literal and constant deduplication (`LiteralPool`).
 //! - Deterministic layout across the 14-trit linear memory space.
 
-use crate::codegen::ir::{LlvmFunction, LlvmInst, LlvmModule, LlvmValue};
+use crate::codegen::ir::{LlvmFunction, LlvmGlobal, LlvmInst, LlvmModule, LlvmValue};
 use crate::codegen::isel::SetunCodeGenerator;
 use crate::cpu::{Instruction, Opcode};
 use crate::memory::Memory;
@@ -15,6 +15,9 @@ use std::collections::{HashMap, HashSet};
 
 /// Base memory address for executable code (.text segment).
 pub const CODE_SEGMENT_BASE: usize = 1_000;
+
+/// Base memory address for global variables and static tables (.data / .bss segment).
+pub const DATA_SEGMENT_BASE: usize = 50_000;
 
 /// Base memory address for deduplicated literals and read-only data (.rodata).
 pub const RODATA_SEGMENT_BASE: usize = 200_000;
@@ -149,11 +152,15 @@ impl SetunLinker {
     /// Performs single-pass in-memory linking, tree-shaking from `entry_symbol`,
     /// and emits a self-contained [`LinkedImage`].
     pub fn link(self, entry_symbol: &str) -> Result<LinkedImage, String> {
-        // 1. Collect all functions across modules into a unified function map
+        // 1. Collect all functions and globals across modules
         let mut available_functions: HashMap<String, LlvmFunction> = HashMap::new();
+        let mut available_globals: HashMap<String, LlvmGlobal> = HashMap::new();
         for module in self.modules {
             for (name, func) in module.functions {
                 available_functions.insert(name, func);
+            }
+            for (name, global) in module.globals {
+                available_globals.insert(name, global);
             }
         }
 
@@ -164,11 +171,29 @@ impl SetunLinker {
             ));
         }
 
-        // 2. Perform whole-program reachability analysis (tree-shaking) from entry_symbol
+        // 2. Layout global variables into the data segment (.data / .bss)
+        let mut global_table: HashMap<String, usize> = HashMap::new();
+        let mut data_words: Vec<(usize, Word21)> = Vec::new();
+        let mut current_data_addr = DATA_SEGMENT_BASE;
+
+        for (g_name, global) in &available_globals {
+            let base_addr = current_data_addr;
+            global_table.insert(g_name.clone(), base_addr);
+            for (i, &val) in global.words.iter().enumerate() {
+                data_words.push((base_addr + i, Word21::new(val)));
+            }
+            current_data_addr += global.words.len();
+        }
+
+        // 3. Perform whole-program reachability analysis (tree-shaking) from entry_symbol
         let reachable_names = Self::compute_reachability(entry_symbol, &available_functions);
 
-        // 3. Layout reachable functions sequentially starting at CODE_SEGMENT_BASE
+        // 4. Layout reachable functions sequentially starting at CODE_SEGMENT_BASE
         let mut symbol_table: HashMap<String, usize> = HashMap::new();
+        for (g_name, &addr) in &global_table {
+            symbol_table.insert(g_name.clone(), addr);
+        }
+
         let mut relocations: Vec<RelocationRecord> = Vec::new();
         let mut all_instructions: Vec<Instruction> = Vec::new();
 
@@ -189,7 +214,7 @@ impl SetunLinker {
 
             let is_entry = func_name == entry_symbol;
             let (func_instructions, func_call_relocs) =
-                SetunCodeGenerator::compile_function_with_relocs(func, is_entry)?;
+                SetunCodeGenerator::compile_function_with_globals(func, is_entry, &global_table)?;
 
             for (reloc_site, callee) in func_call_relocs {
                 relocations.push(RelocationRecord {
@@ -208,7 +233,7 @@ impl SetunLinker {
             }
         }
 
-        // 4. Resolve relocation records
+        // 5. Resolve relocation records
         for reloc in relocations {
             let target_addr = *symbol_table.get(&reloc.target_symbol).ok_or_else(|| {
                 format!(
@@ -219,7 +244,7 @@ impl SetunLinker {
             all_instructions[reloc.instruction_idx].operand = target_addr as i64;
         }
 
-        // 5. Build linked image
+        // 6. Build linked image
         let entry_pc = *symbol_table.get(entry_symbol).unwrap();
         let mut code_words = Vec::with_capacity(all_instructions.len());
         for (i, instr) in all_instructions.into_iter().enumerate() {
@@ -230,7 +255,7 @@ impl SetunLinker {
         Ok(LinkedImage {
             entry_pc,
             code_words,
-            data_words: Vec::new(),
+            data_words,
             symbol_table,
         })
     }

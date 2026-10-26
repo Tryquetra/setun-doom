@@ -9,6 +9,8 @@ pub enum LlvmValue {
     Variable(String),
     /// Integer literal constant (e.g. `42`, `-10`).
     ConstantInt(i64),
+    /// Global symbol reference (e.g. `"@my_global"`).
+    Global(String),
     /// Basic block label (e.g. `"entry"`, `"return"`).
     Label(String),
 }
@@ -73,6 +75,24 @@ pub enum LlvmInst {
     },
     /// `%dst = srem i32 %a, %b`
     Srem {
+        dst: String,
+        lhs: LlvmValue,
+        rhs: LlvmValue,
+    },
+    /// `%dst = and i32 %a, %b`
+    And {
+        dst: String,
+        lhs: LlvmValue,
+        rhs: LlvmValue,
+    },
+    /// `%dst = or i32 %a, %b`
+    Or {
+        dst: String,
+        lhs: LlvmValue,
+        rhs: LlvmValue,
+    },
+    /// `%dst = xor i32 %a, %b`
+    Xor {
         dst: String,
         lhs: LlvmValue,
         rhs: LlvmValue,
@@ -147,6 +167,20 @@ pub enum LlvmInst {
         callee: String,
         args: Vec<LlvmValue>,
     },
+    /// Address computation: `%dst = getelementptr inbounds %ty, ptr %base, i64 %offset`
+    GetElementPtr {
+        dst: String,
+        base: LlvmValue,
+        offset: LlvmValue,
+    },
+}
+
+/// Global variable or constant definition in the `.data` / `.rodata` / `.bss` segment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LlvmGlobal {
+    pub name: String,
+    pub is_constant: bool,
+    pub words: Vec<i64>,
 }
 
 /// Basic block containing a linear sequence of instructions terminated by a branch or return.
@@ -168,4 +202,5 @@ pub struct LlvmFunction {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LlvmModule {
     pub functions: HashMap<String, LlvmFunction>,
+    pub globals: HashMap<String, LlvmGlobal>,
 }

@@ -207,6 +207,9 @@ impl SetunAssembler {
             "SAT" => Some((Opcode::Sat, 0)),
             "SIT" => Some((Opcode::Sit, 0)),
             "NORM_T" | "NORM.T" | "NORMT" | "CLZ_T" | "CLZ.T" | "CLZT" => Some((Opcode::NormT, 0)),
+            "AND" => Some((Opcode::And, 0)),
+            "OR" => Some((Opcode::Or, 0)),
+            "XOR" => Some((Opcode::Xor, 0)),
             "HALT" | "HLT" => Some((Opcode::Halt, 0)),
             _ => None,
         }
@@ -326,6 +329,9 @@ impl SetunAssembler {
             Opcode::Sat => "SAT",
             Opcode::Sit => "SIT",
             Opcode::NormT => "NORM.T",
+            Opcode::And => "AND",
+            Opcode::Or => "OR",
+            Opcode::Xor => "XOR",
             Opcode::Halt => "HALT",
         };
 

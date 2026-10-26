@@ -147,11 +147,6 @@ fn test_multimodule_with_function_calls() {
     linker.add_module(parsed_main);
 
     let image = linker.link("calc_hypot_sq").expect("Failed to link");
-    println!("Image entry_pc: {}", image.entry_pc);
-    for (addr, word) in &image.code_words {
-        let instr = setun_doom::cpu::Instruction::decode(*word).unwrap();
-        println!("  {}: {:?}", addr, instr);
-    }
 
     let mut mem = Memory::new();
     let mut cpu = Cpu::new();
@@ -161,16 +156,61 @@ fn test_multimodule_with_function_calls() {
     cpu.index_regs[1] = Word21::new(4);
     cpu.pc = image.entry_pc as i64;
 
-    for step in 0..100 {
-        if cpu.halted {
-            break;
-        }
-        let pc = cpu.pc;
-        let instr = setun_doom::cpu::Instruction::decode(mem.read_word_fast(pc)).unwrap();
-        println!("Step {:2}: PC={} [{:?}] ACC={} IX0={} IX1={} IX2={} IX3={}",
-            step, pc, instr, cpu.acc.as_i64(), cpu.index_regs[0].as_i64(), cpu.index_regs[1].as_i64(), cpu.index_regs[2].as_i64(), cpu.index_regs[3].as_i64());
-        cpu.step(&mut mem);
-    }
-
+    let steps = cpu.run_ticks(&mut mem, 100);
+    assert!(cpu.halted, "CPU should have halted in {} steps", steps);
     assert_eq!(cpu.acc.as_i64(), 25);
+}
+
+#[test]
+fn test_global_variables_and_arrays() {
+    let code = r#"
+    int global_counter = 100;
+    int global_array[4] = {10, 20, 30, 40};
+
+    int test_globals(int delta, int idx) {
+        global_counter = global_counter + delta;
+        int elem = global_array[idx];
+        return global_counter + elem;
+    }
+    "#;
+
+    let tmp_dir = std::env::temp_dir();
+    let src_path = tmp_dir.join("test_globals.c");
+    let ll_path = tmp_dir.join("test_globals.ll");
+
+    fs::write(&src_path, code).unwrap();
+    let status = Command::new("clang")
+        .args(["-O1", "-S", "-emit-llvm", src_path.to_str().unwrap(), "-o", ll_path.to_str().unwrap()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let ll_str = fs::read_to_string(&ll_path).unwrap();
+    let parsed = LlvmParser::parse(&ll_str).expect("Failed to parse LLVM IR with globals");
+
+    assert!(parsed.globals.contains_key("global_counter"));
+    assert!(parsed.globals.contains_key("global_array"));
+
+    let mut linker = SetunLinker::new();
+    linker.add_module(parsed);
+
+    let image = linker.link("test_globals").expect("Failed to link globals module");
+
+    let mut mem = Memory::new();
+    let mut cpu = Cpu::new();
+    image.load_into_memory(&mut mem);
+
+    // Call test_globals(delta=5, idx=2) -> 105 + 30 = 135
+    cpu.index_regs[0] = Word21::new(5);
+    cpu.index_regs[1] = Word21::new(2);
+    cpu.pc = image.entry_pc as i64;
+
+    let steps = cpu.run_ticks(&mut mem, 100);
+    println!("[Globals Test] Executed in {} steps. Result ACC = {}", steps, cpu.acc.as_i64());
+
+    assert_eq!(cpu.acc.as_i64(), 135);
+
+    // Verify global_counter in data memory was updated to 105
+    let counter_addr = *image.symbol_table.get("global_counter").unwrap();
+    assert_eq!(mem.read_word_fast(counter_addr as i64).as_i64(), 105);
 }

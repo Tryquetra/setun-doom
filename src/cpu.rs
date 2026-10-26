@@ -124,6 +124,12 @@ pub enum Opcode {
     /// Mantissa normalization and leading zero count:
     /// `(ACC, IX[reg]) = ACC.normalize_leading()` (`NORM.T` / `CLZ.T`) (`+27`).
     NormT = 27,
+    /// Bitwise AND: `ACC = ACC & MEM[operand]` (`+28`).
+    And = 28,
+    /// Bitwise OR: `ACC = ACC | MEM[operand]` (`+29`).
+    Or = 29,
+    /// Bitwise XOR: `ACC = ACC ^ MEM[operand]` (`+30`).
+    Xor = 30,
     /// Controlled CPU halt (`HALT`) (`+40`).
     Halt = 40,
 }
@@ -173,6 +179,9 @@ impl Opcode {
             -25 => Some(Self::Sat),
             26 => Some(Self::Sit),
             27 => Some(Self::NormT),
+            28 => Some(Self::And),
+            29 => Some(Self::Or),
+            30 => Some(Self::Xor),
             40 => Some(Self::Halt),
             _ => None,
         }
@@ -878,6 +887,27 @@ impl Cpu {
                     let count_word = Word21::new(shift_count as i64);
                     self.set_ix(instr.reg_idx, count_word);
                     self.set_acc(norm_acc);
+                }
+
+                Opcode::And => {
+                    let addr = instr.operand_as_address();
+                    let val = read_mem(mem, addr)?;
+                    let res = self.acc.as_i64() & val.as_i64();
+                    self.set_acc(Word21::new(res));
+                }
+
+                Opcode::Or => {
+                    let addr = instr.operand_as_address();
+                    let val = read_mem(mem, addr)?;
+                    let res = self.acc.as_i64() | val.as_i64();
+                    self.set_acc(Word21::new(res));
+                }
+
+                Opcode::Xor => {
+                    let addr = instr.operand_as_address();
+                    let val = read_mem(mem, addr)?;
+                    let res = self.acc.as_i64() ^ val.as_i64();
+                    self.set_acc(Word21::new(res));
                 }
 
                 Opcode::Halt => {
