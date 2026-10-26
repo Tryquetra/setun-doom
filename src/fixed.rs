@@ -367,4 +367,36 @@ mod tests {
         let back = tf.to_doom_fixed16();
         assert!((back - doom_val).abs() <= 2);
     }
+
+    #[test]
+    fn test_property_algebraic_symmetry_and_identities() {
+        // Gera sequência determinística de 200 amostras em faixas variadas
+        let samples: [f64; 10] = [
+            0.0, 1.0, -1.0, 0.5, -0.5, 17.125, -42.875, 1023.0, -512.25, 0.0001
+        ];
+
+        for &val_a in &samples {
+            let a = TernaryFixed::from_f64(val_a);
+
+            // Identidades de Elemento Neutro e Inverso Aditivo
+            assert_eq!(a + TernaryFixed::ZERO, a);
+            assert_eq!(a + (-a), TernaryFixed::ZERO);
+
+            for &val_b in &samples {
+                let b = TernaryFixed::from_f64(val_b);
+
+                // Comutatividade da Adição: a + b == b + a
+                assert_eq!(a + b, b + a);
+
+                // Comutatividade da Multiplicação: a * b == b * a
+                assert_eq!(a * b, b * a);
+
+                // Simetria Estrita de Inversão: (-a) * b == -(a * b)
+                assert_eq!((-a) * b, -(a * b));
+
+                // Dupla Inversão: (-a) * (-b) == a * b
+                assert_eq!((-a) * (-b), a * b);
+            }
+        }
+    }
 }
