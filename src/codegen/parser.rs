@@ -210,6 +210,22 @@ impl LlvmParser {
                     }
                     return Some(LlvmInst::Phi { dst, incomings });
                 }
+                "select" => {
+                    // Example: select i1 %4, i32 %5, i32 %2
+                    let parts: Vec<&str> = rhs.split(',').collect();
+                    if parts.len() == 3 {
+                        let cond_tok = parts[0].split_whitespace().last()?;
+                        let true_tok = parts[1].split_whitespace().last()?;
+                        let false_tok = parts[2].split_whitespace().last()?;
+                        return Some(LlvmInst::Select {
+                            dst,
+                            cond: Self::parse_val(cond_tok),
+                            val_true: Self::parse_val(true_tok),
+                            val_false: Self::parse_val(false_tok),
+                        });
+                    }
+                    return None;
+                }
                 "add" | "sub" | "mul" | "sdiv" | "srem" => {
                     // Example: add nsw i32 %a, %b or add i32 %a, 10
                     let op_args = Self::extract_binary_args(rhs)?;

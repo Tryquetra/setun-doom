@@ -208,6 +208,60 @@ impl SetunCodeGenerator {
                         let dst_reg = Self::get_or_alloc_reg(dst, &mut var_map, &mut next_reg)?;
                         instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
                     }
+                    LlvmInst::Select { dst, cond, val_true, val_false } => {
+                        // 1. Load condition into ACC
+                        match cond {
+                            LlvmValue::Variable(c_var) => {
+                                if let Some(&r) = var_map.get(c_var) {
+                                    instructions.push(Instruction::new(Opcode::MovIxToAcc, r, 0));
+                                }
+                            }
+                            LlvmValue::ConstantInt(c) => {
+                                instructions.push(Instruction::new(Opcode::LoadImm, 0, *c));
+                            }
+                            _ => {}
+                        }
+
+                        let dst_reg = Self::get_or_alloc_reg(dst, &mut var_map, &mut next_reg)?;
+
+                        // If cond > 0 (JMPP), jump to .is_true
+                        let jmp_true_idx = instructions.len();
+                        instructions.push(Instruction::new(Opcode::JmpP, 0, 0));
+
+                        // False branch: load val_false into dst_reg, then JMP .done
+                        match val_false {
+                            LlvmValue::Variable(v) => {
+                                let r = *var_map.get(v).ok_or_else(|| format!("Select false variable not found: {}", v))?;
+                                instructions.push(Instruction::new(Opcode::MovIxToAcc, r, 0));
+                                instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
+                            }
+                            LlvmValue::ConstantInt(c) => {
+                                instructions.push(Instruction::new(Opcode::LoadIxImm, dst_reg, *c));
+                            }
+                            _ => {}
+                        }
+                        let jmp_done_idx = instructions.len();
+                        instructions.push(Instruction::new(Opcode::Jmp, 0, 0));
+
+                        // True branch
+                        let true_pc = instructions.len() as i64;
+                        instructions[jmp_true_idx] = Instruction::new(Opcode::JmpP, 0, true_pc);
+
+                        match val_true {
+                            LlvmValue::Variable(v) => {
+                                let r = *var_map.get(v).ok_or_else(|| format!("Select true variable not found: {}", v))?;
+                                instructions.push(Instruction::new(Opcode::MovIxToAcc, r, 0));
+                                instructions.push(Instruction::new(Opcode::MovAccToIx, dst_reg, 0));
+                            }
+                            LlvmValue::ConstantInt(c) => {
+                                instructions.push(Instruction::new(Opcode::LoadIxImm, dst_reg, *c));
+                            }
+                            _ => {}
+                        }
+
+                        let done_pc = instructions.len() as i64;
+                        instructions[jmp_done_idx] = Instruction::new(Opcode::Jmp, 0, done_pc);
+                    }
                     LlvmInst::BrUncond { target } => {
                         // Apply PHI copies if any for this block transition
                         if let Some(copies) = phi_copies.get(&block.label) {

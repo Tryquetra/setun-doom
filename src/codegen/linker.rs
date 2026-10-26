@@ -51,6 +51,80 @@ impl LinkedImage {
             mem.write_word_fast(addr as i64, word);
         }
     }
+
+    /// Serializes the linked image into a portable binary format (`.setun`).
+    ///
+    /// Header layout:
+    /// - Magic bytes: `SETUN21\0` (8 bytes)
+    /// - Entry PC: `u64` Little-Endian (8 bytes)
+    /// - Code count: `u64` Little-Endian (8 bytes)
+    /// - Data count: `u64` Little-Endian (8 bytes)
+    /// - Sequence of (address `u64`, word_val `i64`)
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"SETUN21\0");
+        bytes.extend_from_slice(&(self.entry_pc as u64).to_le_bytes());
+        bytes.extend_from_slice(&(self.code_words.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(self.data_words.len() as u64).to_le_bytes());
+
+        for &(addr, word) in &self.code_words {
+            bytes.extend_from_slice(&(addr as u64).to_le_bytes());
+            bytes.extend_from_slice(&(word.as_i64().to_le_bytes()));
+        }
+        for &(addr, word) in &self.data_words {
+            bytes.extend_from_slice(&(addr as u64).to_le_bytes());
+            bytes.extend_from_slice(&(word.as_i64().to_le_bytes()));
+        }
+
+        bytes
+    }
+
+    /// Deserializes a `.setun` binary file from disk into a [`LinkedImage`].
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < 32 {
+            return Err("Invalid Setun binary: file smaller than header size (32 bytes)".to_string());
+        }
+        if &bytes[0..8] != b"SETUN21\0" {
+            return Err("Invalid Setun binary: missing magic header 'SETUN21'".to_string());
+        }
+
+        let entry_pc = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
+        let code_count = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
+        let data_count = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+
+        let expected_size = 32 + (code_count + data_count) * 16;
+        if bytes.len() < expected_size {
+            return Err(format!(
+                "Invalid Setun binary: truncated payload. Expected {} bytes, found {}",
+                expected_size,
+                bytes.len()
+            ));
+        }
+
+        let mut offset = 32;
+        let mut code_words = Vec::with_capacity(code_count);
+        for _ in 0..code_count {
+            let addr = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
+            let val = i64::from_le_bytes(bytes[offset + 8..offset + 16].try_into().unwrap());
+            code_words.push((addr, Word21::new(val)));
+            offset += 16;
+        }
+
+        let mut data_words = Vec::with_capacity(data_count);
+        for _ in 0..data_count {
+            let addr = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
+            let val = i64::from_le_bytes(bytes[offset + 8..offset + 16].try_into().unwrap());
+            data_words.push((addr, Word21::new(val)));
+            offset += 16;
+        }
+
+        Ok(Self {
+            entry_pc,
+            code_words,
+            data_words,
+            symbol_table: HashMap::new(),
+        })
+    }
 }
 
 /// In-memory static linker engine.
@@ -115,7 +189,7 @@ impl SetunLinker {
 
             let func_instructions = SetunCodeGenerator::compile_function(func)?;
 
-            for instr in func_instructions {
+            for mut instr in func_instructions {
                 let instr_idx = all_instructions.len();
                 // Check if instruction is a cross-function CALL site needing relocation
                 if instr.opcode == Opcode::Call && instr.operand < 0 {
@@ -125,6 +199,9 @@ impl SetunLinker {
                         instruction_idx: instr_idx,
                         target_symbol: placeholder_name,
                     });
+                } else if matches!(instr.opcode, Opcode::Jmp | Opcode::JmpP | Opcode::JmpN | Opcode::JmpZ) && instr.operand >= 0 {
+                    // Rebase intra-function relative branch offset with func_start_pc
+                    instr.operand += func_start_pc as i64;
                 }
                 all_instructions.push(instr);
                 current_code_addr += 1;

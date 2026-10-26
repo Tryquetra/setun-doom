@@ -134,6 +134,13 @@ pub enum LlvmInst {
         val: LlvmValue,
         ptr: LlvmValue,
     },
+    /// `%dst = select i1 %cond, i32 %val_true, i32 %val_false`
+    Select {
+        dst: String,
+        cond: LlvmValue,
+        val_true: LlvmValue,
+        val_false: LlvmValue,
+    },
 }
 
 /// Basic block containing a linear sequence of instructions terminated by a branch or return.
