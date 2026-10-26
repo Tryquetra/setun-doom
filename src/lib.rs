@@ -31,6 +31,7 @@ pub mod cpu;
 pub mod dbt;
 pub mod elf;
 pub mod fixed;
+pub mod gui;
 pub mod memory;
 pub mod mmo;
 pub mod render;
@@ -50,6 +51,7 @@ pub use dbt::{
 };
 pub use elf::{Elf32Image, ElfError, ElfSection, ElfSegment, LoadedElfLayout};
 pub use fixed::{TernaryFixed, FRAC_SCALE, FRAC_TRITS, INT_TRITS};
+pub use gui::BenchGui;
 pub use memory::{Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE};
 pub use mmo::{
     DG_DrawFrame, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init, DG_SleepMs,

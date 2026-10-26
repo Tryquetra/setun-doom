@@ -8,7 +8,7 @@
 //! 4. Ciclo de plataforma `doomgeneric` (`DG_Init`, `DG_DrawFrameToBuffer`, `DG_GetTicksMs`, `DG_GetKey`).
 
 use setun_doom::{
-    BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs,
+    BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs,
     DG_Init, SetunAssembler, Subsector, TernaryFixed, TernaryRenderer, Tryte6, WallSeg, Word21,
     FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE, global_machine,
 };
@@ -287,4 +287,83 @@ fn main() {
         String::from_utf8_lossy(&doom_report.stdout_buffer).trim().replace('\n', " | ")
     );
     println!("==============================================================================================================");
+
+    // Se o argumento --no-gui não for fornecido e DISPLAY estiver configurado, abre a interface gráfica interativa
+    let enable_gui = !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
+    if enable_gui {
+        println!("\n[GUI] Inicializando janela gráfica da banca de testes (SDL2 640x400)...");
+        println!("[GUI] Controles interativos: W/S (câmera frontal/traseira) | A/D (lateral) | Espaço (reset) | ESC/Q (sair)");
+
+        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench — 21-Trit BSP & ALU Visualizer") {
+            let mut last_cam_x = gui.cam_x;
+            let mut last_cam_y = gui.cam_y;
+
+            while gui.poll_events() {
+                if (gui.cam_x - last_cam_x).abs() > 0.001 || (gui.cam_y - last_cam_y).abs() > 0.001 {
+                    last_cam_x = gui.cam_x;
+                    last_cam_y = gui.cam_y;
+
+                    let mut machine = global_machine().lock().expect("Falha ao bloquear maquina");
+                    let front_sub = Subsector {
+                        id: 0,
+                        segs: vec![
+                            WallSeg {
+                                id: 1,
+                                screen_x0: 0,
+                                screen_x1: 119,
+                                solid: true,
+                                color: Tryte6::from_palette_index(176),
+                                distance: TernaryFixed::from_f64((gui.cam_x - 1.0).max(0.5)),
+                            },
+                            WallSeg {
+                                id: 2,
+                                screen_x0: 200,
+                                screen_x1: 319,
+                                solid: true,
+                                color: Tryte6::from_palette_index(176),
+                                distance: TernaryFixed::from_f64((gui.cam_x - 1.0).max(0.5)),
+                            },
+                        ],
+                    };
+                    let back_sub = Subsector {
+                        id: 1,
+                        segs: vec![WallSeg {
+                            id: 3,
+                            screen_x0: 0,
+                            screen_x1: 319,
+                            solid: true,
+                            color: Tryte6::from_palette_index(96),
+                            distance: TernaryFixed::from_f64((gui.cam_x + 2.0).max(1.0)),
+                        }],
+                    };
+                    let bsp_tree = BspTree {
+                        nodes: vec![BspNode {
+                            x: TernaryFixed::ZERO,
+                            y: TernaryFixed::ZERO,
+                            dx: TernaryFixed::ZERO,
+                            dy: TernaryFixed::ONE,
+                            front_child: BspChild::Subsector(0),
+                            back_child: BspChild::Subsector(1),
+                        }],
+                        subsectors: vec![front_sub, back_sub],
+                        root: BspChild::Node(0),
+                    };
+
+                    TernaryRenderer::render_bsp_scene(
+                        &mut machine.memory,
+                        &bsp_tree,
+                        TernaryFixed::from_f64(gui.cam_x),
+                        TernaryFixed::from_f64(gui.cam_y),
+                    );
+                }
+
+                unsafe {
+                    DG_DrawFrameToBuffer(rgba.as_mut_ptr());
+                }
+                gui.present_frame(&rgba);
+                gui.delay(16); // ~60 FPS
+            }
+            println!("[GUI] Janela gráfica encerrada.");
+        }
+    }
 }
