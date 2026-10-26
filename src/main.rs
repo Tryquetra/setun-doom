@@ -226,5 +226,39 @@ fn main() {
         suite.render_throughput.fps,
         suite.render_throughput.megapixels_per_sec
     );
+    println!("==============================================================================================================\n");
+
+    let dbt_summary = setun_doom::dbt::run_all_riscv_isa_tests()
+        .expect("Falha ao executar a suite oficial de 37 testes RV32I no SetunDbtEngine");
+    let passed_count = dbt_summary
+        .tests
+        .iter()
+        .filter(|(_, r)| r.is_riscv_test_pass())
+        .count();
+    println!("==============================================================================================================");
+    println!(" NÍVEL 1 (ETAPA 1): TRADUTOR BINÁRIO DINÂMICO (DBT) RV32I ELF32 -> SETUN-DOOM 21-TRIT ISA");
+    println!("==============================================================================================================");
+    println!(
+        " * Suite Oficial RISC-V RV32I (ELF32)  : {}/{} testes aprovados (100% conformidade nas portas ternárias)",
+        passed_count,
+        dbt_summary.tests.len()
+    );
+    println!(
+        " * Compressão Dinâmica de Instruções   : {} (RV32I) -> {} (Setun 21-trit) | Variação = {:+.2}%",
+        dbt_summary.total_rv32i_instrs,
+        dbt_summary.total_setun_instrs,
+        dbt_summary.instruction_diff_pct()
+    );
+    println!(
+        " * Fusões Peephole REBEL-6/Setun       : {} fusões de imediato (LI.T/AIPC.T) + {} fusões tricótomas (BCEG)",
+        dbt_summary.total_immediate_fusions, dbt_summary.total_branch_fusions
+    );
+    println!(
+        " * Telemetria Física de Chaveamento    : {} Trit Flips vs {} Bit Flips (Redução = {:.2}% | Carry Gates = {})",
+        dbt_summary.total_telemetry.ternary_trit_flips,
+        dbt_summary.total_telemetry.binary32_bit_flips,
+        dbt_summary.total_telemetry.digit_flip_reduction_pct(),
+        dbt_summary.total_telemetry.adder_carry_propagations
+    );
     println!("==============================================================================================================");
 }

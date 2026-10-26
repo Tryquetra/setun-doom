@@ -28,6 +28,8 @@ pub mod assembler;
 pub mod benchmarks;
 pub mod bsp;
 pub mod cpu;
+pub mod dbt;
+pub mod elf;
 pub mod fixed;
 pub mod memory;
 pub mod mmo;
@@ -42,6 +44,11 @@ pub use benchmarks::{
 };
 pub use bsp::{BspChild, BspNode, BspTree, Subsector, TernaryOcclusionClipper, WallSeg};
 pub use cpu::{Cpu, Instruction, Opcode, PowerTelemetry};
+pub use dbt::{
+    run_all_riscv_isa_tests, DbtError, DbtExecutionReport, DbtExitReason, RiscvIsaSuiteSummary,
+    Rv32iInstr, SetunDbtEngine, SetunTranslatedOp, RISCV_ISA_ELF_TESTS,
+};
+pub use elf::{Elf32Image, ElfError, ElfSection, ElfSegment, LoadedElfLayout};
 pub use fixed::{TernaryFixed, FRAC_SCALE, FRAC_TRITS, INT_TRITS};
 pub use memory::{Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE};
 pub use mmo::{

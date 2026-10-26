@@ -38,7 +38,17 @@ This document records the copyright notices, license terms, and academic attribu
 
 ---
 
-## 4. Academic & Historical Architecture Attributions
+## 4. Official RISC-V RV32I ISA Test Suite (`vendor/riscv_tests/`)
+
+* **Upstream Sources**:
+  * [`riscv-software-src/riscv-tests`](https://github.com/riscv-software-src/riscv-tests) — Copyright (c) 2012-2015, The Regents of the University of California (Regents). All Rights Reserved.
+  * Preprocessed RV32I assembly adaptation from [`Soppe/RV32IToREBEL`](https://github.com/Soppe/RV32IToREBEL) (`RiscvTests/PreprocessedAssembly/`).
+* **License**: BSD 3-Clause License (`BSD-3-Clause`). Full license text is located in [`vendor/riscv_tests/LICENSE`](vendor/riscv_tests/LICENSE).
+* **Contents**: 37 standalone RV32I instruction set compliance tests (`add`, `addi`, `and`, `andi`, `auipc`, `beq`, `bge`, `bgeu`, `blt`, `bltu`, `bne`, `jal`, `jalr`, `lb`, `lbu`, `lh`, `lhu`, `lui`, `lw`, `or`, `ori`, `sb`, `sh`, `simple`, `sll`, `slli`, `slt`, `slti`, `sltiu`, `sltu`, `sra`, `srai`, `srl`, `srli`, `sub`, `sw`, `xor`, `xori`) in both preprocessed assembly (`vendor/riscv_tests/asm/*.s`) and statically linked RISC-V `ELF32` binaries (`vendor/riscv_tests/elf/*.elf`).
+
+---
+
+## 5. Academic & Historical Architecture Attributions
 
 ### A. Setun (1958) & Setun-70 (1970) Balanced Ternary Computers
 * **Architects & Researchers**: **Nikolai Petrovich Brusentsov**, **E. A. Zhogolev**, **S. P. Maslov**, and **José Ramil Alvarez** (Problem Laboratory of Ternary Computers, Computing Center of Moscow State University / MGU).
