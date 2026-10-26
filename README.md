@@ -25,6 +25,55 @@
 
 ---
 
+## 35-Opcode Ternary ISA Table
+
+The Setun-Doom CPU implements 35 authentic opcodes utilizing a 21-trit instruction format: `trits[0..13]` (14-trit address/operand, $3^{14} = 4,782,969$ reach), `trits[14..15]` (2-trit index register `IX0..IX8`), and `trits[16..20]` (5-trit opcode in $[-121, +121]$).
+
+| Opcode | Mnemonic | Trit Field | Operation Semantics | Architectural Origin |
+| :---: | :--- | :---: | :--- | :--- |
+| `0` | **NOP** | `00000` | No operation (empty execution cycle) | Setun-58 |
+| `+1` | **ADD** | `0000+` | `ACC = ACC + MEM[addr]` | Setun-58 |
+| `-1` | **SUB** | `0000-` | `ACC = ACC - MEM[addr]` | Setun-58 |
+| `+2` | **MUL** | `000+-` | `ACC = FixedMul(ACC, MEM[addr])` ($11.10$ symmetric fixed-point) | Setun-58 (`++0`) |
+| `-2` | **DIV** | `000-+` | `ACC = FixedDiv(ACC, MEM[addr])` ($11.10$ symmetric fixed-point) | Setun-58 (`--0`) |
+| `+3` | **NEG** (`STI.T`) | `000+0` | `ACC = -ACC` (instantaneous wire inversion without carry propagation) | Setun-58 / REBEL-6 |
+| `+4` | **LOAD** | `000++` | `ACC = MEM[addr]` | Setun-58 |
+| `-4` | **STORE** | `000--` | `MEM[addr] = ACC` | Setun-58 |
+| `+5` | **LOAD_INDEX** | `00+--` | `ACC = MEM[addr + IX[reg]]` | Setun-70 |
+| `-5` | **STORE_INDEX** | `00-++` | `MEM[addr + IX[reg]] = ACC` | Setun-70 |
+| `+6` | **JMP** | `00+-0` | Unconditional jump: `PC = addr` | Setun-58 |
+| `-7` | **JMPN** / **JMP_GE** | `00+0-` | Trichotomous branch: jump if `ACC < 0` (or `ACC >= 0` if `reg == 1`) | Setun-58 (`+-0`) |
+| `+7` | **JMPZ** / **JMP_NE** | `00-0+` | Trichotomous branch: jump if `ACC == 0` (or `ACC != 0` if `reg == 1`) | Setun-58 (`0-0`) |
+| `+8` | **JMPP** / **JMP_LE** | `00-+0` | Trichotomous branch: jump if `ACC > 0` (or `ACC <= 0` if `reg == 1`) | Setun-58 (`++0`) |
+| `+19` | **BCEG** | `0+-++` | Single-cycle 3-way branch compare equal or greater via relative offsets | REBEL-2 / REBEL-6 |
+| `+9` | **PUSH** | `00-++` | `MEM[SP] = ACC; SP -= 1` | Setun-70 |
+| `-9` | **POP** | `00+--` | `SP += 1; ACC = MEM[SP]` | Setun-70 |
+| `+10` | **CALL** | `00+0+` | Subroutine call: push `PC+1` to return stack and jump to `addr` | Setun-70 |
+| `-10` | **RET** | `00-0-` | Subroutine return: pop return address and restore `PC` | Setun-70 |
+| `+11` | **LOAD_IMM** (`LI.T`) | `00+++` | `ACC = imm14` (load 14-trit immediate constant directly into accumulator) | Setun-Doom / REBEL-6 |
+| `-11` | **ADD_IMM** | `00---` | `ACC = ACC + imm14` (add 14-trit immediate constant to accumulator) | Setun-Doom |
+| `+12` | **LOAD_IX_IMM** | `0+---` | `IX[reg] = imm14` (load 14-trit immediate into target index register) | Setun-70 |
+| `-12` | **ADD_IX_IMM** | `0-+++` | `IX[reg] = IX[reg] + imm14` (add immediate to index register) | Setun-70 |
+| `+13` | **MOV_ACC_IX** | `0+--0` | `IX[reg] = ACC` (copies accumulator into index register) | Setun-70 |
+| `-13` | **MOV_IX_ACC** | `0-++0` | `ACC = IX[reg]` (copies index register into accumulator) | Setun-70 |
+| `+14` | **SHIFT** | `0+--+` | Physical trit-shift in register wires by `addr` positions | Setun-58 |
+| `-14` | **MUL_INT** | `0-++-` | Exact 21-trit integer multiplication: `ACC = ACC * MEM[addr]` | Setun-Doom |
+| `+15` | **DIV_INT** | `0+-0-` | Exact 21-trit integer division: `ACC = ACC / MEM[addr]` | Setun-Doom |
+| `+16` | **CMP.T** | `0+-00` | Trichotomous comparison: `ACC = (ACC <=> MEM[addr])` in $\{-1, 0, +1\}$ | REBEL-6 |
+| `+17` | **MAJV.T** | `0+-0+` | Ternary majority vote: `MajorityVote(ACC, IX[reg], MEM[addr])` trit-by-trit | REBEL-6 |
+| `-17` | **MINV.T** | `0-+0-` | Ternary minority vote: `MinorityVote(ACC, IX[reg], MEM[addr])` trit-by-trit | REBEL-6 |
+| `+20` | **ADD_IX** | `0++--` | `IX[reg] = IX[reg] + MEM[addr]` (preserves accumulator contents) | Setun-70 |
+| `-20` | **DEC_IX_JMP_GE** | `0--++` | Index loop counter: decrement `IX[reg]` and jump to `addr` if $\ge 0$ | Setun-58 (`BIX`) |
+| `+22` | **LOAD_R** | `0++0-` | Load auxiliary multiplier register: `R = MEM[addr]` | Setun-58 (`PARCEL_TO_R`) |
+| `+24` | **MAC_POS** | `0+++0` | Multiply-accumulate positive: `ACC = ACC + (MEM[addr] * R)` | Setun-58 (`MULT_POS`) |
+| `-24` | **MAC_NEG** | `0---0` | Multiply-accumulate negative: `ACC = ACC - (MEM[addr] * R)` | Setun-58 (`MULT_NEG`) |
+| `+25` | **SMT** | `0++++` | Trit-by-trit logic multiplication without carry propagation | Setun-58 / Setun-70 (`B19`) |
+| `-25` | **SAT** | `0----` | Trit-by-trit threshold addition | Setun-70 (`B21`) |
+| `+26` | **SIT** | `+----` | Trit-by-trit inhibition: `ACC + MEM * (1 - \|ACC\|)` | Setun-70 (`B20`) |
+| `+40` | **HALT** | `++--+` | Controlled CPU halt | Setun-58 / Setun-Doom |
+
+---
+
 ## Emulation Evolution Levels & Branch Roadmap
 
 The project progresses through five architectural levels of balanced ternary emulation, advancing from arithmetic co-processing to full dynamic translation, native compiler targeting, full-system OS emulation, and physical FPGA synthesis:
