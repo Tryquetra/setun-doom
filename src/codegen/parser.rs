@@ -72,8 +72,9 @@ impl LlvmParser {
                 continue;
             }
 
-            // Checks if line is a block label (e.g. "return:" or "7:")
-            if let Some(lbl) = t.strip_suffix(':') {
+            // Checks if line is a block label (e.g. "return:" or "6:" or "10: ; preds = ...")
+            let before_comment = t.split(';').next().unwrap_or("").trim();
+            if let Some(lbl) = before_comment.strip_suffix(':') {
                 if !current_block.instructions.is_empty() || current_block.label != "entry" {
                     blocks.push(current_block);
                 }
@@ -135,16 +136,26 @@ impl LlvmParser {
             }
         }
 
-        // Store: store i32 %val, ptr %ptr
+        // Store: store i32 %val, ptr %ptr, align 4 or store volatile i32 %val, ptr %ptr, align 4
         if cleaned.starts_with("store ") {
-            let remainder = cleaned.strip_prefix("store ")?;
-            let (val_part, ptr_part) = remainder.split_once(',')?;
-            let val_tok = val_part.split_whitespace().last()?;
-            let ptr_tok = ptr_part.split_whitespace().last()?;
-            return Some(LlvmInst::Store {
-                val: Self::parse_val(val_tok),
-                ptr: Self::parse_val(ptr_tok),
-            });
+            let tokens: Vec<&str> = cleaned.split_whitespace().collect();
+            let mut val_tok = "";
+            let mut ptr_tok = "";
+            for (i, tok) in tokens.iter().enumerate() {
+                if (*tok == "ptr" || tok.ends_with('*')) && i + 1 < tokens.len() {
+                    ptr_tok = tokens[i + 1];
+                    if i >= 1 {
+                        val_tok = tokens[i - 1];
+                    }
+                    break;
+                }
+            }
+            if !val_tok.is_empty() && !ptr_tok.is_empty() {
+                return Some(LlvmInst::Store {
+                    val: Self::parse_val(val_tok),
+                    ptr: Self::parse_val(ptr_tok),
+                });
+            }
         }
 
         // Assignments: %dst = <operation> ...
@@ -163,8 +174,17 @@ impl LlvmParser {
                     return Some(LlvmInst::Alloca { dst });
                 }
                 "load" => {
-                    // Example: load i32, ptr %x or load i32, i32* %x
-                    let ptr_tok = tokens.last()?;
+                    // Example: load i32, ptr %x, align 4 or load volatile i32, ptr %3, align 4
+                    let mut ptr_tok = "";
+                    for (i, tok) in tokens.iter().enumerate() {
+                        if (*tok == "ptr" || tok.ends_with('*')) && i + 1 < tokens.len() {
+                            ptr_tok = tokens[i + 1];
+                            break;
+                        }
+                    }
+                    if ptr_tok.is_empty() {
+                        ptr_tok = tokens.last()?;
+                    }
                     return Some(LlvmInst::Load {
                         dst,
                         ptr: Self::parse_val(ptr_tok),
@@ -273,7 +293,8 @@ impl LlvmParser {
     }
 
     fn parse_val(token: &str) -> LlvmValue {
-        let clean = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '%' && c != '-');
+        let clean = token.split(',').next().unwrap_or(token).trim();
+        let clean = clean.trim_matches(|c: char| !c.is_alphanumeric() && c != '%' && c != '-');
         if clean.starts_with('%') {
             LlvmValue::Variable(clean.to_string())
         } else if let Ok(val) = clean.parse::<i64>() {
