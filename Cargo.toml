@@ -1,0 +1,14 @@
+[package]
+name = "setun-doom"
+version = "0.1.0"
+edition = "2021"
+authors = ["Robson Cassiano"]
+description = "Balanced Ternary Computer Emulator inspired by Setun (1958), scaled to 21-trit architecture for Doom (doomgeneric)"
+
+[lib]
+name = "setun_doom"
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "setun-doom"
+path = "src/main.rs"
