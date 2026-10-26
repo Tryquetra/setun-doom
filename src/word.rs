@@ -518,6 +518,40 @@ impl Word21 {
         Self::from_trits(&out)
     }
 
+    /// Conta a quantidade de trits nulos (`Trit::Zero`) mais significativos consecutivos
+    /// antes do primeiro trit ativo (`Trit::Negative` ou `Trit::Positive`).
+    ///
+    /// Se a palavra for completamente nula (`Word21::ZERO`), retorna `21`.
+    #[inline]
+    pub fn count_leading_zeros(self) -> usize {
+        let trits = self.to_trits();
+        let mut count = 0;
+        for i in (0..21).rev() {
+            if trits[i] == Trit::Zero {
+                count += 1;
+            } else {
+                break;
+            }
+        }
+        count
+    }
+
+    /// Normaliza a mantissa ternária deslocando os trits nulos para a esquerda em hardware
+    /// e retorna `(palavra_normalizada, trits_deslocados)`.
+    ///
+    /// Se a palavra for `Word21::ZERO`, retorna `(Word21::ZERO, 21)`.
+    #[inline]
+    pub fn normalize_leading(self) -> (Self, usize) {
+        let lz = self.count_leading_zeros();
+        if lz == 0 {
+            (self, 0)
+        } else if lz == 21 {
+            (Self::ZERO, 21)
+        } else {
+            (self.shift_trits(lz as i32), lz)
+        }
+    }
+
     /// Decompõe a palavra nos 21 trits individuais (índice 0 = trit menos significativo).
     #[inline]
     pub fn to_trits(self) -> [Trit; 21] {

@@ -121,6 +121,9 @@ pub enum Opcode {
     Sat = -25,
     /// Inibição/Coalescência trit-a-trit `ACC = ACC + MEM[operand] * (1 - |ACC|)` (`SIT` `B20` `000+-0` da Setun-70) (`+26`).
     Sit = 26,
+    /// Normalização de mantissa e contagem de zeros à esquerda:
+    /// `(ACC, IX[reg]) = ACC.normalize_leading()` (`NORM.T` / `CLZ.T`) (`+27`).
+    NormT = 27,
     /// Parada controlada da CPU (`HALT`) (`+40`).
     Halt = 40,
 }
@@ -169,6 +172,7 @@ impl Opcode {
             25 => Some(Self::Smt),
             -25 => Some(Self::Sat),
             26 => Some(Self::Sit),
+            27 => Some(Self::NormT),
             40 => Some(Self::Halt),
             _ => None,
         }
@@ -867,6 +871,15 @@ impl Cpu {
                     self.set_acc(self.acc.tritwise_sit(val));
                 }
 
+                Opcode::NormT => {
+                    // NORM.T / CLZ.T (+27): Normaliza a mantissa do ACC e grava os trits deslocados em IX[reg]
+                    let prev_acc = self.acc;
+                    let (norm_acc, shift_count) = prev_acc.normalize_leading();
+                    let count_word = Word21::new(shift_count as i64);
+                    self.set_ix(instr.reg_idx, count_word);
+                    self.set_acc(norm_acc);
+                }
+
                 Opcode::Halt => {
                     self.halted = true;
                     self.cycles += 1;
@@ -1238,5 +1251,67 @@ mod tests {
         assert_eq!(mem.read_word(612).unwrap().as_i64(), 12);
         assert_eq!(mem.read_word(613).unwrap().as_i64(), 5);
         assert_eq!(mem.read_word(614).unwrap().as_i64(), 5);
+    }
+
+    #[test]
+    fn test_norm_t_clz_t_execution() {
+        let mut mem = Memory::new();
+        let mut cpu = Cpu::new();
+
+        // 1. Caso palavra zero: lz = 21, ACC = 0
+        // 2. Caso trit 20 ativo (+1): lz = 0, ACC inalterado
+        // 3. Caso 5 trits nulos a esquerda: lz = 5, ACC deslocado 5 posicoes
+        // 4. Caso negativo com simetria (-1): lz = 5, ACC deslocado 5 posicoes
+        let mut trits_5z = [Trit::Zero; 21];
+        // 5 trits nulos a esquerda (indices 20..16 = 0)
+        // indice 15 = +1
+        trits_5z[15] = Trit::Positive;
+        trits_5z[13] = Trit::Negative;
+        trits_5z[11] = Trit::Positive;
+        let word_5_zeros = Word21::from_trits(&trits_5z);
+        let word_5_zeros_neg = word_5_zeros.gate_invert_trits();
+        mem.write_word(700, word_5_zeros).unwrap();
+        mem.write_word(701, word_5_zeros_neg).unwrap();
+
+        let prog = [
+            // Teste 1: NORM.T no zero
+            Instruction::new(Opcode::LoadImm, 0, 0),
+            Instruction::new(Opcode::NormT, 1, 0), // IX1 = lz
+            Instruction::new(Opcode::Store, 0, 710), // grava ACC
+            Instruction::new(Opcode::MovIxToAcc, 1, 0),
+            Instruction::new(Opcode::Store, 0, 711), // grava IX1
+
+            // Teste 2: NORM.T com 5 zeros a esquerda
+            Instruction::new(Opcode::Load, 0, 700),
+            Instruction::new(Opcode::NormT, 2, 0), // IX2 = 5
+            Instruction::new(Opcode::Store, 0, 712), // grava ACC normalizado
+            Instruction::new(Opcode::MovIxToAcc, 2, 0),
+            Instruction::new(Opcode::Store, 0, 713), // grava IX2 (5)
+
+            // Teste 3: NORM.T com 5 zeros a esquerda negativo (simetria perfeita)
+            Instruction::new(Opcode::Load, 0, 701),
+            Instruction::new(Opcode::NormT, 3, 0), // IX3 = 5
+            Instruction::new(Opcode::Store, 0, 714), // grava ACC normalizado
+            Instruction::new(Opcode::MovIxToAcc, 3, 0),
+            Instruction::new(Opcode::Store, 0, 715), // grava IX3 (5)
+
+            Instruction::new(Opcode::Halt, 0, 0),
+        ];
+
+        cpu.load_program(&mut mem, 0, &prog);
+        cpu.run_ticks(&mut mem, 50);
+
+        assert!(cpu.halted);
+        assert_eq!(mem.read_word(710).unwrap(), Word21::ZERO);
+        assert_eq!(mem.read_word(711).unwrap().as_i64(), 21);
+
+        let norm_expected = word_5_zeros.shift_trits(5);
+        assert_eq!(mem.read_word(712).unwrap(), norm_expected);
+        assert_eq!(mem.read_word(713).unwrap().as_i64(), 5);
+
+        let norm_neg_expected = word_5_zeros_neg.shift_trits(5);
+        assert_eq!(mem.read_word(714).unwrap(), norm_neg_expected);
+        assert_eq!(mem.read_word(715).unwrap().as_i64(), 5);
+        assert_eq!(norm_expected.as_i64(), -norm_neg_expected.as_i64());
     }
 }

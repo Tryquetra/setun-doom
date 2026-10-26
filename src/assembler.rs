@@ -206,6 +206,7 @@ impl SetunAssembler {
             "SMT" => Some((Opcode::Smt, 0)),
             "SAT" => Some((Opcode::Sat, 0)),
             "SIT" => Some((Opcode::Sit, 0)),
+            "NORM_T" | "NORM.T" | "NORMT" | "CLZ_T" | "CLZ.T" | "CLZT" => Some((Opcode::NormT, 0)),
             "HALT" | "HLT" => Some((Opcode::Halt, 0)),
             _ => None,
         }
@@ -324,6 +325,7 @@ impl SetunAssembler {
             Opcode::Smt => "SMT",
             Opcode::Sat => "SAT",
             Opcode::Sit => "SIT",
+            Opcode::NormT => "NORM.T",
             Opcode::Halt => "HALT",
         };
 
@@ -334,6 +336,7 @@ impl SetunAssembler {
             | Opcode::Pop
             | Opcode::Ret
             | Opcode::Halt => mnem.to_string(),
+            Opcode::NormT => format!("{} IX{}", mnem, instr.reg_idx),
             Opcode::LoadIndex
             | Opcode::StoreIndex
             | Opcode::LoadIxImm

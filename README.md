@@ -15,7 +15,7 @@
 * **Balanced Ternary Fixed-Point (`TernaryFixed` `11.10`)**:
   * Replaces Doom's binary `16.16` `fixed_t` ($2^{16} = 65,536$) with a symmetric **11-trit integer, 10-trit fractional** representation (scale $3^{10} = 59,049$).
   * Physical 10-trit wire slicing (`prod42[10..31]`) performs exact round-to-nearest division by $3^{10}$ without a rounding adder or negative truncation bias (`RMSE = 0.0000` vs binary `16.16` `RMSE = 0.7085`).
-* **35-Opcode Orthogonal Ternary ISA**:
+* **36-Opcode Orthogonal Ternary ISA**:
   * **Instruction Format (`Word21`)**: `trits[0..13]` (14-trit operand/address, $3^{14} = 4,782,969$ words), `trits[14..15]` (2-trit register/mode selector, $3^2 = 9$ states), `trits[16..20]` (5-trit opcode).
   * **Setun-1958 & Setun-70 Instructions**: `MUL` (`++0` `MULTIPLICATION_ZERO` / `L*T` `B26`), `MAC_POS` (`+++` / `LBT` `B25`), `MAC_NEG` (`++-`), `LOAD_R` (`+-+` / `YRT`), `SMT` (`+-0` / `B19` tritwise multiply), `SAT` (`B21` threshold addition), `SIT` (`B20` $S + T(1 - |S|)$), `BIX` (index loop branch).
   * **REBEL-6 & REBEL-2 Instructions**: `CMP.T` (`<=>` 21-trit magnitude comparator), `MAJV.T` (majority vote), `MINV.T` (minority vote), `STI.T` (21-trit wire inverter), `BCEG` (single-cycle 3-way branch compare equal or greater with two 7-trit relative offsets).
@@ -25,9 +25,9 @@
 
 ---
 
-## 35-Opcode Ternary ISA Table
+## 36-Opcode Ternary ISA Table
 
-The Setun-Doom CPU implements 35 authentic opcodes utilizing a 21-trit instruction format: `trits[0..13]` (14-trit address/operand, $3^{14} = 4,782,969$ reach), `trits[14..15]` (2-trit index register `IX0..IX8`), and `trits[16..20]` (5-trit opcode in $[-121, +121]$).
+The Setun-Doom CPU implements 36 authentic opcodes utilizing a 21-trit instruction format: `trits[0..13]` (14-trit address/operand, $3^{14} = 4,782,969$ reach), `trits[14..15]` (2-trit index register `IX0..IX8`), and `trits[16..20]` (5-trit opcode in $[-121, +121]$).
 
 | Opcode | Mnemonic | Trit Field | Operation Semantics | Architectural Origin |
 | :---: | :--- | :---: | :--- | :--- |
@@ -70,6 +70,7 @@ The Setun-Doom CPU implements 35 authentic opcodes utilizing a 21-trit instructi
 | `+25` | **SMT** | `0++++` | Trit-by-trit logic multiplication without carry propagation | Setun-58 / Setun-70 (`B19`) |
 | `-25` | **SAT** | `0----` | Trit-by-trit threshold addition | Setun-70 (`B21`) |
 | `+26` | **SIT** | `+----` | Trit-by-trit inhibition: `ACC + MEM * (1 - \|ACC\|)` | Setun-70 (`B20`) |
+| `+27` | **NORM.T** / **CLZ.T** | `+---0` | Mantissa normalization & leading zero count: `(ACC, IX[reg]) = ACC.normalize()` | Setun-Doom / Zbb |
 | `+40` | **HALT** | `++--+` | Controlled CPU halt | Setun-58 / Setun-Doom |
 
 ---
