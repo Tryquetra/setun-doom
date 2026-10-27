@@ -996,6 +996,8 @@ pub unsafe extern "C" fn setun_DrawSpan(
     machine.cpu.acc = tx_frac;
 }
 
+static ACTIVE_PALETTE: Mutex<Option<[u8; 768]>> = Mutex::new(None);
+
 /// Synchronizes 256-color RGB `PLAYPAL` palette from `I_SetPalette` in `doomgeneric`
 /// with the `PALETTE_BASE` region of Setun-Doom ternary memory.
 ///
@@ -1008,10 +1010,20 @@ pub unsafe extern "C" fn setun_SyncPalette(rgb_palette: *const u8) {
         "Null pointer passed to setun_SyncPalette"
     );
     let slice = core::slice::from_raw_parts(rgb_palette, 768);
+    if let Ok(mut lock) = ACTIVE_PALETTE.lock() {
+        let mut arr = [0u8; 768];
+        arr.copy_from_slice(slice);
+        *lock = Some(arr);
+    }
     let mut machine = global_machine()
         .lock()
         .expect("Corrupted mutex in setun_SyncPalette");
     machine.memory.load_playpal(slice);
+}
+
+/// Retrieves the latest 768-byte palette synchronized by the Doom engine.
+pub fn get_active_palette() -> Option<[u8; 768]> {
+    ACTIVE_PALETTE.lock().ok().and_then(|p| *p)
 }
 
 /// Copies 64,000 bytes from `I_VideoBuffer` (`320x200` Doom palette indices)

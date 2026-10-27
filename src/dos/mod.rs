@@ -77,6 +77,23 @@ impl SetunDos {
         Ok(())
     }
 
+    /// Mounts an authentic Doom IWAD/PWAD byte buffer and initializes the 256-color VGA palette from `PLAYPAL`.
+    pub fn mount_wad(&mut self, wad_bytes: &[u8]) -> Result<usize, String> {
+        let count = self.fs.mount_wad(wad_bytes)?;
+        if let Some(idx) = self.fs.find("PLAYPAL") {
+            let bytes: Vec<u8> = self.fs.files[idx]
+                .words
+                .iter()
+                .take(768)
+                .map(|w| w.as_i64() as u8)
+                .collect();
+            if bytes.len() >= 768 {
+                self.mem.load_playpal(&bytes);
+            }
+        }
+        Ok(count)
+    }
+
     /// Injects a key code into the hardware input queue.
     pub fn inject_key(&mut self, key_code: i64) {
         self.key_buffer.push(key_code);

@@ -33,7 +33,7 @@ impl DoomDosRunner {
         dos.boot()?;
 
         if let Some(bytes) = wad_bytes {
-            dos.fs.mount_wad(bytes)?;
+            dos.mount_wad(bytes)?;
         }
 
         Ok(Self {

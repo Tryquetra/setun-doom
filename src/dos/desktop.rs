@@ -230,6 +230,11 @@ impl SetunDesktop {
         self.frame_counter += 1;
         dos.tick_timer();
 
+        // Synchronize active Doom runtime palette into Setun-DOS VGA memory
+        if let Some(palette) = crate::mmo::get_active_palette() {
+            dos.mem.load_playpal(&palette);
+        }
+
         // Fullscreen Doom bypasses desktop wallpaper and taskbar
         if self.active_window == ActiveWindow::Doom && self.doom_fullscreen {
             self.render_window_doom(dos);

@@ -70,8 +70,8 @@ fn main() {
     if Path::new(&wad_path).exists() {
         println!("-> Mounting WAD container: '{}'...", wad_path);
         match fs::read(&wad_path) {
-            Ok(wad_bytes) => match dos.fs.mount_wad(&wad_bytes) {
-                Ok(lumps) => println!("   [OK] Mounted {} lumps into virtual file descriptors.", lumps),
+            Ok(wad_bytes) => match dos.mount_wad(&wad_bytes) {
+                Ok(lumps) => println!("   [OK] Mounted {} lumps into virtual file descriptors (PLAYPAL palette loaded).", lumps),
                 Err(e) => eprintln!("   [WARN] WAD mounting error: {}", e),
             },
             Err(e) => eprintln!("   [WARN] Could not read WAD file: {}", e),
