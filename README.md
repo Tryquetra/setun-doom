@@ -84,7 +84,8 @@ The project progresses through five architectural levels of balanced ternary emu
 | **Level 0** | **DDA Co-Processor & Gate-Level ALU** | Gate-level combinational arithmetic (`Trit::full_add`, 21-stage ripple-carry adders, 42-trit multipliers, non-restoring ternary division). Symmetric $11.10$ fixed-point arithmetic (`TernaryFixed`). Linear VGA framebuffer in 6-trit trytes (`Tryte6`). C-engine FFI hooks in `r_draw.c` for `R_DrawColumn`, `R_DrawSpan`, `R_DrawFuzzColumn`, and `R_DrawTranslatedColumn`. Strict zero false positives audit. | [`main`](https://github.com/Tryquetra/setun-doom/tree/main) | [`v0.1.0-level-0`](https://github.com/Tryquetra/setun-doom/releases/tag/v0.1.0-level-0) (Completed) |
 | **Level 1** | **Dynamic Binary Translation (DBT / JIT)** | Direct execution of standard binary RV32IM ELF executables without host C hooks. 32-bit register file ($x0..x31$) mapped directly into `[Word21; 32]`. Basic-block translator fusing branch comparisons into native 3-way `BCEG` instructions, immediate fusion (`LI.T`/`AIPC.T`), and Setun `STI.T` signal inversion. Full official 37-test RV32I suite + RV32M validation (100% pass) and native Doom RV32IM benchmark execution. | [`feat/level-1-dbt-rv32i`](https://github.com/Tryquetra/setun-doom/tree/feat/level-1-dbt-rv32i) | **Completed** |
 | **Level 2** | **Native Compiler Backend (`LLVM Target`)** | Clang/LLVM target backend emitting native 21-trit Setun machine instructions directly from C/C++ source code via LLVM IR. Parses SSA basic blocks, handles PHI elimination, lowers comparisons and branches (`CMP.T`/`JMPP`/`JMP`), performs local memory alloca and load/store frame layout, executing native Setun instructions directly on `Cpu`. | [`feat/level-2-llvm-target`](https://github.com/Tryquetra/setun-doom/tree/feat/level-2-llvm-target) | **Completed** |
-| **Level 3** | **Full-System Emulation (`Setun-DOS`)** | Autonomous ternary operating environment with native ternary BIOS interrupt vectors. Compatibility layer for DOS `INT 21h` services (DMA file loading for WADs, memory management across $3^{14}$ words). Synthesized FM audio driver emulating OPL2/MIDI using ternary adders. | `feat/level-3-full-system-dos` | Planned |
+| **Level 3** | **Full-System Emulation (`Setun-DOS`)** | Autonomous 21-trit operating environment with Trichotomic Interrupt Vector Table (`TIVT`), window manager, graphical desktop environment with clickable icons, task scheduling, in-memory virtual filesystem, WAD lump mounting, TFX flat executable loader, and authentic Doom 1993 engine integration running inside Setun-DOS. | [`feat/level-3-full-system-dos`](https://github.com/Tryquetra/setun-doom/tree/feat/level-3-full-system-dos) | **Completed** |
+| **Unikernel** | **Bare-Metal RISC-V Unikernel on QEMU** | Autonomous `no_std` kernel booting bare-metal under RISC-V Supervisor Mode (SBI) on QEMU `virt` machine. Features Bochs VBE PCI display driver ($640 \times 400 \times 32$ bpp), VirtIO Tablet absolute mouse tracking, and real-time Setun-DOS desktop render loop. | [`feat/setun-dos-riscv-unikernel`](https://github.com/Tryquetra/setun-doom/tree/feat/setun-dos-riscv-unikernel) | **Completed** |
 | **Level 4** | **Physical Hardware Synthesis (FPGA / ASIC)** | Verilog and SystemVerilog implementation utilizing dual-rail encoding (2 bits per trit). Target synthesis for Lattice iCE40 and Xilinx Artix-7 FPGAs. Physical memory controller and hardware VGA DAC rasterization outputting live video to real displays. | `feat/level-4-fpga-synthesis` | Planned |
 
 ---
@@ -101,6 +102,18 @@ The project progresses through five architectural levels of balanced ternary emu
 
 ---
 
+## Code Quality & Google Rust Style Guide Compliance
+
+The codebase conforms to the Google Rust Style Guide and advanced system engineering standards:
+* **Zero Linter Warnings**: 100% clean passes on `cargo clippy --all-targets` with no warnings.
+* **Documented Safety Contracts (`// SAFETY:`)**: Every `unsafe` block is preceded by an explanatory comment specifying memory alignment, pointer validity, and absence of data races.
+* **Explicit Error Types**: `MemoryError`, `ElfError`, `DbtError`, and `CpuTrap` implement canonical `std::fmt::Display` and `std::error::Error` traits.
+* **Structural Pattern Matching**: Eradication of check-then-unwrap anti-patterns in favor of direct `let-else`, `if let`, or `match` extractions.
+* **Compiler Attributes**: `#[must_use]` applied across all constructors and pure arithmetic functions.
+* **Standard Conversions**: `Word21` and `TernaryFixed` implement canonical `From` traits (`From<i32>`, `From<i16>`, `From<i8>`, `From<Tryte6>`), alongside `std::str::FromStr` on IR condition types.
+
+---
+
 ## Building & Running
 
 ### 1. Run Unit Tests & Benchmark Suite
@@ -109,7 +122,31 @@ cargo test
 cargo run --release
 ```
 
-### 2. Build & Run Interactive Doom (`doomgeneric_setun` + SDL2)
+### 2. Run Setun-DOS Graphical Desktop & Native Doom (Level 3)
+```bash
+# Launch interactive 21-trit desktop environment with authentic Doom runner
+cargo run --release --bin setun_dos
+
+# Run headless with specified frame limit
+cargo run --release --bin setun_dos -- --headless --frames 120
+```
+
+### 3. Run Bare-Metal RISC-V Unikernel on QEMU
+```bash
+# Boots bare-metal RISC-V supervisor kernel with Bochs VBE PCI display (640x400x32)
+./scripts/run_qemu.sh
+```
+
+### 4. Compile & Link C Code to Native Setun 21-Trit Binaries (Level 2)
+```bash
+# Compile and link C source into native 21-trit TFX binary image
+cargo run --bin setun_ld -- input.c -o out.setun
+
+# Execute linked binary on the Setun-Doom CPU emulator
+cargo run --bin setun_run -- out.setun
+```
+
+### 5. Build & Run Interactive Doom (`doomgeneric_setun` + SDL2)
 ```bash
 cargo build --release
 make -C vendor/doomgeneric/doomgeneric -f Makefile.setun
