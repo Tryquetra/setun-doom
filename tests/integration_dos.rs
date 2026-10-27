@@ -183,3 +183,161 @@ fn test_setun_dos_doom_runner_and_wad_mounting() {
     let rgba = runner.get_screen_rgba();
     assert_eq!(rgba.len(), 320 * 200 * 4);
 }
+
+#[test]
+fn test_setun_dos_gui_button_and_mouse_syscalls() {
+    let mut dos = SetunDos::new();
+    dos.boot().expect("Boot failed");
+
+    // 1. Define button with id 42 at rect (x=10, y=10, w=50, h=30)
+    dos.cpu.acc = Word21::new(SYS_DEFINE_BUTTON);
+    dos.cpu.index_regs[0] = Word21::new(42);
+    dos.cpu.index_regs[1] = Word21::new(10);
+    dos.cpu.index_regs[2] = Word21::new(10);
+    dos.cpu.index_regs[3] = Word21::new(50);
+    dos.cpu.index_regs[4] = Word21::new(30);
+    let res = dos.dispatch_current_syscall(SYS_DEFINE_BUTTON);
+    assert_eq!(res, SyscallResult::Continue(Word21::ZERO));
+
+    // 2. Update mouse position to (25, 25) with button down (1)
+    dos.cpu.acc = Word21::new(SYS_UPDATE_MOUSE);
+    dos.cpu.index_regs[0] = Word21::new(25);
+    dos.cpu.index_regs[1] = Word21::new(25);
+    dos.cpu.index_regs[2] = Word21::new(1);
+    let res = dos.dispatch_current_syscall(SYS_UPDATE_MOUSE);
+    assert_eq!(res, SyscallResult::Continue(Word21::ZERO));
+
+    // 3. Query mouse state with SYS_GET_MOUSE
+    dos.cpu.acc = Word21::new(SYS_GET_MOUSE);
+    let res = dos.dispatch_current_syscall(SYS_GET_MOUSE);
+    assert_eq!(res, SyscallResult::Continue(Word21::ZERO));
+    assert_eq!(dos.cpu.index_regs[0].as_i64(), 25);
+    assert_eq!(dos.cpu.index_regs[1].as_i64(), 25);
+    assert_eq!(dos.cpu.index_regs[2].as_i64(), 1);
+
+    // 4. Hit-test button with SYS_GET_BUTTON -> must return button id 42
+    dos.cpu.acc = Word21::new(SYS_GET_BUTTON);
+    let res = dos.dispatch_current_syscall(SYS_GET_BUTTON);
+    assert_eq!(res, SyscallResult::Continue(Word21::new(42)));
+
+    // 5. Update mouse position outside button rect (x=200, y=150)
+    dos.cpu.acc = Word21::new(SYS_UPDATE_MOUSE);
+    dos.cpu.index_regs[0] = Word21::new(200);
+    dos.cpu.index_regs[1] = Word21::new(150);
+    dos.cpu.index_regs[2] = Word21::new(1);
+    dos.dispatch_current_syscall(SYS_UPDATE_MOUSE);
+
+    // Hit-test outside -> must return 0 (no button clicked)
+    dos.cpu.acc = Word21::new(SYS_GET_BUTTON);
+    let res = dos.dispatch_current_syscall(SYS_GET_BUTTON);
+    assert_eq!(res, SyscallResult::Continue(Word21::ZERO));
+}
+
+#[test]
+fn test_setun_dos_sys_put_icon_trichotomy() {
+    let mut dos = SetunDos::new();
+    dos.boot().expect("Boot failed");
+
+    // Clear background to known color 50 at rect (50..66, 50..66)
+    for y in 50..66 {
+        for x in 50..66 {
+            dos.mem
+                .write_word(
+                    FRAMEBUFFER_BASE + y * (FRAMEBUFFER_WIDTH as i64) + x,
+                    Tryte6::from_palette_index(50).to_word21(),
+                )
+                .unwrap();
+        }
+    }
+
+    // Prepare 16x16 icon in user memory at address 10_000:
+    // Pixel (0, 0) = 99 (opaque foreground color)
+    // Pixel (1, 0) = 0 (transparent, keeps background 50)
+    // Pixel (2, 0) = -1 (shadow, darkens background 50 -> 50 - 24 = 26)
+    let icon_addr = 10_000i64;
+    for i in 0..256 {
+        dos.mem.write_word(icon_addr + i, Word21::ZERO).unwrap();
+    }
+    dos.mem.write_word(icon_addr, Word21::new(99)).unwrap();
+    dos.mem.write_word(icon_addr + 1, Word21::ZERO).unwrap();
+    dos.mem.write_word(icon_addr + 2, Word21::new(-1)).unwrap();
+
+    // Call SYS_PUT_ICON with ptr=icon_addr, x=50, y=50, w=16, h=16
+    dos.cpu.acc = Word21::new(SYS_PUT_ICON);
+    dos.cpu.index_regs[0] = Word21::new(icon_addr);
+    dos.cpu.index_regs[1] = Word21::new(50);
+    dos.cpu.index_regs[2] = Word21::new(50);
+    dos.cpu.index_regs[3] = Word21::new(16);
+    dos.cpu.index_regs[4] = Word21::new(16);
+    let res = dos.dispatch_current_syscall(SYS_PUT_ICON);
+    assert_eq!(res, SyscallResult::Continue(Word21::ZERO));
+
+    // Verify trichotomy:
+    // Pixel (50, 50) must be fg_color 99
+    let p0 = dos
+        .mem
+        .read_word(FRAMEBUFFER_BASE + 50 * (FRAMEBUFFER_WIDTH as i64) + 50)
+        .unwrap();
+    assert_eq!(p0, Tryte6::from_palette_index(99).to_word21());
+
+    // Pixel (51, 50) must be original color 50 (transparent)
+    let p1 = dos
+        .mem
+        .read_word(FRAMEBUFFER_BASE + 50 * (FRAMEBUFFER_WIDTH as i64) + 51)
+        .unwrap();
+    assert_eq!(p1, Tryte6::from_palette_index(50).to_word21());
+
+    // Pixel (52, 50) must be darkened: 50 - 24 = 26
+    let p2 = dos
+        .mem
+        .read_word(FRAMEBUFFER_BASE + 50 * (FRAMEBUFFER_WIDTH as i64) + 52)
+        .unwrap();
+    assert_eq!(p2, Tryte6::from_palette_index(26).to_word21());
+}
+
+#[test]
+fn test_setun_desktop_gui_interaction() {
+    use setun_doom::{ActiveWindow, SetunDesktop, SetunDos};
+
+    let mut dos = SetunDos::new();
+    dos.boot().expect("Boot failed");
+
+    let mut desktop = SetunDesktop::new();
+    assert_eq!(desktop.active_window, ActiveWindow::None);
+
+    // Initial render
+    desktop.render(&mut dos);
+
+    // Icon 1 (DOOM) is at (14..50, 10..48). Clicking (30, 30) should activate Doom window
+    desktop.handle_mouse_click(&mut dos, 30, 30);
+    assert_eq!(desktop.active_window, ActiveWindow::Doom);
+
+    // Render with active Doom window to ensure close button is active
+    desktop.render(&mut dos);
+
+    // Close button [X] is at (264..278, 18..30). Clicking (270, 23) closes the window
+    desktop.handle_mouse_click(&mut dos, 270, 23);
+    assert_eq!(desktop.active_window, ActiveWindow::None);
+
+    // Icon 2 (T-SHELL) is at (14..50, 54..92). Clicking (30, 70) activates Shell window
+    desktop.handle_mouse_click(&mut dos, 30, 70);
+    assert_eq!(desktop.active_window, ActiveWindow::Shell);
+
+    // Close Shell window
+    desktop.render(&mut dos);
+    desktop.handle_mouse_click(&mut dos, 270, 23);
+    assert_eq!(desktop.active_window, ActiveWindow::None);
+
+    // Icon 3 (TELEMETRY) is at (14..50, 98..136). Clicking (30, 115) activates Telemetry window
+    desktop.handle_mouse_click(&mut dos, 30, 115);
+    assert_eq!(desktop.active_window, ActiveWindow::Telemetry);
+
+    // Close Telemetry window
+    desktop.render(&mut dos);
+    desktop.handle_mouse_click(&mut dos, 270, 23);
+    assert_eq!(desktop.active_window, ActiveWindow::None);
+
+    // Icon 4 (ABOUT) is at (14..50, 142..180). Clicking (30, 160) activates About window
+    desktop.handle_mouse_click(&mut dos, 30, 160);
+    assert_eq!(desktop.active_window, ActiveWindow::About);
+}

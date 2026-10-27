@@ -23,6 +23,10 @@ const SDL_PIXELFORMAT_ABGR8888: u32 = 376840196; // SDL_PIXELFORMAT_RGBA32 / ABG
 
 const SDL_QUIT: u32 = 0x100;
 const SDL_KEYDOWN: u32 = 0x300;
+const SDL_MOUSEMOTION: u32 = 0x400;
+const SDL_MOUSEBUTTONDOWN: u32 = 0x401;
+const SDL_MOUSEBUTTONUP: u32 = 0x402;
+const SDL_BUTTON_LEFT: u8 = 1;
 
 const SDLK_ESCAPE: i32 = 27;
 const SDLK_Q: i32 = 'q' as i32;
@@ -56,10 +60,41 @@ struct SDL_KeyboardEvent {
 
 #[derive(Copy, Clone)]
 #[repr(C)]
+struct SDL_MouseMotionEvent {
+    event_type: u32,
+    timestamp: u32,
+    window_id: u32,
+    which: u32,
+    state: u32,
+    x: i32,
+    y: i32,
+    xrel: i32,
+    yrel: i32,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+struct SDL_MouseButtonEvent {
+    event_type: u32,
+    timestamp: u32,
+    window_id: u32,
+    which: u32,
+    button: u8,
+    state: u8,
+    clicks: u8,
+    padding1: u8,
+    x: i32,
+    y: i32,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
 union SDL_Event {
     event_type: u32,
     key: SDL_KeyboardEvent,
-    padding: [u8; 56],
+    motion: SDL_MouseMotionEvent,
+    button: SDL_MouseButtonEvent,
+    padding: [u8; 64],
 }
 
 #[link(name = "SDL2")]
@@ -110,6 +145,9 @@ pub struct BenchGui {
     texture: *mut c_void,
     pub cam_x: f64,
     pub cam_y: f64,
+    pub mouse_x: i32,
+    pub mouse_y: i32,
+    pub mouse_down: bool,
 }
 
 impl BenchGui {
@@ -168,6 +206,9 @@ impl BenchGui {
                 texture,
                 cam_x: 3.0,
                 cam_y: 0.0,
+                mouse_x: 160,
+                mouse_y: 100,
+                mouse_down: false,
             })
         }
     }
@@ -232,6 +273,45 @@ impl BenchGui {
                         return false;
                     }
                     on_key(sym);
+                }
+            }
+        }
+        true
+    }
+
+    /// Polls events, tracking mouse movement and clicks, dispatching keys and clicks to callbacks.
+    pub fn poll_events_desktop<FKey: FnMut(i32), FClick: FnMut(i32, i32)>(
+        &mut self,
+        mut on_key: FKey,
+        mut on_click: FClick,
+    ) -> bool {
+        let mut event = SDL_Event { event_type: 0 };
+        unsafe {
+            while SDL_PollEvent(&mut event) != 0 {
+                let ev_type = event.event_type;
+                if ev_type == SDL_QUIT {
+                    return false;
+                }
+                if ev_type == SDL_KEYDOWN {
+                    let sym = event.key.keysym.sym;
+                    if sym == SDLK_ESCAPE || sym == SDLK_Q {
+                        return false;
+                    }
+                    on_key(sym);
+                } else if ev_type == SDL_MOUSEMOTION {
+                    self.mouse_x = (event.motion.x / 2).clamp(0, (FB_WIDTH - 1) as i32);
+                    self.mouse_y = (event.motion.y / 2).clamp(0, (FB_HEIGHT - 1) as i32);
+                } else if ev_type == SDL_MOUSEBUTTONDOWN {
+                    if event.button.button == SDL_BUTTON_LEFT {
+                        self.mouse_down = true;
+                        self.mouse_x = (event.button.x / 2).clamp(0, (FB_WIDTH - 1) as i32);
+                        self.mouse_y = (event.button.y / 2).clamp(0, (FB_HEIGHT - 1) as i32);
+                        on_click(self.mouse_x, self.mouse_y);
+                    }
+                } else if ev_type == SDL_MOUSEBUTTONUP {
+                    if event.button.button == SDL_BUTTON_LEFT {
+                        self.mouse_down = false;
+                    }
                 }
             }
         }

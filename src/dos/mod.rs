@@ -4,6 +4,7 @@
 //! flat executable loading (`TFX`), cooperative task switching,
 //! and native hardware framebuffer rendering.
 
+pub mod desktop;
 pub mod doom_runner;
 pub mod fs;
 pub mod memmap;
@@ -11,10 +12,12 @@ pub mod syscall;
 pub mod task;
 pub mod tfx;
 
+pub use desktop::{ActiveWindow, SetunDesktop};
+
 use crate::cpu::{Cpu, CpuTrap};
 use crate::dos::fs::SetunFileSystem;
 use crate::dos::memmap::*;
-use crate::dos::syscall::{SyscallDispatcher, SyscallResult};
+use crate::dos::syscall::{KernelGuiState, SyscallDispatcher, SyscallResult};
 use crate::dos::task::{TaskScheduler, TaskState};
 use crate::dos::tfx::TfxExecutable;
 use crate::memory::Memory;
@@ -27,6 +30,7 @@ pub struct SetunDos {
     pub scheduler: TaskScheduler,
     pub fs: SetunFileSystem,
     pub key_buffer: Vec<i64>,
+    pub gui_state: KernelGuiState,
     pub heap_brk: i64,
     pub timer_ticks: u64,
     pub is_booted: bool,
@@ -41,6 +45,7 @@ impl SetunDos {
             scheduler: TaskScheduler::new(),
             fs: SetunFileSystem::new(),
             key_buffer: Vec::new(),
+            gui_state: KernelGuiState::default(),
             heap_brk: 500_000,
             timer_ticks: 0,
             is_booted: false,
@@ -119,6 +124,7 @@ impl SetunDos {
             &mut self.heap_brk,
             self.timer_ticks,
             &storage,
+            &mut self.gui_state,
         );
 
         match res {

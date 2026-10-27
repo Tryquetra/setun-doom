@@ -7,14 +7,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use setun_doom::bsp::{BspChild, BspNode, BspTree, Subsector, WallSeg};
-use setun_doom::dos::doom_runner::DoomDosRunner;
 use setun_doom::dos::memmap::*;
 use setun_doom::dos::tfx::TfxExecutable;
-use setun_doom::dos::SetunDos;
-use setun_doom::fixed::TernaryFixed;
-use setun_doom::render::TernaryRenderer;
-use setun_doom::word::Tryte6;
+use setun_doom::dos::{SetunDesktop, SetunDos};
 use setun_doom::BenchGui;
 
 fn main() {
@@ -93,139 +88,83 @@ fn main() {
         let steps = dos.run_ticks(100_000);
         println!("   Execution completed in {} cycles.", steps);
     } else {
-        // Run Doom execution harness
-        println!("-> Launching Doom Interactive Harness under Setun-DOS...");
-        let wad_bytes = fs::read(&wad_path).ok();
-        let mut doom_runner = DoomDosRunner::new(wad_bytes.as_deref())
-            .expect("Failed to initialize Doom runner on Setun-DOS");
-
-        println!("   [OK] Doom process hooked to Setun-DOS syscalls:");
-        println!("        - Video:   SYS_BLIT (0x06) -> Framebuffer Tryte6 cells");
-        println!("        - Input:   SYS_GET_KEY (0x02) -> Keyboard IRQ buffer");
-        println!("        - Timer:   SYS_GET_TICKS (0x07) -> 35 Hz game loop");
-        println!("        - Storage: SYS_FILE_READ (0x04) -> WAD lump cache");
+        // Initialize desktop environment and icon manager
+        println!("-> Initializing Setun-DOS Desktop Environment & Icon Manager...");
+        let mut desktop = SetunDesktop::new();
+        desktop.init_desktop_buttons(&mut dos);
 
         let has_display = env::var("DISPLAY").is_ok() || env::var("WAYLAND_DISPLAY").is_ok();
         let mut gui = if !headless && has_display {
-            println!("-> Launching SDL2 graphical window (640x400)...");
-            BenchGui::new("Setun-DOS (Level 3) - Authentic Ternary OS & Doom")
+            println!("-> Launching SDL2 graphical desktop (640x400)...");
+            BenchGui::new("Setun-DOS (Level 3) - Soviet Ternary Desktop & Window Manager")
         } else {
             None
         };
 
         if gui.is_some() {
-            println!("   [OK] SDL2 window created. Controls: WASD/Arrows to move, ESC/Q to exit.");
+            println!("   [OK] Desktop window active.");
+            println!("   [OK] Clickable Desktop Icons:");
+            println!("        [1] DOOM      -> Interactive 3D BSP game window");
+            println!("        [2] T-SHELL   -> Ternary diagnostic console");
+            println!("        [3] TELEMETRY -> Real-time 21-trit neon accumulator & flips");
+            println!("        [4] ABOUT     -> System heritage & Brusentsov tribute");
+            println!("   [OK] Controls: Left Click to open apps, click [X] or ESC/Q to close window.");
         } else if !headless {
             println!("   [INFO] No graphical display detected. Falling back to terminal headless mode.");
         }
 
-        let max_frames = target_frames.unwrap_or(if gui.is_some() { 500 } else { 35 });
-        println!("-> Rendering 3D BSP Doom scene on Setun-DOS (target: {})...", max_frames);
+        let max_frames = target_frames.unwrap_or(if gui.is_some() { usize::MAX } else { 35 });
+        println!("-> Running desktop frame loop (target: {})...", if max_frames == usize::MAX { "interactive".to_string() } else { max_frames.to_string() });
 
-        let mut cam_x = 3.0f64;
-        let mut cam_y = 0.0f64;
+        let mut rgba_buf = vec![0u8; 320 * 200 * 4];
         let mut frame = 0;
+        let mut pressed_keys = Vec::new();
+        let mut clicked_coords = Vec::new();
 
         while frame < max_frames {
-            // 1. Build 3D BSP geometry with textured walls and rear portal
-            let front_sub = Subsector {
-                id: 0,
-                segs: vec![
-                    WallSeg {
-                        id: 1,
-                        screen_x0: 0,
-                        screen_x1: 119,
-                        solid: true,
-                        color: Tryte6::from_palette_index(176),
-                        distance: TernaryFixed::from_f64((cam_x - 1.0).max(0.5)),
-                    },
-                    WallSeg {
-                        id: 2,
-                        screen_x0: 200,
-                        screen_x1: 319,
-                        solid: true,
-                        color: Tryte6::from_palette_index(176),
-                        distance: TernaryFixed::from_f64((cam_x - 1.0).max(0.5)),
-                    },
-                ],
-            };
-            let back_sub = Subsector {
-                id: 1,
-                segs: vec![WallSeg {
-                    id: 3,
-                    screen_x0: 0,
-                    screen_x1: 319,
-                    solid: true,
-                    color: Tryte6::from_palette_index(96),
-                    distance: TernaryFixed::from_f64((cam_x + 2.0).max(1.0)),
-                }],
-            };
-            let bsp_tree = BspTree {
-                nodes: vec![BspNode {
-                    x: TernaryFixed::ZERO,
-                    y: TernaryFixed::ZERO,
-                    dx: TernaryFixed::ZERO,
-                    dy: TernaryFixed::ONE,
-                    front_child: BspChild::Subsector(0),
-                    back_child: BspChild::Subsector(1),
-                }],
-                subsectors: vec![front_sub, back_sub],
-                root: BspChild::Node(0),
-            };
-
-            // Render 3D scene directly into Setun-DOS VGA memory
-            TernaryRenderer::render_bsp_scene(
-                &mut doom_runner.dos.mem,
-                &bsp_tree,
-                TernaryFixed::from_f64(cam_x),
-                TernaryFixed::from_f64(cam_y),
-            );
-
-            // Draw Setun-DOS window border at screen top via kernel syscall
-            doom_runner.dos.cpu.acc = setun_doom::word::Word21::new(setun_doom::dos::syscall::SYS_DRAW_WINDOW);
-            doom_runner.dos.cpu.index_regs[0] = setun_doom::word::Word21::new(4);
-            doom_runner.dos.cpu.index_regs[1] = setun_doom::word::Word21::new(4);
-            doom_runner.dos.cpu.index_regs[2] = setun_doom::word::Word21::new(312);
-            doom_runner.dos.cpu.index_regs[3] = setun_doom::word::Word21::new(24);
-            doom_runner.dos.cpu.index_regs[4] = setun_doom::word::Word21::new(215); // Neon green
-            doom_runner.dos.dispatch_current_syscall(setun_doom::dos::syscall::SYS_DRAW_WINDOW);
-
-            doom_runner.frame_counter += 1;
-            doom_runner.dos.tick_timer();
-
             if let Some(ref mut g) = gui {
-                let keep_running = g.poll_events_with_keys(|key| {
-                    match key {
-                        119 | 1073741906 => cam_x -= 0.3, // 'w' or UP
-                        115 | 1073741905 => cam_x += 0.3, // 's' or DOWN
-                        97  | 1073741904 => cam_y -= 0.3, // 'a' or LEFT
-                        100 | 1073741903 => cam_y += 0.3, // 'd' or RIGHT
-                        32 => { // Space reset
-                            cam_x = 3.0;
-                            cam_y = 0.0;
-                        }
-                        _ => {}
-                    }
-                    doom_runner.inject_key(key as i64);
-                });
+                pressed_keys.clear();
+                clicked_coords.clear();
+
+                let keep_running = g.poll_events_desktop(
+                    |key| pressed_keys.push(key),
+                    |cx, cy| clicked_coords.push((cx, cy)),
+                );
+
                 if !keep_running {
-                    println!("-> User requested exit via GUI.");
+                    println!("-> User requested exit via desktop GUI.");
                     break;
                 }
-                let rgba = doom_runner.get_screen_rgba();
-                g.present_frame(&rgba);
-                g.delay(28); // ~35 FPS Doom tick rate
+
+                for &key in &pressed_keys {
+                    desktop.handle_key(key);
+                }
+                for &(cx, cy) in &clicked_coords {
+                    desktop.handle_mouse_click(&mut dos, cx as i64, cy as i64);
+                }
+
+                desktop.mouse_x = g.mouse_x as i64;
+                desktop.mouse_y = g.mouse_y as i64;
+                desktop.mouse_down = g.mouse_down;
+            }
+
+            desktop.render(&mut dos);
+
+            if let Some(ref mut g) = gui {
+                dos.mem.render_framebuffer_rgba(&mut rgba_buf);
+                g.present_frame(&rgba_buf);
+                g.delay(28); // ~35 FPS
             }
 
             frame += 1;
         }
 
-        let telemetry = doom_runner.dos.cpu.telemetry;
+        let telemetry = dos.cpu.telemetry;
         println!("============================================================");
-        println!("  SETUN-DOS DOOM HARNESS EXECUTION SUMMARY                  ");
+        println!("  SETUN-DOS DESKTOP SESSION SUMMARY                         ");
         println!("============================================================");
-        println!("  Frames Rendered:       {}", doom_runner.frame_counter);
-        println!("  Kernel Timer Ticks:    {}", doom_runner.dos.timer_ticks);
+        println!("  Frames Rendered:       {}", desktop.frame_counter);
+        println!("  Kernel Timer Ticks:    {}", dos.timer_ticks);
         println!("  Total Trit Flips:      {}", telemetry.ternary_trit_flips);
         println!("  Half Swings (0 <-> 1): {}", telemetry.ternary_half_swings);
         println!("  Full Swings (-1 <-> 1):{}", telemetry.ternary_full_swings);
