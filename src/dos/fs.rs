@@ -55,8 +55,16 @@ impl SetunFileSystem {
             return Err(format!("Unrecognized WAD identification tag: '{}'", magic));
         }
 
-        let num_lumps = i32::from_le_bytes(wad_bytes[4..8].try_into().unwrap()) as usize;
-        let dir_offset = i32::from_le_bytes(wad_bytes[8..12].try_into().unwrap()) as usize;
+        let num_lumps = i32::from_le_bytes(
+            wad_bytes[4..8]
+                .try_into()
+                .expect("Valid 4-byte lump count slice"),
+        ) as usize;
+        let dir_offset = i32::from_le_bytes(
+            wad_bytes[8..12]
+                .try_into()
+                .expect("Valid 4-byte directory offset slice"),
+        ) as usize;
 
         if dir_offset + num_lumps * 16 > wad_bytes.len() {
             return Err("WAD directory offset extends past end of file".to_string());
@@ -65,8 +73,16 @@ impl SetunFileSystem {
         let mut lumps_mounted = 0;
         for i in 0..num_lumps {
             let entry_pos = dir_offset + i * 16;
-            let lump_pos = i32::from_le_bytes(wad_bytes[entry_pos..entry_pos + 4].try_into().unwrap()) as usize;
-            let lump_size = i32::from_le_bytes(wad_bytes[entry_pos + 4..entry_pos + 8].try_into().unwrap()) as usize;
+            let lump_pos = i32::from_le_bytes(
+                wad_bytes[entry_pos..entry_pos + 4]
+                    .try_into()
+                    .expect("Valid 4-byte lump pos slice"),
+            ) as usize;
+            let lump_size = i32::from_le_bytes(
+                wad_bytes[entry_pos + 4..entry_pos + 8]
+                    .try_into()
+                    .expect("Valid 4-byte lump size slice"),
+            ) as usize;
 
             let name_bytes = &wad_bytes[entry_pos + 8..entry_pos + 16];
             let name_end = name_bytes.iter().position(|&c| c == 0).unwrap_or(8);

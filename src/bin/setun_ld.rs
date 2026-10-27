@@ -63,8 +63,12 @@ fn main() {
 
     for input in &input_files {
         let p = Path::new(input);
-        let ll_path = if p.extension().map_or(false, |ext| ext == "c" || ext == "cpp") {
-            let file_stem = p.file_stem().unwrap().to_str().unwrap();
+        let ll_path = if p.extension().is_some_and(|ext| ext == "c" || ext == "cpp") {
+            let file_stem = p
+                .file_stem()
+                .expect("Input file path must contain a valid filename")
+                .to_str()
+                .expect("UTF-8 filename required");
             let out_ll = tmp_dir.join(format!("{}.ll", file_stem));
 
             println!("  -> Compiling '{}' via host Clang (-O1 -emit-llvm)...", input);
@@ -74,7 +78,11 @@ fn main() {
             for inc in &include_dirs {
                 clang_cmd.arg(format!("-I{}", inc));
             }
-            clang_cmd.args([input, "-o", out_ll.to_str().unwrap()]);
+            clang_cmd.args([
+                input,
+                "-o",
+                out_ll.to_str().expect("UTF-8 output path required"),
+            ]);
             let status = clang_cmd.status().expect("Failed to execute host clang command");
 
             if !status.success() {

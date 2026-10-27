@@ -6,8 +6,8 @@
 use std::ffi::CString;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::dos::syscall::SYS_BLIT;
 use crate::dos::SetunDos;
-use crate::dos::syscall::*;
 use crate::word::Tryte6;
 
 static DOOM_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -70,6 +70,7 @@ impl DoomDosRunner {
             let leaked_argv: &'static mut [*mut std::ffi::c_char] =
                 Box::leak(c_args.into_boxed_slice());
 
+            // SAFETY: doomgeneric_Create receives leaked null-terminated argv strings valid for program lifetime.
             unsafe {
                 doomgeneric_Create((leaked_argv.len() - 1) as i32, leaked_argv.as_mut_ptr());
             }
@@ -88,6 +89,8 @@ impl DoomDosRunner {
             return Err("Native Doom engine is not initialized".to_string());
         }
 
+        // SAFETY: doomgeneric_Tick executes an authentic engine frame tick under DOOM_GLOBAL_LOCK.
+        // I_VideoBuffer is verified non-null before constructing a 320x200 byte slice.
         unsafe {
             doomgeneric_Tick();
             if I_VideoBuffer.is_null() {

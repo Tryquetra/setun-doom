@@ -8,8 +8,8 @@
 //! - Hardware mouse cursor tracking with smooth screen rendering
 //! - Interactive 3D Doom BSP window, T-Shell diagnostic terminal, and Ternary Telemetry monitor
 
-use crate::dos::memmap::*;
-use crate::dos::syscall::*;
+use crate::dos::memmap::FRAMEBUFFER_BASE;
+use crate::dos::syscall::GuiButton;
 use crate::dos::SetunDos;
 use crate::word::Tryte6;
 
@@ -72,7 +72,10 @@ impl SetunDesktop {
             runner.init_native_engine(&self.wad_path)?;
             self.doom_runner = Some(runner);
         }
-        Ok(self.doom_runner.as_mut().unwrap())
+        Ok(self
+            .doom_runner
+            .as_mut()
+            .expect("Doom runner guaranteed initialized"))
     }
 
     /// Registers desktop icon buttons with the kernel button hit-testing table.
@@ -496,6 +499,7 @@ impl SetunDesktop {
     }
 
     /// Draws a complete window frame with title bar, close button [X], and borders.
+    #[allow(clippy::too_many_arguments)]
     fn draw_window_frame(&self, dos: &mut SetunDos, x: i64, y: i64, w: i64, h: i64, title: &str, title_color: u8) {
         let border_hi = Tryte6::from_palette_index(4).to_word21();
         let border_lo = Tryte6::from_palette_index(16).to_word21();
@@ -532,7 +536,7 @@ impl SetunDesktop {
     }
 
     /// Re-draws borders and title bar around client area without clearing interior.
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::too_many_arguments)]
     fn draw_window_frame_overlay(&self, dos: &mut SetunDos, x: i64, y: i64, w: i64, h: i64, title: &str, title_color: u8) {
         let border_hi = Tryte6::from_palette_index(4).to_word21();
         let border_lo = Tryte6::from_palette_index(16).to_word21();
@@ -584,14 +588,14 @@ impl SetunDesktop {
                     // Interior face
                     if (dx == 8 || dx == 9 || dx == 10 || dx == 11) && (dy == 8 || dy == 9) {
                         dos.mem.write_word_fast(addr, cyan_eye); // Central glowing eye
-                    } else if (dy == 13 || dy == 14) && (dx >= 6 && dx <= 13) && (dx % 2 == 0) {
+                    } else if (dy == 13 || dy == 14) && (6..=13).contains(&dx) && (dx % 2 == 0) {
                         dos.mem.write_word_fast(addr, ivory);    // Teeth
                     } else {
                         dos.mem.write_word_fast(addr, red);
                     }
                 } else if dist_sq <= 81 {
                     dos.mem.write_word_fast(addr, dark_red); // Outline
-                } else if dy >= 17 && dx >= 4 && dx <= 17 {
+                } else if dy >= 17 && (4..=17).contains(&dx) {
                     dos.mem.write_word_fast(addr, shadow);   // Drop shadow
                 }
             }
@@ -691,12 +695,12 @@ impl SetunDesktop {
 
         for row in 0..14 {
             let py = my + row;
-            if py < 0 || py >= 200 {
+            if !(0..200).contains(&py) {
                 continue;
             }
             for col in 0..10 {
                 let px = mx + col;
-                if px < 0 || px >= 320 {
+                if !(0..320).contains(&px) {
                     continue;
                 }
                 let val = CURSOR_MASK[row as usize][col as usize];
@@ -778,6 +782,12 @@ impl SetunDesktop {
                 dos.mem.write_word_fast(addr, c);
             }
         }
+    }
+}
+
+impl Default for SetunDesktop {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

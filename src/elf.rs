@@ -14,6 +14,8 @@
 //! `sh`, and `sw`.
 
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt;
 
 use crate::memory::{Memory, MemoryError, MEMORY_SIZE};
 use crate::word::{Tryte6, Word21};
@@ -52,6 +54,7 @@ pub const DEFAULT_ELF_MEMORY_BASE: usize = 100_000;
 pub const DEFAULT_RV32I_STACK_TOP: u32 = 0x0020_0000;
 
 /// Errors during reading, validation, or mapping of an `ELF32` binary.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ElfError {
     /// File smaller than the minimum ELF32 header (52 bytes).
@@ -68,6 +71,33 @@ pub enum ElfError {
     MalformedHeader(&'static str),
     /// Error mapping bytes into Setun ternary memory.
     MemoryMap(MemoryError),
+}
+
+impl fmt::Display for ElfError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooShort(len) => write!(f, "File smaller than minimum ELF32 header: {len} bytes"),
+            Self::InvalidMagic(magic) => write!(f, "Invalid ELF magic: {magic:02X?}"),
+            Self::UnsupportedClass(c) => write!(f, "Unsupported ELF class (expected 32-bit): {c}"),
+            Self::UnsupportedEndianness(e) => {
+                write!(f, "Unsupported endianness (expected Little-Endian): {e}")
+            }
+            Self::UnsupportedMachine(m) => {
+                write!(f, "Unsupported machine (expected EM_RISCV = 243): {m}")
+            }
+            Self::MalformedHeader(reason) => write!(f, "Malformed ELF header: {reason}"),
+            Self::MemoryMap(err) => write!(f, "Memory mapping error: {err}"),
+        }
+    }
+}
+
+impl Error for ElfError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::MemoryMap(err) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 impl From<MemoryError> for ElfError {

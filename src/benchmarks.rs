@@ -139,12 +139,13 @@ pub struct BenchmarkRunner;
 impl BenchmarkRunner {
     /// Executes all benchmarks and returns the consolidated report.
     pub fn run_all() -> FullBenchmarkSuiteReport {
-        let mut isa_benchmarks = Vec::new();
-        isa_benchmarks.push(Self::bench_three_way_search_bceg());
-        isa_benchmarks.push(Self::bench_dutch_flag_3way_partition());
-        isa_benchmarks.push(Self::bench_bsp_zero_crossing_determinant());
-        isa_benchmarks.push(Self::bench_r_draw_column_kernel());
-        isa_benchmarks.push(Self::bench_dhrystone_stress_2m_cycles());
+        let isa_benchmarks = vec![
+            Self::bench_three_way_search_bceg(),
+            Self::bench_dutch_flag_3way_partition(),
+            Self::bench_bsp_zero_crossing_determinant(),
+            Self::bench_r_draw_column_kernel(),
+            Self::bench_dhrystone_stress_2m_cycles(),
+        ];
 
         let fixed_precision = Self::bench_fixed_point_precision();
         let render_throughput = Self::bench_bsp_and_vga_throughput(120);
@@ -157,6 +158,7 @@ impl BenchmarkRunner {
     }
 
     /// 1. 3-Way Sorted Search Benchmark using `BCEG` (`Three-Way Search`).
+    ///
     /// Compares actual execution on `Setun-Doom` CPU against actual execution on 32-register `RV32I`.
     fn bench_three_way_search_bceg() -> IsaBenchmarkResult {
         let mut mem = Memory::new();
@@ -204,7 +206,7 @@ impl BenchmarkRunner {
         rv.step_branch_or_store(); // sw x0, 900(x0)
         loop {
             let idx = rv.regs[1];
-            let elem = ((idx - 128) * 10) as i32;
+            let elem = (idx - 128) * 10;
             rv.write_reg(3, elem); // lw x3, 1000(x1)
             rv.step_branch_or_store(); // beq x3, x2, .found
             if elem == rv.regs[2] {
@@ -236,6 +238,7 @@ impl BenchmarkRunner {
     }
 
     /// 2. Dijkstra 3-Way Partitioning Benchmark (*Dutch National Flag* / Ternary Quicksort).
+    ///
     /// Compares ternary accumulator + `BCEG` against 32-register `RV32I` (where `RV32I` does not pay `MOV_IX_ACC`).
     fn bench_dutch_flag_3way_partition() -> IsaBenchmarkResult {
         let mut mem = Memory::new();
@@ -335,6 +338,7 @@ impl BenchmarkRunner {
     }
 
     /// 3. Real BSP Plane Traversal Benchmark (Doom's `ROM_POINT_ON_SIDE`).
+    ///
     /// Executes the firmware subroutine `ROM_POINT_ON_SIDE_ENTRY` (full `R_PointOnSide` with
     /// `SUB`, `SHIFT -10`, `MUL`, `CMP_T`, `JMP_N`) for 200 points oscillating between front and back
     /// of a BSP partition line, compared against `R_PointOnSide` in `RV32I` (`16.16` binary).
@@ -446,6 +450,7 @@ impl BenchmarkRunner {
     }
 
     /// 4. Benchmark of Inner Loop `R_DrawColumn` in VGA Framebuffer (`320x200`).
+    ///
     /// Compares `TernaryFixed` (`11.10`, scale $3^{10}$) against `RV32I` (`16.16`, scale $2^{16}$).
     fn bench_r_draw_column_kernel() -> IsaBenchmarkResult {
         let mut mem = Memory::new();

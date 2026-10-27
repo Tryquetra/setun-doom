@@ -288,6 +288,7 @@ impl Instruction {
 /// Hardware Traps and Exceptions for Setun-Doom CPU (`CpuTrap`).
 /// Prevents silent failures (such as invalid decoding treated as `HALT`,
 /// ignored division by zero, or memory access outside 14-trit address space).
+#[non_exhaustive]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CpuTrap {
     /// Instruction word contains invalid opcode or register index.
@@ -301,6 +302,34 @@ pub enum CpuTrap {
     },
     /// Software system call or trap request (`Opcode::Syscall`).
     Syscall { pc: i64, num: i64 },
+}
+
+impl std::fmt::Display for CpuTrap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidInstruction { pc, raw_word } => {
+                write!(f, "Invalid instruction at PC {pc}: {raw_word}")
+            }
+            Self::DivisionByZero { pc, opcode } => {
+                write!(f, "Division by zero at PC {pc} in {opcode:?}")
+            }
+            Self::MemoryFault { pc, error } => {
+                write!(f, "Memory fault at PC {pc}: {error}")
+            }
+            Self::Syscall { pc, num } => {
+                write!(f, "Syscall trap at PC {pc} with syscall number {num}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CpuTrap {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::MemoryFault { error, .. } => Some(error),
+            _ => None,
+        }
+    }
 }
 
 /// Power efficiency and state switching telemetry (*Digit Flips*) based on

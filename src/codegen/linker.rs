@@ -91,9 +91,21 @@ impl LinkedImage {
             return Err("Invalid Setun binary: missing magic header 'SETUN21'".to_string());
         }
 
-        let entry_pc = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
-        let code_count = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
-        let data_count = u64::from_le_bytes(bytes[24..32].try_into().unwrap()) as usize;
+        let entry_pc = u64::from_le_bytes(
+            bytes[8..16]
+                .try_into()
+                .expect("Valid 8-byte entry PC slice"),
+        ) as usize;
+        let code_count = u64::from_le_bytes(
+            bytes[16..24]
+                .try_into()
+                .expect("Valid 8-byte code count slice"),
+        ) as usize;
+        let data_count = u64::from_le_bytes(
+            bytes[24..32]
+                .try_into()
+                .expect("Valid 8-byte data count slice"),
+        ) as usize;
 
         let expected_size = 32 + (code_count + data_count) * 16;
         if bytes.len() < expected_size {
@@ -107,16 +119,32 @@ impl LinkedImage {
         let mut offset = 32;
         let mut code_words = Vec::with_capacity(code_count);
         for _ in 0..code_count {
-            let addr = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
-            let val = i64::from_le_bytes(bytes[offset + 8..offset + 16].try_into().unwrap());
+            let addr = u64::from_le_bytes(
+                bytes[offset..offset + 8]
+                    .try_into()
+                    .expect("Valid 8-byte code address slice"),
+            ) as usize;
+            let val = i64::from_le_bytes(
+                bytes[offset + 8..offset + 16]
+                    .try_into()
+                    .expect("Valid 8-byte code value slice"),
+            );
             code_words.push((addr, Word21::new(val)));
             offset += 16;
         }
 
         let mut data_words = Vec::with_capacity(data_count);
         for _ in 0..data_count {
-            let addr = u64::from_le_bytes(bytes[offset..offset + 8].try_into().unwrap()) as usize;
-            let val = i64::from_le_bytes(bytes[offset + 8..offset + 16].try_into().unwrap());
+            let addr = u64::from_le_bytes(
+                bytes[offset..offset + 8]
+                    .try_into()
+                    .expect("Valid 8-byte data address slice"),
+            ) as usize;
+            let val = i64::from_le_bytes(
+                bytes[offset + 8..offset + 16]
+                    .try_into()
+                    .expect("Valid 8-byte data value slice"),
+            );
             data_words.push((addr, Word21::new(val)));
             offset += 16;
         }
@@ -245,7 +273,9 @@ impl SetunLinker {
         }
 
         // 6. Build linked image
-        let entry_pc = *symbol_table.get(entry_symbol).unwrap();
+        let entry_pc = *symbol_table.get(entry_symbol).ok_or_else(|| {
+            format!("Linker error: entry symbol '{entry_symbol}' not found")
+        })?;
         let mut code_words = Vec::with_capacity(all_instructions.len());
         for (i, instr) in all_instructions.into_iter().enumerate() {
             let addr = CODE_SEGMENT_BASE + i;
@@ -281,12 +311,11 @@ impl SetunLinker {
                                     queue.push(callee.clone());
                                 }
                             }
-                            LlvmInst::Copy { src: LlvmValue::Variable(var), .. } => {
-                                if functions.contains_key(var) && !visited.contains(var) {
+                            LlvmInst::Copy { src: LlvmValue::Variable(var), .. }
+                                if functions.contains_key(var) && !visited.contains(var) => {
                                     visited.insert(var.clone());
                                     queue.push(var.clone());
                                 }
-                            }
                             _ => {}
                         }
                     }

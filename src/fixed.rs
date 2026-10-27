@@ -47,30 +47,35 @@ impl TernaryFixed {
     pub const NEG_ONE: Self = Self(Word21::new(-FRAC_SCALE));
 
     /// Constructs a `TernaryFixed` directly from an already scaled raw `Word21`.
+    #[must_use]
     #[inline(always)]
     pub const fn from_raw(word: Word21) -> Self {
         Self(word)
     }
 
     /// Constructs a `TernaryFixed` from a raw scaled integer (`raw_val`).
+    #[must_use]
     #[inline(always)]
     pub const fn from_raw_i64(raw_val: i64) -> Self {
         Self(Word21::new(raw_val))
     }
 
     /// Returns the underlying raw `Word21`.
+    #[must_use]
     #[inline(always)]
     pub const fn raw_word(self) -> Word21 {
         self.0
     }
 
     /// Returns the raw scaled value as `i64`.
+    #[must_use]
     #[inline(always)]
     pub const fn raw_i64(self) -> i64 {
         self.0.as_i64()
     }
 
     /// Constructs a `TernaryFixed` from an integer (`n * 3^10`).
+    #[must_use]
     #[inline(always)]
     pub const fn from_int(n: i64) -> Self {
         Self(Word21::new(n * FRAC_SCALE))
@@ -79,6 +84,7 @@ impl TernaryFixed {
     /// Extracts the integer part rounded according to balanced ternary partition
     /// (discarding 10 least significant fractional trits by physical wire shift)
     /// and the fractional portion in `[-29,524, +29,524]`.
+    #[must_use]
     #[inline]
     pub fn split_balanced(self) -> (i64, i64) {
         let int_part = self.0.shift_trits(-10).as_i64();
@@ -87,18 +93,21 @@ impl TernaryFixed {
     }
 
     /// Returns the integer part truncated toward zero (for C/Doom compatibility).
+    #[must_use]
     #[inline(always)]
     pub const fn to_int_trunc(self) -> i64 {
         self.0.as_i64() / FRAC_SCALE
     }
 
     /// Returns the integer part by native 10-trit truncation (symmetric rounding).
+    #[must_use]
     #[inline(always)]
     pub fn to_int_balanced(self) -> i64 {
         self.0.shift_trits(-10).as_i64()
     }
 
     /// Converts from `f64` to `11.10` ternary fixed-point.
+    #[must_use]
     #[inline]
     pub fn from_f64(val: f64) -> Self {
         let scaled = (val * (FRAC_SCALE as f64)).round() as i64;
@@ -106,12 +115,14 @@ impl TernaryFixed {
     }
 
     /// Converts `11.10` ternary fixed-point to `f64`.
+    #[must_use]
     #[inline]
     pub fn to_f64(self) -> f64 {
         (self.0.as_i64() as f64) / (FRAC_SCALE as f64)
     }
 
     /// Converts a Doom `16.16` binary `fixed_t` (`i32`) to `TernaryFixed` (`11.10` trits).
+    #[must_use]
     #[inline(always)]
     pub const fn from_doom_fixed16(doom_fixed: i32) -> Self {
         let num = (doom_fixed as i64) * FRAC_SCALE;
@@ -124,6 +135,7 @@ impl TernaryFixed {
     }
 
     /// Converts `TernaryFixed` (`11.10` trits) back to Doom `16.16` binary `fixed_t` (`i32`).
+    #[must_use]
     #[inline(always)]
     pub const fn to_doom_fixed16(self) -> i32 {
         let num = (self.0.as_i64() as i128) * (DOOM_BINARY_FRACUNIT as i128);
@@ -319,6 +331,27 @@ impl Neg for TernaryFixed {
 impl fmt::Display for TernaryFixed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:.5}", self.to_f64())
+    }
+}
+
+impl From<i32> for TernaryFixed {
+    #[inline(always)]
+    fn from(n: i32) -> Self {
+        Self::from_int(n as i64)
+    }
+}
+
+impl From<i16> for TernaryFixed {
+    #[inline(always)]
+    fn from(n: i16) -> Self {
+        Self::from_int(n as i64)
+    }
+}
+
+impl From<i8> for TernaryFixed {
+    #[inline(always)]
+    fn from(n: i8) -> Self {
+        Self::from_int(n as i64)
     }
 }
 

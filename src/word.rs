@@ -75,6 +75,7 @@ pub const HALF_POW3: [i64; 28] = [
 
 /// Wraps an arbitrary `i64` value into the balanced ternary domain of `N` trits
 /// in `[-HALF_POW3[N], +HALF_POW3[N]]` preserving congruence modulo `3^N`.
+#[must_use]
 #[inline(always)]
 pub const fn wrap_balanced<const N: usize>(val: i64) -> i64 {
     let modulus = POW3[N];
@@ -92,6 +93,7 @@ pub const fn wrap_balanced<const N: usize>(val: i64) -> i64 {
 }
 
 /// Fast 128-bit modular wrapping for 21 trits (used after wide multiplications).
+#[must_use]
 #[inline(always)]
 pub const fn wrap_balanced_i128<const N: usize>(val: i128) -> i64 {
     let modulus = POW3[N] as i128;
@@ -292,6 +294,7 @@ impl Word21 {
     pub const NEG_ONE: Self = Self(-1);
 
     /// Constructs a `Word21` wrapping an `i64` value into 21 balanced trits.
+    #[must_use]
     #[inline(always)]
     pub const fn new(val: i64) -> Self {
         Self(wrap_balanced::<21>(val))
@@ -299,24 +302,28 @@ impl Word21 {
 
     /// Constructs a `Word21` from a binary `i32` (exact conversion without overflow,
     /// since `i32::MAX = 2,147,483,647 < 5,230,176,601`).
+    #[must_use]
     #[inline(always)]
     pub const fn from_i32(val: i32) -> Self {
         Self(val as i64)
     }
 
     /// Constructs a `Word21` from a binary `i64`.
+    #[must_use]
     #[inline(always)]
     pub const fn from_i64(val: i64) -> Self {
         Self::new(val)
     }
 
     /// Returns the underlying signed `i64` integer value.
+    #[must_use]
     #[inline(always)]
     pub const fn as_i64(self) -> i64 {
         self.0
     }
 
     /// Converts to `i32` saturating at 32-bit binary integer boundaries if exceeding `i32::MIN..=i32::MAX`.
+    #[must_use]
     #[inline(always)]
     pub const fn to_i32_saturating(self) -> i32 {
         if self.0 > i32::MAX as i64 {
@@ -330,12 +337,14 @@ impl Word21 {
 
     /// Intrinsic trichotomous sign of the word (`Trit::Negative`, `Trit::Zero`, or `Trit::Positive`).
     /// Replaces artificial CPU status flags (Zero/Sign/Carry) with direct word inspection.
+    #[must_use]
     #[inline(always)]
     pub const fn sign_trit(self) -> Trit {
         Trit::from_i64_sign(self.0)
     }
 
     /// Simple inversion of all 21 trits (instantaneous symmetric negation without adding +1).
+    #[must_use]
     #[inline(always)]
     pub const fn neg_trits(self) -> Self {
         Self(-self.0)
@@ -508,16 +517,12 @@ impl Word21 {
         if shift > 0 {
             let s = shift as usize;
             if s < 21 {
-                for i in s..21 {
-                    out[i] = trits[i - s];
-                }
+                out[s..21].copy_from_slice(&trits[..(21 - s)]);
             }
         } else {
             let s = (-shift) as usize;
             if s < 21 {
-                for i in 0..(21 - s) {
-                    out[i] = trits[i + s];
-                }
+                out[..(21 - s)].copy_from_slice(&trits[s..21]);
             }
         }
         Self::from_trits(&out)
@@ -850,6 +855,34 @@ impl Neg for Word21 {
 impl fmt::Display for Word21 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({})", self.to_balanced_string(), self.0)
+    }
+}
+
+impl From<i32> for Word21 {
+    #[inline(always)]
+    fn from(val: i32) -> Self {
+        Self::from_i32(val)
+    }
+}
+
+impl From<i16> for Word21 {
+    #[inline(always)]
+    fn from(val: i16) -> Self {
+        Self::from_i32(val as i32)
+    }
+}
+
+impl From<i8> for Word21 {
+    #[inline(always)]
+    fn from(val: i8) -> Self {
+        Self::from_i32(val as i32)
+    }
+}
+
+impl From<Tryte6> for Word21 {
+    #[inline(always)]
+    fn from(val: Tryte6) -> Self {
+        val.to_word21()
     }
 }
 

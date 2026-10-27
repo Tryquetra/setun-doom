@@ -23,6 +23,8 @@
 //!      recording all physical carry propagations.
 
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt;
 
 use crate::cpu::{Cpu, Instruction, Opcode, PowerTelemetry};
 use crate::elf::{
@@ -299,6 +301,7 @@ pub struct TranslatedBasicBlock {
 }
 
 /// Execution or translation errors from the DBT engine.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DbtError {
     /// Error loading ELF32 image.
@@ -311,6 +314,30 @@ pub enum DbtError {
     Breakpoint { pc: u32 },
     /// Maximum cycle/instruction limit exceeded (prevents infinite loop in tests).
     StepLimitExceeded(u64),
+}
+
+impl fmt::Display for DbtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Elf(err) => write!(f, "DBT ELF loader error: {err}"),
+            Self::Memory(err) => write!(f, "DBT memory access error: {err}"),
+            Self::IllegalInstruction { raw, pc } => {
+                write!(f, "Illegal instruction 0x{raw:08X} at PC 0x{pc:08X}")
+            }
+            Self::Breakpoint { pc } => write!(f, "Breakpoint reached at PC 0x{pc:08X}"),
+            Self::StepLimitExceeded(limit) => write!(f, "Step limit exceeded: {limit} cycles"),
+        }
+    }
+}
+
+impl Error for DbtError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Elf(err) => Some(err),
+            Self::Memory(err) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 impl From<ElfError> for DbtError {
@@ -1328,11 +1355,7 @@ impl SetunDbtEngine {
             Rv32iInstr::Divu { rd, rs1, rs2 } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1)) as u32;
                 let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32;
-                let q = if b_bin == 0 {
-                    u32::MAX
-                } else {
-                    a_bin / b_bin
-                };
+                let q = a_bin.checked_div(b_bin).unwrap_or(u32::MAX);
                 let res = self.gate_alvarez_bin_to_ter(q as i32);
                 self.write_reg(rd, res)?;
             }
@@ -1429,20 +1452,18 @@ fn scan_static_branch_targets(
         let mut pc = start;
         while pc + 4 <= end {
             if let Ok(raw) = read_elf_u32_le(memory, layout.setun_base_offset, pc) {
-                if let Ok(instr) = Rv32iInstr::decode(raw) {
-                    match instr {
-                        Rv32iInstr::Jal { offset, .. }
-                        | Rv32iInstr::Beq { offset, .. }
-                        | Rv32iInstr::Bne { offset, .. }
-                        | Rv32iInstr::Blt { offset, .. }
-                        | Rv32iInstr::Bge { offset, .. }
-                        | Rv32iInstr::Bltu { offset, .. }
-                        | Rv32iInstr::Bgeu { offset, .. } => {
-                            let target = (pc as i32).wrapping_add(offset) as u32;
-                            targets.insert(target);
-                        }
-                        _ => {}
-                    }
+                if let Ok(
+                    Rv32iInstr::Jal { offset, .. }
+                    | Rv32iInstr::Beq { offset, .. }
+                    | Rv32iInstr::Bne { offset, .. }
+                    | Rv32iInstr::Blt { offset, .. }
+                    | Rv32iInstr::Bge { offset, .. }
+                    | Rv32iInstr::Bltu { offset, .. }
+                    | Rv32iInstr::Bgeu { offset, .. },
+                ) = Rv32iInstr::decode(raw)
+                {
+                    let target = (pc as i32).wrapping_add(offset) as u32;
+                    targets.insert(target);
                 }
             }
             pc = pc.wrapping_add(4);

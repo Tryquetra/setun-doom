@@ -167,12 +167,14 @@ fn main() {
     }
 
     let mut rgba = vec![0u8; FB_SIZE * 4];
+    // SAFETY: rgba vector is allocated with FB_SIZE * 4 bytes matching the expected RGBA output buffer.
     unsafe {
         DG_DrawFrameToBuffer(rgba.as_mut_ptr());
     }
 
     let mut pressed = 0i32;
     let mut key = 0u8;
+    // SAFETY: pressed and key pointers are valid stack addresses for output parameters.
     let got_key = unsafe { DG_GetKey(&mut pressed, &mut key) };
     let ticks = DG_GetTicksMs();
 
@@ -360,6 +362,7 @@ fn main() {
                     );
                 }
 
+                // SAFETY: rgba buffer is allocated with FB_SIZE * 4 bytes for the 320x200 RGBA frame output.
                 unsafe {
                     DG_DrawFrameToBuffer(rgba.as_mut_ptr());
                 }

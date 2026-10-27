@@ -16,6 +16,9 @@ pub const FP_REG: usize = 7;
 /// Index register assigned as the pointer dereference scratchpad (PTR).
 pub const PTR_REG: usize = 6;
 
+/// Instruction selector result type pairing generated instructions with relocation records.
+pub type IselResult = Result<(Vec<Instruction>, Vec<(usize, String)>), String>;
+
 /// Instruction selector for the Setun-Doom 21-trit architecture.
 pub struct SetunCodeGenerator;
 
@@ -30,7 +33,7 @@ impl SetunCodeGenerator {
     pub fn compile_function_with_relocs(
         func: &LlvmFunction,
         is_entry: bool,
-    ) -> Result<(Vec<Instruction>, Vec<(usize, String)>), String> {
+    ) -> IselResult {
         let dummy_globals = HashMap::new();
         Self::compile_function_with_globals(func, is_entry, &dummy_globals)
     }
@@ -40,7 +43,7 @@ impl SetunCodeGenerator {
         func: &LlvmFunction,
         is_entry: bool,
         global_map: &HashMap<String, usize>,
-    ) -> Result<(Vec<Instruction>, Vec<(usize, String)>), String> {
+    ) -> IselResult {
         let mut instructions = Vec::new();
         let mut call_relocs: Vec<(usize, String)> = Vec::new();
         let mut cond_map: HashMap<String, IcmpCond> = HashMap::new();
@@ -93,14 +96,12 @@ impl SetunCodeGenerator {
                             s
                         });
                     }
-                    LlvmInst::Call { dst, .. } => {
-                        if let Some(d) = dst {
-                            var_slots.entry(d.clone()).or_insert_with(|| {
-                                let s = next_slot;
-                                next_slot += 1;
-                                s
-                            });
-                        }
+                    LlvmInst::Call { dst: Some(d), .. } => {
+                        var_slots.entry(d.clone()).or_insert_with(|| {
+                            let s = next_slot;
+                            next_slot += 1;
+                            s
+                        });
                     }
                     _ => {}
                 }
@@ -140,14 +141,16 @@ impl SetunCodeGenerator {
         // Copy incoming arguments (in IX0..IX5) into parameter slots on this frame
         for (i, param) in func.params.iter().enumerate() {
             if i < PTR_REG {
-                let slot = *var_slots.get(param).unwrap();
+                let slot = *var_slots
+                    .get(param)
+                    .expect("Parameter slot must be allocated in frame layout");
                 instructions.push(Instruction::new(Opcode::MovIxToAcc, i, 0));
                 instructions.push(Instruction::new(Opcode::StoreIndex, FP_REG, slot as i64));
             }
         }
 
         // Initialize alloca pointer variables to point to their buffer slots (IX7 + buf_slot)
-        for (_alloca_var, (ptr_slot, buf_slot)) in &alloca_slots {
+        for (ptr_slot, buf_slot) in alloca_slots.values() {
             instructions.push(Instruction::new(Opcode::MovIxToAcc, FP_REG, 0));
             instructions.push(Instruction::new(Opcode::AddImm, 0, *buf_slot as i64));
             instructions.push(Instruction::new(Opcode::StoreIndex, FP_REG, *ptr_slot as i64));
@@ -241,32 +244,26 @@ impl SetunCodeGenerator {
 
                     LlvmInst::Shl { dst, val, shift } => {
                         Self::load_val_into_acc(val, &var_slots, global_map, &mut instructions)?;
-                        match shift {
-                            LlvmValue::ConstantInt(c) => {
-                                let multiplier = 1i64 << (*c as u32).min(31);
-                                instructions.push(Instruction::new(Opcode::Store, 0, 790));
-                                Self::emit_load_constant(multiplier, &mut instructions);
-                                instructions.push(Instruction::new(Opcode::Store, 0, 791));
-                                instructions.push(Instruction::new(Opcode::Load, 0, 790));
-                                instructions.push(Instruction::new(Opcode::MulInt, 0, 791));
-                            }
-                            _ => {}
+                        if let LlvmValue::ConstantInt(c) = shift {
+                            let multiplier = 1i64 << (*c as u32).min(31);
+                            instructions.push(Instruction::new(Opcode::Store, 0, 790));
+                            Self::emit_load_constant(multiplier, &mut instructions);
+                            instructions.push(Instruction::new(Opcode::Store, 0, 791));
+                            instructions.push(Instruction::new(Opcode::Load, 0, 790));
+                            instructions.push(Instruction::new(Opcode::MulInt, 0, 791));
                         }
                         Self::store_acc_into_var(dst, &var_slots, &mut instructions)?;
                     }
 
                     LlvmInst::Ashr { dst, val, shift } => {
                         Self::load_val_into_acc(val, &var_slots, global_map, &mut instructions)?;
-                        match shift {
-                            LlvmValue::ConstantInt(c) => {
-                                let divisor = 1i64 << (*c as u32).min(31);
-                                instructions.push(Instruction::new(Opcode::Store, 0, 790));
-                                Self::emit_load_constant(divisor, &mut instructions);
-                                instructions.push(Instruction::new(Opcode::Store, 0, 791));
-                                instructions.push(Instruction::new(Opcode::Load, 0, 790));
-                                instructions.push(Instruction::new(Opcode::DivInt, 0, 791));
-                            }
-                            _ => {}
+                        if let LlvmValue::ConstantInt(c) = shift {
+                            let divisor = 1i64 << (*c as u32).min(31);
+                            instructions.push(Instruction::new(Opcode::Store, 0, 790));
+                            Self::emit_load_constant(divisor, &mut instructions);
+                            instructions.push(Instruction::new(Opcode::Store, 0, 791));
+                            instructions.push(Instruction::new(Opcode::Load, 0, 790));
+                            instructions.push(Instruction::new(Opcode::DivInt, 0, 791));
                         }
                         Self::store_acc_into_var(dst, &var_slots, &mut instructions)?;
                     }
@@ -284,7 +281,7 @@ impl SetunCodeGenerator {
                         instructions.push(Instruction::new(Opcode::Load, 0, 790));
                         instructions.push(Instruction::new(Opcode::CmpT, 0, 791));
 
-                        cond_map.insert(dst.clone(), cond.clone());
+                        cond_map.insert(dst.clone(), *cond);
                         Self::store_acc_into_var(dst, &var_slots, &mut instructions)?;
                     }
 
@@ -350,25 +347,14 @@ impl SetunCodeGenerator {
                         let true_copies = phi_edge_copies.get(&(block.label.clone(), if_true.clone()));
                         let false_copies = phi_edge_copies.get(&(block.label.clone(), if_false.clone()));
 
-                        if true_copies.is_none() || true_copies.unwrap().is_empty() {
-                            // True path has no edge copies: branch directly to if_true
-                            pending_branches.push((instructions.len(), if_true.clone(), true_op, true_reg));
-                            instructions.push(Instruction::new(true_op, true_reg, 0));
-
-                            // False path:
-                            if let Some(copies) = false_copies {
-                                Self::emit_copies(copies, &var_slots, global_map, &mut instructions)?;
-                            }
-                            pending_branches.push((instructions.len(), if_false.clone(), Opcode::Jmp, 0));
-                            instructions.push(Instruction::new(Opcode::Jmp, 0, 0));
-                        } else {
+                        if let Some(copies) = true_copies.filter(|c| !c.is_empty()) {
                             // True path has edge copies: branch to a trampoline
                             let true_branch_idx = instructions.len();
                             instructions.push(Instruction::new(true_op, true_reg, 0));
 
                             // False path:
-                            if let Some(copies) = false_copies {
-                                Self::emit_copies(copies, &var_slots, global_map, &mut instructions)?;
+                            if let Some(false_c) = false_copies {
+                                Self::emit_copies(false_c, &var_slots, global_map, &mut instructions)?;
                             }
                             pending_branches.push((instructions.len(), if_false.clone(), Opcode::Jmp, 0));
                             instructions.push(Instruction::new(Opcode::Jmp, 0, 0));
@@ -376,8 +362,19 @@ impl SetunCodeGenerator {
                             // True trampoline:
                             let true_trampoline_pc = instructions.len() as i64;
                             instructions[true_branch_idx] = Instruction::new(true_op, true_reg, true_trampoline_pc);
-                            Self::emit_copies(true_copies.unwrap(), &var_slots, global_map, &mut instructions)?;
+                            Self::emit_copies(copies, &var_slots, global_map, &mut instructions)?;
                             pending_branches.push((instructions.len(), if_true.clone(), Opcode::Jmp, 0));
+                            instructions.push(Instruction::new(Opcode::Jmp, 0, 0));
+                        } else {
+                            // True path has no edge copies: branch directly to if_true
+                            pending_branches.push((instructions.len(), if_true.clone(), true_op, true_reg));
+                            instructions.push(Instruction::new(true_op, true_reg, 0));
+
+                            // False path:
+                            if let Some(false_c) = false_copies {
+                                Self::emit_copies(false_c, &var_slots, global_map, &mut instructions)?;
+                            }
+                            pending_branches.push((instructions.len(), if_false.clone(), Opcode::Jmp, 0));
                             instructions.push(Instruction::new(Opcode::Jmp, 0, 0));
                         }
                     }
@@ -536,7 +533,7 @@ impl SetunCodeGenerator {
     /// Emits instructions to load any signed 21-trit constant into ACC,
     /// decomposing constants outside the 14-trit immediate range into balanced base-2187 components.
     pub fn emit_load_constant(c: i64, instructions: &mut Vec<Instruction>) {
-        if c >= -2_391_484 && c <= 2_391_484 {
+        if (-2_391_484..=2_391_484).contains(&c) {
             instructions.push(Instruction::new(Opcode::LoadImm, 0, c));
         } else {
             let mut q = c / 2187;

@@ -7,7 +7,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-use setun_doom::dos::memmap::*;
+use setun_doom::dos::memmap::{
+    FRAMEBUFFER_BASE, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, TIVT_BASE, USER_SPACE_LIMIT,
+};
 use setun_doom::dos::tfx::TfxExecutable;
 use setun_doom::dos::{SetunDesktop, SetunDos};
 use setun_doom::BenchGui;
@@ -42,13 +44,11 @@ fn main() {
             "--headless" => {
                 headless = true;
             }
-            "--frames" => {
-                if i + 1 < args.len() {
-                    if let Ok(n) = args[i + 1].parse::<usize>() {
-                        target_frames = Some(n);
-                    }
-                    i += 1;
+            "--frames" if i + 1 < args.len() => {
+                if let Ok(n) = args[i + 1].parse::<usize>() {
+                    target_frames = Some(n);
                 }
+                i += 1;
             }
             _ => {}
         }

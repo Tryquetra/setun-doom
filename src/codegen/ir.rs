@@ -32,17 +32,26 @@ pub enum IcmpCond {
     Sle,
 }
 
-impl IcmpCond {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for IcmpCond {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "eq" => Some(Self::Eq),
-            "ne" => Some(Self::Ne),
-            "sgt" => Some(Self::Sgt),
-            "sge" => Some(Self::Sge),
-            "slt" => Some(Self::Slt),
-            "sle" => Some(Self::Sle),
-            _ => None,
+            "eq" => Ok(Self::Eq),
+            "ne" => Ok(Self::Ne),
+            "sgt" => Ok(Self::Sgt),
+            "sge" => Ok(Self::Sge),
+            "slt" => Ok(Self::Slt),
+            "sle" => Ok(Self::Sle),
+            _ => Err(()),
         }
+    }
+}
+
+impl IcmpCond {
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        s.parse().ok()
     }
 }
 

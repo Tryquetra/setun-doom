@@ -154,6 +154,8 @@ pub struct BenchGui {
 impl BenchGui {
     /// Initializes the SDL2 graphical window (640x400 virtual resolution for Setun's 320x200).
     pub fn new(title: &str) -> Option<Self> {
+        // SAFETY: SDL_Init and window/renderer/texture creation operate on null-terminated
+        // C strings and standard display parameters with null checks on all returned pointers.
         unsafe {
             if SDL_Init(SDL_INIT_VIDEO) != 0 {
                 eprintln!("[GUI] Failed to initialize SDL2 video subsystem.");
@@ -217,6 +219,8 @@ impl BenchGui {
     /// Updates the pixel buffer on screen.
     pub fn present_frame(&mut self, rgba_buffer: &[u8]) {
         assert_eq!(rgba_buffer.len(), FB_SIZE * 4);
+        // SAFETY: self.texture and self.renderer are valid SDL pointers initialized in BenchGui::new,
+        // and rgba_buffer length is asserted to match FB_SIZE * 4 with row pitch FB_WIDTH * 4.
         unsafe {
             SDL_UpdateTexture(
                 self.texture,
@@ -233,6 +237,7 @@ impl BenchGui {
     /// Handles window events. Returns false if user requested exit (ESC, Q, or close window).
     pub fn poll_events(&mut self) -> bool {
         let mut event = SDL_Event { event_type: 0 };
+        // SAFETY: SDL_PollEvent safely populates a stack-allocated SDL_Event struct.
         unsafe {
             while SDL_PollEvent(&mut event) != 0 {
                 let ev_type = event.event_type;
@@ -262,6 +267,7 @@ impl BenchGui {
     /// Polls events and dispatches key down events to a callback. Returns false on exit request.
     pub fn poll_events_with_keys<F: FnMut(i32)>(&mut self, mut on_key: F) -> bool {
         let mut event = SDL_Event { event_type: 0 };
+        // SAFETY: SDL_PollEvent safely populates a stack-allocated SDL_Event struct.
         unsafe {
             while SDL_PollEvent(&mut event) != 0 {
                 let ev_type = event.event_type;
@@ -287,6 +293,7 @@ impl BenchGui {
         mut on_click: FClick,
     ) -> bool {
         let mut event = SDL_Event { event_type: 0 };
+        // SAFETY: SDL_PollEvent safely populates a stack-allocated SDL_Event struct.
         unsafe {
             while SDL_PollEvent(&mut event) != 0 {
                 let ev_type = event.event_type;
@@ -309,11 +316,10 @@ impl BenchGui {
                         self.mouse_y = (event.button.y / 2).clamp(0, (FB_HEIGHT - 1) as i32);
                         on_click(self.mouse_x, self.mouse_y);
                     }
-                } else if ev_type == SDL_MOUSEBUTTONUP {
-                    if event.button.button == SDL_BUTTON_LEFT {
+                } else if ev_type == SDL_MOUSEBUTTONUP
+                    && event.button.button == SDL_BUTTON_LEFT {
                         self.mouse_down = false;
                     }
-                }
             }
         }
         true
@@ -321,6 +327,7 @@ impl BenchGui {
 
     /// Short delay for frame rate pacing (60 FPS).
     pub fn delay(&self, ms: u32) {
+        // SAFETY: SDL_Delay causes no side-effects other than suspending the current thread for ms milliseconds.
         unsafe {
             SDL_Delay(ms);
         }
@@ -329,6 +336,7 @@ impl BenchGui {
 
 impl Drop for BenchGui {
     fn drop(&mut self) {
+        // SAFETY: Destroys valid, non-null SDL resource pointers before calling SDL_Quit.
         unsafe {
             if !self.texture.is_null() {
                 SDL_DestroyTexture(self.texture);

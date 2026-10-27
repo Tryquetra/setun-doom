@@ -59,6 +59,7 @@ impl TernaryRenderer {
 
     /// Ternary equivalent of `R_DrawSpan`: renders horizontal floor or ceiling span (`y`)
     /// between `x1..=x2` interpolating 2D coordinates `(u, v)` in [`TernaryFixed`].
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_span(
         mem: &mut Memory,
         y: usize,

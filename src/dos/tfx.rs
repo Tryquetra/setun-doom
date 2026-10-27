@@ -111,7 +111,7 @@ impl TfxExecutable {
 
     /// Deserializes a TFX executable from raw host bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() % 8 != 0 {
+        if !bytes.len().is_multiple_of(8) {
             return Err(format!(
                 "Invalid byte length for TFX: expected multiple of 8, got {}",
                 bytes.len()
@@ -122,7 +122,11 @@ impl TfxExecutable {
         let mut words = Vec::with_capacity(word_count);
         for i in 0..word_count {
             let chunk = &bytes[i * 8..(i + 1) * 8];
-            let val = i64::from_le_bytes(chunk.try_into().unwrap());
+            let val = i64::from_le_bytes(
+                chunk
+                    .try_into()
+                    .expect("Valid 8-byte chunk for TFX word"),
+            );
             words.push(Word21::new(val));
         }
 

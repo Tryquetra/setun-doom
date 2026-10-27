@@ -214,7 +214,7 @@ impl LlvmParser {
 
         // Void call: call void @callee(...) or tail call void @callee(...)
         if cleaned.contains("call ") && !cleaned.contains('=') {
-            return Self::parse_call(None, &cleaned);
+            return Self::parse_call(None, cleaned);
         }
 
         // Assignments: %dst = <operation> ...
@@ -261,10 +261,10 @@ impl LlvmParser {
                             offset: Self::parse_val(offset_tok),
                         });
                     }
-                    return None;
+                    None
                 }
                 "alloca" => {
-                    return Some(LlvmInst::Alloca { dst });
+                    Some(LlvmInst::Alloca { dst })
                 }
                 "load" => {
                     // Example: load i32, ptr %x, align 4 or load volatile i32, ptr %3, align 4
@@ -278,10 +278,10 @@ impl LlvmParser {
                     if ptr_tok.is_empty() {
                         ptr_tok = tokens.last()?;
                     }
-                    return Some(LlvmInst::Load {
+                    Some(LlvmInst::Load {
                         dst,
                         ptr: Self::parse_val(ptr_tok),
-                    });
+                    })
                 }
                 "phi" => {
                     // Example: phi i32 [ %val1, %label1 ], [ %val2, %label2 ]
@@ -301,7 +301,7 @@ impl LlvmParser {
                             }
                         }
                     }
-                    return Some(LlvmInst::Phi { dst, incomings });
+                    Some(LlvmInst::Phi { dst, incomings })
                 }
                 "select" => {
                     // Example: select i1 %4, i32 %5, i32 %2
@@ -317,7 +317,7 @@ impl LlvmParser {
                             val_false: Self::parse_val(false_tok),
                         });
                     }
-                    return None;
+                    None
                 }
                 "add" | "sub" | "mul" | "sdiv" | "srem" | "and" | "or" | "xor" => {
                     // Example: add nsw i32 %a, %b or add i32 %a, 10
@@ -384,7 +384,7 @@ impl LlvmParser {
                 "icmp" => {
                     // Example: icmp slt i32 %a, %b
                     if tokens.len() >= 4 {
-                        let cond = IcmpCond::from_str(tokens[1])?;
+                        let cond = IcmpCond::parse(tokens[1])?;
                         let op_args = Self::extract_binary_args(rhs)?;
                         Some(LlvmInst::Icmp {
                             dst,
@@ -491,7 +491,7 @@ impl LlvmParser {
             if let Some(arr_end) = rhs.rfind(']') {
                 let inside = &rhs[arr_start + 1..arr_end];
                 for elem in inside.split(',') {
-                    if let Some(val_tok) = elem.trim().split_whitespace().last() {
+                    if let Some(val_tok) = elem.split_whitespace().last() {
                         let clean = val_tok.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
                         if let Ok(v) = clean.parse::<i64>() {
                             words.push(v);

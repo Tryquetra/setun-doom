@@ -13,6 +13,9 @@
 //! - `4_664_256 .. 4_664_512` (`MMIO_BASE`): Memory-mapped I/O registers (Timer, Keyboard, DMA).
 //! - `4_782_968` (`STACK_TOP`): Initial default top for Stack Pointer (`SP`).
 
+use std::error::Error;
+use std::fmt;
+
 use crate::word::{Tryte6, Word21, HALF_POW3, POW3};
 
 /// Total capacity of 14-trit addressing space: $3^{14} = 4,782,969$ words.
@@ -52,6 +55,7 @@ pub const WAD_DMA_BASE: usize = 500_000;
 pub const INITIAL_STACK_POINTER: i64 = 4_599_999;
 
 /// Access errors for the ternary memory subsystem.
+#[non_exhaustive]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum MemoryError {
     /// Address out of $3^{14}$ bounds (`0..4_782_969`).
@@ -59,6 +63,21 @@ pub enum MemoryError {
     /// DMA transfer exceeds available memory capacity.
     DmaOverflow { base: usize, len: usize },
 }
+
+impl fmt::Display for MemoryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutOfBounds(addr) => {
+                write!(f, "Memory address {addr} is out of bounds (0..{MEMORY_SIZE})")
+            }
+            Self::DmaOverflow { base, len } => {
+                write!(f, "DMA transfer overflow at base {base} with length {len}")
+            }
+        }
+    }
+}
+
+impl Error for MemoryError {}
 
 /// Linear memory of Setun-Doom architecture allocated in contiguous host `i64` vector.
 pub struct Memory {
@@ -131,7 +150,7 @@ impl Memory {
     #[inline(always)]
     pub fn write_word(&mut self, addr: i64, val: Word21) -> Result<(), MemoryError> {
         let idx = Self::resolve_address(addr)?;
-        if idx >= FRAMEBUFFER_BASE && idx < FRAMEBUFFER_END {
+        if (FRAMEBUFFER_BASE..FRAMEBUFFER_END).contains(&idx) {
             let tryte = Tryte6::from_i64(val.as_i64());
             self.cells[idx] = tryte.as_i64();
         } else {
@@ -146,7 +165,7 @@ impl Memory {
     pub fn write_word_fast(&mut self, addr: i64, val: Word21) {
         let idx = Self::resolve_address(addr)
             .unwrap_or_else(|e| panic!("Write fault in ternary memory: {:?}", e));
-        if idx >= FRAMEBUFFER_BASE && idx < FRAMEBUFFER_END {
+        if (FRAMEBUFFER_BASE..FRAMEBUFFER_END).contains(&idx) {
             self.cells[idx] = Tryte6::from_i64(val.as_i64()).as_i64();
         } else {
             self.cells[idx] = val.as_i64();

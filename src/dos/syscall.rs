@@ -9,7 +9,9 @@
 //!   - `+1` or `> 0`: Value present / Bytes read / Key code / Allocated address.
 
 use crate::cpu::Cpu;
-use crate::dos::memmap::*;
+use crate::dos::memmap::{
+    FRAMEBUFFER_BASE, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, USER_SPACE_LIMIT,
+};
 use crate::memory::Memory;
 use crate::word::{Tryte6, Word21};
 
@@ -68,6 +70,7 @@ pub struct SyscallDispatcher;
 
 impl SyscallDispatcher {
     /// Executes a system call directly from CPU registers and Memory.
+    #[allow(clippy::too_many_arguments)]
     pub fn dispatch(
         sys_num: i64,
         cpu: &mut Cpu,

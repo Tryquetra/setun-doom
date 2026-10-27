@@ -150,3 +150,9 @@ impl TaskScheduler {
         false
     }
 }
+
+impl Default for TaskScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}

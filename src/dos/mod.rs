@@ -16,7 +16,7 @@ pub use desktop::{ActiveWindow, SetunDesktop};
 
 use crate::cpu::{Cpu, CpuTrap};
 use crate::dos::fs::SetunFileSystem;
-use crate::dos::memmap::*;
+use crate::dos::memmap::{FRAMEBUFFER_BASE, FRAMEBUFFER_PIXELS, KERNEL_CODE_BASE, TIVT_BASE};
 use crate::dos::syscall::{KernelGuiState, SyscallDispatcher, SyscallResult};
 use crate::dos::task::{TaskScheduler, TaskState};
 use crate::dos::tfx::TfxExecutable;

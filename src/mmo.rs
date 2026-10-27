@@ -82,7 +82,7 @@ impl WadDmaLoader {
                 Ok(bytes.len())
             }
             DmaTranscodeMode::PackedI32LittleEndian => {
-                let word_count = (bytes.len() + 3) / 4;
+                let word_count = bytes.len().div_ceil(4);
                 if base_addr + word_count > mem.raw_cells().len() {
                     return Err(MemoryError::DmaOverflow {
                         base: base_addr,
@@ -664,6 +664,7 @@ pub extern "C" fn setun_AproxDistance(dx: i32, dy: i32) -> i32 {
 /// # Safety
 /// `dest`, `dc_source`, and `dc_colormap` must be valid pointers to Doom framebuffer and lumps.
 #[no_mangle]
+#[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawColumn(
     dc_x: i32,
     dc_yl: i32,
@@ -747,6 +748,7 @@ pub unsafe extern "C" fn setun_DrawColumn(
 /// # Safety
 /// Pointers must be valid for reading and writing in framebuffer.
 #[no_mangle]
+#[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawTranslatedColumn(
     dc_x: i32,
     dc_yl: i32,
@@ -824,6 +826,7 @@ pub unsafe extern "C" fn setun_DrawTranslatedColumn(
 /// # Safety
 /// Pointers must be valid.
 #[no_mangle]
+#[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawFuzzColumn(
     dc_x: i32,
     dc_yl: i32,
@@ -908,6 +911,7 @@ pub unsafe extern "C" fn setun_DrawFuzzColumn(
 /// # Safety
 /// `dest_start`, `ds_source`, and `ds_colormap` must be valid pointers.
 #[no_mangle]
+#[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawSpan(
     ds_y: i32,
     ds_x1: i32,
@@ -1095,7 +1099,7 @@ pub unsafe extern "C" fn setun_GetLiveTelemetrySnapshot(out_snap: *mut SetunLive
     *out_snap = SetunLiveTelemetrySnapshot {
         acc_val: acc_word.as_i64(),
         r_val: machine.cpu.r.as_i64(),
-        pc: machine.cpu.pc as i64,
+        pc: machine.cpu.pc,
         cycles: machine.cpu.cycles,
         adder_carry_propagations: tel.adder_carry_propagations,
         ternary_trit_flips: tel.ternary_trit_flips,
@@ -1199,6 +1203,7 @@ mod tests {
         }
 
         let mut out_rgba = vec![0u8; FB_SIZE * 4];
+        // SAFETY: out_rgba is allocated with FB_SIZE * 4 bytes.
         unsafe {
             DG_DrawFrameToBuffer(out_rgba.as_mut_ptr());
         }
@@ -1206,11 +1211,13 @@ mod tests {
 
         let mut pressed = 0i32;
         let mut key = 0u8;
+        // SAFETY: pressed and key are valid stack pointers.
         let has_key = unsafe { DG_GetKey(&mut pressed, &mut key) };
         assert_eq!(has_key, 1);
         assert_eq!(pressed, 1);
         assert_eq!(key, 0xAD);
 
+        // SAFETY: pressed and key are valid stack pointers.
         let empty_key = unsafe { DG_GetKey(&mut pressed, &mut key) };
         assert_eq!(empty_key, 0);
     }
