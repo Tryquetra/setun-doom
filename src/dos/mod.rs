@@ -9,6 +9,7 @@ pub mod desktop;
 pub mod doom_runner;
 pub mod fs;
 pub mod memmap;
+pub mod native_doom;
 pub mod syscall;
 pub mod task;
 pub mod tfx;

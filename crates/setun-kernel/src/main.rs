@@ -67,6 +67,10 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
         sbi::sbi_shutdown();
     }
 
+    // Load authentic 1993 Doom VGA palette (256 colors)
+    dos.mem.load_playpal(setun_doom::dos::native_doom::DOOM_PLAYPAL);
+    kprintln!("   [OK] Authentic Doom PLAYPAL palette loaded (256 colors)");
+
     kprintln!("   [OK] TIVT Table initialized at address {}", TIVT_BASE);
     kprintln!("   [OK] VGA Framebuffer cleared at address {}", FRAMEBUFFER_BASE);
     kprintln!("   [OK] Linear user space bounded at 0..{}", USER_SPACE_LIMIT);
@@ -166,19 +170,44 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
                     kprintln!(" * Switch Active Window: ABOUT");
                 }
                 b'w' | b'W' => {
-                    desktop.mouse_y = (desktop.mouse_y - 8).max(0);
+                    if desktop.active_window == ActiveWindow::Doom {
+                        desktop.native_doom.move_player(0.28, 0.0);
+                    } else {
+                        desktop.mouse_y = (desktop.mouse_y - 8).max(0);
+                    }
                 }
                 b's' | b'S' => {
-                    desktop.mouse_y = (desktop.mouse_y + 8).min(199);
+                    if desktop.active_window == ActiveWindow::Doom {
+                        desktop.native_doom.move_player(-0.28, 0.0);
+                    } else {
+                        desktop.mouse_y = (desktop.mouse_y + 8).min(199);
+                    }
                 }
                 b'a' | b'A' => {
-                    desktop.mouse_x = (desktop.mouse_x - 8).max(0);
+                    if desktop.active_window == ActiveWindow::Doom {
+                        desktop.native_doom.move_player(0.0, -0.15);
+                    } else {
+                        desktop.mouse_x = (desktop.mouse_x - 8).max(0);
+                    }
                 }
                 b'd' | b'D' => {
-                    desktop.mouse_x = (desktop.mouse_x + 8).min(319);
+                    if desktop.active_window == ActiveWindow::Doom {
+                        desktop.native_doom.move_player(0.0, 0.15);
+                    } else {
+                        desktop.mouse_x = (desktop.mouse_x + 8).min(319);
+                    }
                 }
                 b' ' | 13 | 10 => {
-                    desktop.handle_mouse_click(&mut dos, desktop.mouse_x, desktop.mouse_y);
+                    if desktop.active_window == ActiveWindow::Doom {
+                        desktop.native_doom.trigger_fire();
+                    } else {
+                        desktop.handle_mouse_click(&mut dos, desktop.mouse_x, desktop.mouse_y);
+                    }
+                }
+                b'f' | b'F' => {
+                    if desktop.active_window == ActiveWindow::Doom {
+                        desktop.doom_fullscreen = !desktop.doom_fullscreen;
+                    }
                 }
                 _ => {
                     desktop.handle_key(c as i32, true);

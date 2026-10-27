@@ -44,6 +44,7 @@ pub struct SetunDesktop {
     pub frame_counter: u64,
     pub doom_fullscreen: bool,
     pub wad_path: String,
+    pub native_doom: crate::dos::native_doom::NativeDoomGame,
     #[cfg(feature = "std")]
     pub doom_runner: Option<crate::dos::doom_runner::DoomDosRunner>,
 }
@@ -60,6 +61,7 @@ impl SetunDesktop {
             frame_counter: 0,
             doom_fullscreen: false,
             wad_path: "vendor/DOOM1.WAD".to_string(),
+            native_doom: crate::dos::native_doom::NativeDoomGame::new(),
             #[cfg(feature = "std")]
             doom_runner: None,
         }
@@ -186,6 +188,13 @@ impl SetunDesktop {
             }
         }
 
+        // If clicking inside Doom viewport, trigger shotgun fire
+        if self.active_window == ActiveWindow::Doom {
+            if self.doom_fullscreen || (x >= 40 && x < 280 && y >= 26 && y < 176) {
+                self.native_doom.trigger_fire();
+            }
+        }
+
         // Re-sync buttons according to window state
         self.init_desktop_buttons(dos);
     }
@@ -208,6 +217,19 @@ impl SetunDesktop {
                 if (key == 113 || key == 81) && !self.doom_fullscreen {
                     self.active_window = ActiveWindow::None;
                     return;
+                }
+                // Direct Doom controls (WASD, Arrows, Space, Ctrl)
+                match key {
+                    119 | 87 => self.native_doom.move_player(0.28, 0.0), // W
+                    115 | 83 => self.native_doom.move_player(-0.28, 0.0), // S
+                    97 | 65 => self.native_doom.move_player(0.0, -0.15), // A
+                    100 | 68 => self.native_doom.move_player(0.0, 0.15), // D
+                    1073741904 => self.native_doom.move_player(0.0, -0.15), // Left Arrow
+                    1073741903 => self.native_doom.move_player(0.0, 0.15), // Right Arrow
+                    1073741906 => self.native_doom.move_player(0.28, 0.0), // Up Arrow
+                    1073741905 => self.native_doom.move_player(-0.28, 0.0), // Down Arrow
+                    32 | 13 | 10 | 1073742048 => self.native_doom.trigger_fire(), // Space / Enter / Ctrl
+                    _ => {}
                 }
             }
 
@@ -352,11 +374,22 @@ impl SetunDesktop {
         #[cfg(feature = "std")]
         let _ = self.ensure_doom_runner();
 
-        #[cfg(feature = "std")]
         if self.doom_fullscreen {
+            #[allow(unused_mut)]
+            let mut rendered_fullscreen = false;
+            #[cfg(feature = "std")]
             if let Some(ref mut runner) = self.doom_runner {
-                let _ = runner.step_native_tick();
-                let frame = &runner.last_frame_pixels;
+                if let Ok(_) = runner.step_native_tick() {
+                    rendered_fullscreen = true;
+                    let frame = &runner.last_frame_pixels;
+                    for (i, &idx) in frame.iter().enumerate() {
+                        let col = Tryte6::from_palette_index(idx).to_word21();
+                        dos.mem.write_word_fast(FRAMEBUFFER_BASE + (i as i64), col);
+                    }
+                }
+            }
+            if !rendered_fullscreen {
+                let frame = self.native_doom.render_tick();
                 for (i, &idx) in frame.iter().enumerate() {
                     let col = Tryte6::from_palette_index(idx).to_word21();
                     dos.mem.write_word_fast(FRAMEBUFFER_BASE + (i as i64), col);
@@ -395,20 +428,23 @@ impl SetunDesktop {
         }
 
         if !frame_rendered {
-            let dark = Tryte6::from_palette_index(0).to_word21();
+            let frame = self.native_doom.render_tick();
+            // Scale 320x200 by 3/4 to 240x150 in client area (x=40..280, y=26..176)
             for cy in 0..150 {
+                let y_doom = (cy * 4) / 3;
+                let row_ofs = (y_doom * 320) as usize;
                 let fb_row_addr = FRAMEBUFFER_BASE + (26 + cy) * 320 + 40;
                 for cx in 0..240 {
-                    dos.mem.write_word_fast(fb_row_addr + cx, dark);
+                    let x_doom = ((cx * 4) / 3) as usize;
+                    let idx = frame[row_ofs + x_doom];
+                    dos.mem.write_word_fast(fb_row_addr + cx, Tryte6::from_palette_index(idx).to_word21());
                 }
             }
-            self.draw_string(dos, wx + 12, wy + 50, "INITIALIZING NATIVE DOOM ENGINE...", 215);
-            self.draw_string(dos, wx + 12, wy + 66, "VERIFYING WAD CONTAINER IN MEMORY", 112);
         }
 
         // Mini Doom Status Hint below client area
         self.draw_raised_rect(dos, wx + 2, wy + wh - 14, ww - 4, 12, 32);
-        self.draw_string(dos, wx + 4, wy + wh - 12, "WASD:MOVE | CTRL:FIRE | SPACE:USE | F11:FULL", 112);
+        self.draw_string(dos, wx + 4, wy + wh - 12, "WASD:MOVE | CTRL/SPACE:FIRE | F11:FULL", 112);
     }
 
     /// Renders the T-Shell diagnostic terminal window.
@@ -805,7 +841,7 @@ impl Default for SetunDesktop {
 }
 
 /// Returns a 4x6 bitmap representation for an ASCII character.
-fn get_glyph_bitmap(ch: char) -> [u8; 6] {
+pub fn get_glyph_bitmap(ch: char) -> [u8; 6] {
     match ch.to_ascii_uppercase() {
         'A' => [0b0110, 0b1001, 0b1111, 0b1001, 0b1001, 0b0000],
         'B' => [0b1110, 0b1001, 0b1110, 0b1001, 0b1110, 0b0000],

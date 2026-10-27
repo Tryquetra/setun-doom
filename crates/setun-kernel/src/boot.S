@@ -29,6 +29,6 @@ park_hart:
 .align 12
 .globl _boot_stack
 _boot_stack:
-    .space 4096 * 16
+    .space 4096 * 128
 .globl _boot_stack_top
 _boot_stack_top:
