@@ -217,6 +217,27 @@ impl BenchGui {
         true
     }
 
+    /// Polls events and dispatches key down events to a callback. Returns false on exit request.
+    pub fn poll_events_with_keys<F: FnMut(i32)>(&mut self, mut on_key: F) -> bool {
+        let mut event = SDL_Event { event_type: 0 };
+        unsafe {
+            while SDL_PollEvent(&mut event) != 0 {
+                let ev_type = event.event_type;
+                if ev_type == SDL_QUIT {
+                    return false;
+                }
+                if ev_type == SDL_KEYDOWN {
+                    let sym = event.key.keysym.sym;
+                    if sym == SDLK_ESCAPE || sym == SDLK_Q {
+                        return false;
+                    }
+                    on_key(sym);
+                }
+            }
+        }
+        true
+    }
+
     /// Short delay for frame rate pacing (60 FPS).
     pub fn delay(&self, ms: u32) {
         unsafe {

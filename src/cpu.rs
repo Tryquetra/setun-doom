@@ -132,6 +132,8 @@ pub enum Opcode {
     Xor = 30,
     /// Controlled CPU halt (`HALT`) (`+40`).
     Halt = 40,
+    /// Software interrupt / system call trap (`SYS` / `TRAP`) (`+41`).
+    Syscall = 41,
 }
 
 impl Opcode {
@@ -183,6 +185,7 @@ impl Opcode {
             29 => Some(Self::Or),
             30 => Some(Self::Xor),
             40 => Some(Self::Halt),
+            41 => Some(Self::Syscall),
             _ => None,
         }
     }
@@ -296,6 +299,8 @@ pub enum CpuTrap {
         pc: i64,
         error: crate::memory::MemoryError,
     },
+    /// Software system call or trap request (`Opcode::Syscall`).
+    Syscall { pc: i64, num: i64 },
 }
 
 /// Power efficiency and state switching telemetry (*Digit Flips*) based on
@@ -915,6 +920,15 @@ impl Cpu {
                     self.cycles += 1;
                     return Ok(false);
                 }
+
+                Opcode::Syscall => {
+                    let sys_num = self.acc.as_i64();
+                    self.cycles += 1;
+                    return Err(CpuTrap::Syscall {
+                        pc: instr_pc,
+                        num: sys_num,
+                    });
+                }
             }
             Ok(true)
         })();
@@ -939,6 +953,13 @@ impl Cpu {
     pub fn step(&mut self, mem: &mut Memory) -> bool {
         self.step_checked(mem)
             .unwrap_or_else(|trap| panic!("SETUN-DOOM HARDWARE TRAP: {:?}", trap))
+    }
+
+    /// Resumes execution after handling a `CpuTrap::Syscall`.
+    #[inline(always)]
+    pub fn resume_from_syscall(&mut self, return_val: Word21) {
+        self.trap = None;
+        self.set_acc(return_val);
     }
 
     /// Executes up to `count` CPU cycles or until reaching a legitimate `HALT` instruction.

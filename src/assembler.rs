@@ -211,6 +211,7 @@ impl SetunAssembler {
             "OR" => Some((Opcode::Or, 0)),
             "XOR" => Some((Opcode::Xor, 0)),
             "HALT" | "HLT" => Some((Opcode::Halt, 0)),
+            "SYS" | "SYSCALL" | "TRAP" => Some((Opcode::Syscall, 0)),
             _ => None,
         }
     }
@@ -333,6 +334,7 @@ impl SetunAssembler {
             Opcode::Or => "OR",
             Opcode::Xor => "XOR",
             Opcode::Halt => "HALT",
+            Opcode::Syscall => "SYS",
         };
 
         match instr.opcode {
@@ -341,7 +343,8 @@ impl SetunAssembler {
             | Opcode::Push
             | Opcode::Pop
             | Opcode::Ret
-            | Opcode::Halt => mnem.to_string(),
+            | Opcode::Halt
+            | Opcode::Syscall => mnem.to_string(),
             Opcode::NormT => format!("{} IX{}", mnem, instr.reg_idx),
             Opcode::LoadIndex
             | Opcode::StoreIndex

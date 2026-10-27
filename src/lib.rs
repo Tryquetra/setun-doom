@@ -33,6 +33,7 @@ pub mod bsp;
 pub mod codegen;
 pub mod cpu;
 pub mod dbt;
+pub mod dos;
 pub mod elf;
 pub mod fixed;
 pub mod gui;
@@ -53,6 +54,7 @@ pub use dbt::{
     run_all_riscv_isa_tests, DbtError, DbtExecutionReport, DbtExitReason, RiscvIsaSuiteSummary,
     Rv32iInstr, SetunDbtEngine, SetunTranslatedOp, RISCV_ISA_ELF_TESTS,
 };
+pub use dos::{doom_runner::DoomDosRunner, tfx::TfxExecutable, SetunDos};
 pub use elf::{Elf32Image, ElfError, ElfSection, ElfSegment, LoadedElfLayout};
 pub use fixed::{TernaryFixed, FRAC_SCALE, FRAC_TRITS, INT_TRITS};
 pub use gui::BenchGui;

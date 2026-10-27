@@ -1696,7 +1696,7 @@ mod tests {
             report.exit
         );
         let stdout_str = String::from_utf8_lossy(&report.stdout_buffer);
-        assert!(stdout_str.contains("Iniciando Renderizador Doom RV32IM"));
-        assert!(stdout_str.contains("Renderizacao Doom RV32IM Concluida com Sucesso!"));
+        assert!(stdout_str.contains("Starting Doom RV32IM Renderer"));
+        assert!(stdout_str.contains("Doom RV32IM Rendering Successfully Completed!"));
     }
 }

@@ -217,6 +217,12 @@ impl Tryte6 {
         self.0 as i64
     }
 
+    /// Converts this `Tryte6` to a full `Word21`.
+    #[inline(always)]
+    pub const fn to_word21(self) -> Word21 {
+        Word21::new(self.0 as i64)
+    }
+
     /// Converts a binary `u8` byte (0..=255) to `Tryte6` symmetrically centered
     /// or directly mapped. Here `byte as i16 - 128` maps to `[-128, +127]`,
     /// completely contained within `[-364, +364]`.
