@@ -1,15 +1,16 @@
 const PCI_ECAM_BASE: usize = 0x3000_0000;
-const PCI_IO_BASE: usize = 0x0300_0000;
 const FB_PHYS_ADDR: usize = 0x4000_0000;
+const MMIO_PHYS_ADDR: usize = 0x4100_0000;
 
-const VBE_DISPI_IOPORT_INDEX: usize = 0x01CE;
-const VBE_DISPI_IOPORT_DATA: usize = 0x01CF;
+// Offsets within VGA BAR 2 MMIO region
+const PCI_VGA_IOPORT_OFFSET: usize = 0x400;
+const PCI_VGA_BOCHS_OFFSET: usize = 0x500;
 
-const VBE_DISPI_INDEX_ID: u16 = 0;
-const VBE_DISPI_INDEX_XRES: u16 = 1;
-const VBE_DISPI_INDEX_YRES: u16 = 2;
-const VBE_DISPI_INDEX_BPP: u16 = 3;
-const VBE_DISPI_INDEX_ENABLE: u16 = 4;
+const VBE_DISPI_INDEX_ID: usize = 0;
+const VBE_DISPI_INDEX_XRES: usize = 1;
+const VBE_DISPI_INDEX_YRES: usize = 2;
+const VBE_DISPI_INDEX_BPP: usize = 3;
+const VBE_DISPI_INDEX_ENABLE: usize = 4;
 
 const VBE_DISPI_DISABLED: u16 = 0x00;
 const VBE_DISPI_ENABLED: u16 = 0x01;
@@ -59,22 +60,39 @@ impl BochsVga {
         );
 
         unsafe {
-            // Assign BAR 0 (Framebuffer) to 0x4000_0000
+            // Assign BAR 0 (Framebuffer VRAM) to 0x4000_0000
             ((dev_addr + 0x10) as *mut u32).write_volatile(FB_PHYS_ADDR as u32);
+
+            // Assign BAR 2 (MMIO registers) to 0x4100_0000
+            ((dev_addr + 0x18) as *mut u32).write_volatile(MMIO_PHYS_ADDR as u32);
 
             // Enable IO space, Memory space, and Bus Master in Command register (offset 0x04)
             let cmd = ((dev_addr + 0x04) as *const u16).read_volatile();
             ((dev_addr + 0x04) as *mut u16).write_volatile(cmd | 0x0007);
         }
 
-        // Configure Bochs VBE
-        Self::vbe_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_DISABLED);
-        Self::vbe_write(VBE_DISPI_INDEX_XRES, width as u16);
-        Self::vbe_write(VBE_DISPI_INDEX_YRES, height as u16);
-        Self::vbe_write(VBE_DISPI_INDEX_BPP, 32);
-        Self::vbe_write(VBE_DISPI_INDEX_ENABLE, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+        // Unblank standard VGA display by toggling Attribute Controller PAS bit
+        Self::unblank_vga();
 
-        let vbe_id = Self::vbe_read(VBE_DISPI_INDEX_ID);
+        // Bochs Dispi registers mapped via BAR 2 at MMIO_PHYS_ADDR + 0x500
+        let bochs_mmio = (MMIO_PHYS_ADDR + PCI_VGA_BOCHS_OFFSET) as *mut u16;
+
+        let vbe_id_initial = unsafe { bochs_mmio.add(VBE_DISPI_INDEX_ID).read_volatile() };
+        crate::kprintln!("   [OK] Bochs VBE initial hardware ID: 0x{:04x}", vbe_id_initial);
+
+        // Configure resolution and color depth
+        unsafe {
+            bochs_mmio.add(VBE_DISPI_INDEX_ENABLE).write_volatile(VBE_DISPI_DISABLED);
+            bochs_mmio.add(VBE_DISPI_INDEX_XRES).write_volatile(width as u16);
+            bochs_mmio.add(VBE_DISPI_INDEX_YRES).write_volatile(height as u16);
+            bochs_mmio.add(VBE_DISPI_INDEX_BPP).write_volatile(32);
+            bochs_mmio.add(VBE_DISPI_INDEX_ENABLE).write_volatile(VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+        }
+
+        // Unblank again to ensure Attribute Controller remains unblanked after VBE mode switch
+        Self::unblank_vga();
+
+        let vbe_id = unsafe { bochs_mmio.add(VBE_DISPI_INDEX_ID).read_volatile() };
         crate::kprintln!(
             "   [OK] Bochs VBE Display Mode Active: {}x{} @ 32bpp (VBE ID: 0x{:04x})",
             width,
@@ -89,21 +107,15 @@ impl BochsVga {
         })
     }
 
-    pub fn vbe_write(index: u16, val: u16) {
+    /// Unblanks the VGA screen by enabling the Attribute Controller PAS bit (bit 5).
+    pub fn unblank_vga() {
         unsafe {
-            let index_port = (PCI_IO_BASE + VBE_DISPI_IOPORT_INDEX) as *mut u16;
-            let data_port = (PCI_IO_BASE + VBE_DISPI_IOPORT_DATA) as *mut u16;
-            index_port.write_volatile(index);
-            data_port.write_volatile(val);
-        }
-    }
-
-    pub fn vbe_read(index: u16) -> u16 {
-        unsafe {
-            let index_port = (PCI_IO_BASE + VBE_DISPI_IOPORT_INDEX) as *mut u16;
-            let data_port = (PCI_IO_BASE + VBE_DISPI_IOPORT_DATA) as *mut u16;
-            index_port.write_volatile(index);
-            data_port.read_volatile()
+            let vga_io = (MMIO_PHYS_ADDR + PCI_VGA_IOPORT_OFFSET) as *mut u8;
+            // 1. Reset attribute controller flip-flop by reading input status register 1 (0x3DA -> offset 0x1A)
+            let _ = vga_io.add(0x1A).read_volatile();
+            // 2. Write 0x20 to Attribute Controller Address Register (0x3C0 -> offset 0x00)
+            // Bit 5 (0x20) unblanks the display and enables palette address sourcing
+            vga_io.add(0x00).write_volatile(0x20);
         }
     }
 
@@ -123,7 +135,7 @@ impl BochsVga {
                 unsafe {
                     self.fb_ptr.add(dst_row0 + dst_x).write_volatile(pixel);
                     self.fb_ptr.add(dst_row0 + dst_x + 1).write_volatile(pixel);
-                    self.fb_ptr.add(dst_row1 + dst_x).write_volatile(pixel);
+                    self.fb_ptr.add(dst_row1 + dst_x + 1).write_volatile(pixel);
                     self.fb_ptr.add(dst_row1 + dst_x + 1).write_volatile(pixel);
                 }
             }

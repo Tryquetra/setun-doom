@@ -13,8 +13,9 @@
 //! - `4_664_256 .. 4_664_512` (`MMIO_BASE`): Memory-mapped I/O registers (Timer, Keyboard, DMA).
 //! - `4_782_968` (`STACK_TOP`): Initial default top for Stack Pointer (`SP`).
 
+#[cfg(feature = "std")]
 use std::error::Error;
-use std::fmt;
+use core::fmt;
 
 use crate::word::{Tryte6, Word21, HALF_POW3, POW3};
 
@@ -80,6 +81,7 @@ impl fmt::Display for MemoryError {
     }
 }
 
+#[cfg(feature = "std")]
 impl Error for MemoryError {}
 
 /// Linear memory of Setun-Doom architecture allocated in contiguous host `i64` vector.
