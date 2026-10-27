@@ -19,6 +19,7 @@ const VBE_DISPI_LFB_ENABLED: u16 = 0x40;
 pub struct BochsVga {
     pub fb_ptr: *mut u32,
     pub width: usize,
+    #[allow(dead_code)]
     pub height: usize,
 }
 
@@ -135,7 +136,7 @@ impl BochsVga {
                 unsafe {
                     self.fb_ptr.add(dst_row0 + dst_x).write_volatile(pixel);
                     self.fb_ptr.add(dst_row0 + dst_x + 1).write_volatile(pixel);
-                    self.fb_ptr.add(dst_row1 + dst_x + 1).write_volatile(pixel);
+                    self.fb_ptr.add(dst_row1 + dst_x).write_volatile(pixel);
                     self.fb_ptr.add(dst_row1 + dst_x + 1).write_volatile(pixel);
                 }
             }

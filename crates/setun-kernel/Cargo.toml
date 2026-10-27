@@ -9,6 +9,7 @@ description = "RISC-V Bare-Metal Unikernel for Setun-DOS on QEMU"
 [dependencies]
 setun-doom = { path = "../..", default-features = false }
 buddy_system_allocator = "0.13.0"
+virtio-drivers = "0.13.0"
 
 [profile.release]
 panic = "abort"

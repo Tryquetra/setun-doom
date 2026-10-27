@@ -4,6 +4,7 @@
 extern crate alloc;
 
 mod allocator;
+mod mouse;
 mod sbi;
 #[macro_use]
 mod uart;
@@ -30,6 +31,15 @@ fn panic(info: &PanicInfo) -> ! {
     kprintln!("  Payload:  {}", info.message());
     kprintln!("============================================================");
     sbi::sbi_shutdown();
+}
+
+#[inline(always)]
+pub fn read_hardware_timer() -> u64 {
+    let t: u64;
+    unsafe {
+        core::arch::asm!("rdtime {}", out(reg) t);
+    }
+    t
 }
 
 #[no_mangle]
@@ -112,14 +122,27 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
         kprintln!("   [WARN] No PCI VGA Adapter detected on bus. Running in headless mode.");
     }
 
+    // 6. Initialize VirtIO Input (Tablet / Mouse)
+    kprintln!("-> Probing VirtIO MMIO slots for Pointer / Tablet Input...");
+    let mut mouse_driver = mouse::MouseDriver::probe();
+
     kprintln!("============================================================");
     kprintln!("  SETUN-DOS RISC-V UNIKERNEL RUNNING                        ");
-    kprintln!("  Press 'q' to exit, '1'=DOOM, '2'=SHELL, '3'=TELEMETRY, '4'=ABOUT");
+    kprintln!("  Controls: Mouse/Tablet click icons to launch apps         ");
+    kprintln!("  MouseKeys: W/A/S/D move cursor, Space/Enter clicks        ");
+    kprintln!("  Hotkeys: '1'=DOOM, '2'=SHELL, '3'=TELEMETRY, '4'=ABOUT    ");
+    kprintln!("  Exit: 'q' in terminal, or window [X]                      ");
     kprintln!("============================================================");
 
     let mut tick_counter: u64 = 0;
+    const TICKS_PER_FRAME: u64 = 10_000_000 / 35; // 35 FPS target (~285,714 ticks at 10 MHz)
+    let mut next_frame_time = read_hardware_timer().wrapping_add(TICKS_PER_FRAME);
+
     loop {
-        // Handle UART serial input
+        // Poll VirtIO hardware tablet / mouse events
+        mouse_driver.poll_events(&mut desktop, &mut dos);
+
+        // Handle UART serial input and MouseKeys
         if let Some(c) = uart::Uart::getc() {
             match c {
                 b'q' | 27 => {
@@ -142,6 +165,21 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
                     desktop.active_window = ActiveWindow::About;
                     kprintln!(" * Switch Active Window: ABOUT");
                 }
+                b'w' | b'W' => {
+                    desktop.mouse_y = (desktop.mouse_y - 8).max(0);
+                }
+                b's' | b'S' => {
+                    desktop.mouse_y = (desktop.mouse_y + 8).min(199);
+                }
+                b'a' | b'A' => {
+                    desktop.mouse_x = (desktop.mouse_x - 8).max(0);
+                }
+                b'd' | b'D' => {
+                    desktop.mouse_x = (desktop.mouse_x + 8).min(319);
+                }
+                b' ' | 13 | 10 => {
+                    desktop.handle_mouse_click(&mut dos, desktop.mouse_x, desktop.mouse_y);
+                }
                 _ => {
                     desktop.handle_key(c as i32, true);
                 }
@@ -157,7 +195,8 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
         }
 
         tick_counter += 1;
-        if tick_counter % 350 == 0 {
+        if tick_counter % 35 == 0 {
+            // Heartbeat once every second (~35 frames)
             kprintln!(
                 " * Setun-DOS Heartbeat: frame {}, timer ticks {}, active window: {:?}",
                 desktop.frame_counter,
@@ -166,10 +205,11 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
             );
         }
 
-        // Delay ~28ms for ~35 FPS
-        for _ in 0..60_000 {
-            unsafe { core::arch::asm!("nop") };
+        // Precise hardware timer throttle to 35 FPS
+        while read_hardware_timer() < next_frame_time {
+            core::hint::spin_loop();
         }
+        next_frame_time = read_hardware_timer().wrapping_add(TICKS_PER_FRAME);
     }
 
     // Power down machine via SBI system reset

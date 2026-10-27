@@ -15,6 +15,7 @@ pub fn sbi_call(eid: usize, fid: usize, arg0: usize, arg1: usize, arg2: usize) -
     (err, val)
 }
 
+#[allow(dead_code)]
 pub fn sbi_set_timer(stime_value: u64) {
     sbi_call(0x00, 0, stime_value as usize, 0, 0);
 }
