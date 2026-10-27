@@ -8,12 +8,9 @@
 //! - Hardware mouse cursor tracking with smooth screen rendering
 //! - Interactive 3D Doom BSP window, T-Shell diagnostic terminal, and Ternary Telemetry monitor
 
-use crate::bsp::{BspChild, BspNode, BspTree, Subsector, WallSeg};
 use crate::dos::memmap::*;
 use crate::dos::syscall::*;
 use crate::dos::SetunDos;
-use crate::fixed::TernaryFixed;
-use crate::render::TernaryRenderer;
 use crate::word::Tryte6;
 
 pub const BTN_ICON_DOOM: i64 = 1;
@@ -42,6 +39,9 @@ pub struct SetunDesktop {
     pub doom_cam_x: f64,
     pub doom_cam_y: f64,
     pub frame_counter: u64,
+    pub doom_fullscreen: bool,
+    pub wad_path: String,
+    pub doom_runner: Option<crate::dos::doom_runner::DoomDosRunner>,
 }
 
 impl SetunDesktop {
@@ -54,7 +54,25 @@ impl SetunDesktop {
             doom_cam_x: 3.0,
             doom_cam_y: 0.0,
             frame_counter: 0,
+            doom_fullscreen: false,
+            wad_path: "vendor/DOOM1.WAD".to_string(),
+            doom_runner: None,
         }
+    }
+
+    /// Sets the path to the IWAD file for native Doom execution.
+    pub fn set_wad_path(&mut self, path: &str) {
+        self.wad_path = path.to_string();
+    }
+
+    /// Ensures the native Doom engine runner is initialized.
+    pub fn ensure_doom_runner(&mut self) -> Result<&mut crate::dos::doom_runner::DoomDosRunner, String> {
+        if self.doom_runner.is_none() {
+            let mut runner = crate::dos::doom_runner::DoomDosRunner::new(None)?;
+            runner.init_native_engine(&self.wad_path)?;
+            self.doom_runner = Some(runner);
+        }
+        Ok(self.doom_runner.as_mut().unwrap())
     }
 
     /// Registers desktop icon buttons with the kernel button hit-testing table.
@@ -130,8 +148,7 @@ impl SetunDesktop {
                 match btn.id {
                     BTN_ICON_DOOM => {
                         self.active_window = ActiveWindow::Doom;
-                        self.doom_cam_x = 3.0;
-                        self.doom_cam_y = 0.0;
+                        let _ = self.ensure_doom_runner();
                     }
                     BTN_ICON_SHELL => {
                         self.active_window = ActiveWindow::Shell;
@@ -151,6 +168,7 @@ impl SetunDesktop {
                     }
                     BTN_WINDOW_CLOSE => {
                         self.active_window = ActiveWindow::None;
+                        self.doom_fullscreen = false;
                     }
                     _ => {}
                 }
@@ -163,30 +181,46 @@ impl SetunDesktop {
     }
 
     /// Handles interactive keyboard navigation when in an active window.
-    pub fn handle_key(&mut self, key: i32) {
-        match key {
-            // ESC or Q closes active window
-            27 | 113 => {
-                self.active_window = ActiveWindow::None;
+    pub fn handle_key(&mut self, key: i32, pressed: bool) {
+        if self.active_window == ActiveWindow::Doom {
+            if pressed {
+                // F11 toggles fullscreen
+                if key == 1073741893 {
+                    self.doom_fullscreen = !self.doom_fullscreen;
+                    return;
+                }
+                // ESC in fullscreen exits fullscreen
+                if key == 27 && self.doom_fullscreen {
+                    self.doom_fullscreen = false;
+                    return;
+                }
+                // Q closes window only in windowed mode
+                if (key == 113 || key == 81) && !self.doom_fullscreen {
+                    self.active_window = ActiveWindow::None;
+                    return;
+                }
             }
-            // WASD or Arrows for Doom window
-            119 | 1073741906 if self.active_window == ActiveWindow::Doom => {
-                self.doom_cam_x -= 0.3; // Forward
+
+            // Translate key and inject to Doom (both press and release)
+            if let Some(doom_key) = crate::dos::doom_runner::convert_sdl_to_doom_key(key) {
+                if let Some(ref mut runner) = self.doom_runner {
+                    runner.inject_doom_key(pressed, doom_key);
+                } else if let Ok(runner) = self.ensure_doom_runner() {
+                    runner.inject_doom_key(pressed, doom_key);
+                }
             }
-            115 | 1073741905 if self.active_window == ActiveWindow::Doom => {
-                self.doom_cam_x += 0.3; // Backward
+            return;
+        }
+
+        if pressed {
+            match key {
+                // ESC or Q closes active window on desktop
+                27 | 113 | 81 => {
+                    self.active_window = ActiveWindow::None;
+                    self.doom_fullscreen = false;
+                }
+                _ => {}
             }
-            97 | 1073741904 if self.active_window == ActiveWindow::Doom => {
-                self.doom_cam_y -= 0.3; // Left
-            }
-            100 | 1073741903 if self.active_window == ActiveWindow::Doom => {
-                self.doom_cam_y += 0.3; // Right
-            }
-            32 if self.active_window == ActiveWindow::Doom => {
-                self.doom_cam_x = 3.0;
-                self.doom_cam_y = 0.0;
-            }
-            _ => {}
         }
     }
 
@@ -195,6 +229,12 @@ impl SetunDesktop {
         self.init_desktop_buttons(dos);
         self.frame_counter += 1;
         dos.tick_timer();
+
+        // Fullscreen Doom bypasses desktop wallpaper and taskbar
+        if self.active_window == ActiveWindow::Doom && self.doom_fullscreen {
+            self.render_window_doom(dos);
+            return;
+        }
 
         // 1. Render Desktop Wallpaper: Soviet Teal / Deep Slate #006060 (palette index 96)
         let bg_color = Tryte6::from_palette_index(96).to_word21();
@@ -290,76 +330,64 @@ impl SetunDesktop {
         self.draw_string(dos, 250, 188, &tick_str, 4);
     }
 
-    /// Renders the interactive 3D Doom BSP window.
-    fn render_window_doom(&self, dos: &mut SetunDos) {
-        let wx = 44i64;
-        let wy = 14i64;
-        let ww = 246i64;
-        let wh = 164i64;
+    /// Renders the authentic native Doom engine window (or fullscreen).
+    fn render_window_doom(&mut self, dos: &mut SetunDos) {
+        let _ = self.ensure_doom_runner();
 
-        // Window frame and title
-        self.draw_window_frame(dos, wx, wy, ww, wh, "DOOM 3D - 21-TRIT BSP", 176);
+        if self.doom_fullscreen {
+            if let Some(ref mut runner) = self.doom_runner {
+                let _ = runner.step_native_tick();
+                let frame = &runner.last_frame_pixels;
+                for (i, &idx) in frame.iter().enumerate() {
+                    let col = Tryte6::from_palette_index(idx).to_word21();
+                    dos.mem.write_word_fast(FRAMEBUFFER_BASE + (i as i64), col);
+                }
+            }
+            self.draw_string(dos, 4, 4, "DOOM NATIVE [F11/ESC: WIN]", 112);
+            return;
+        }
 
-        // Render 3D BSP scene inside the window client area (wx+2 .. wx+ww-2, wy+16 .. wy+wh-20)
-        let front_sub = Subsector {
-            id: 0,
-            segs: vec![
-                WallSeg {
-                    id: 1,
-                    screen_x0: 0,
-                    screen_x1: 119,
-                    solid: true,
-                    color: Tryte6::from_palette_index(176),
-                    distance: TernaryFixed::from_f64((self.doom_cam_x - 1.0).max(0.5)),
-                },
-                WallSeg {
-                    id: 2,
-                    screen_x0: 200,
-                    screen_x1: 319,
-                    solid: true,
-                    color: Tryte6::from_palette_index(176),
-                    distance: TernaryFixed::from_f64((self.doom_cam_x - 1.0).max(0.5)),
-                },
-            ],
-        };
-        let back_sub = Subsector {
-            id: 1,
-            segs: vec![WallSeg {
-                id: 3,
-                screen_x0: 0,
-                screen_x1: 319,
-                solid: true,
-                color: Tryte6::from_palette_index(96),
-                distance: TernaryFixed::from_f64((self.doom_cam_x + 2.0).max(1.0)),
-            }],
-        };
-        let bsp_tree = BspTree {
-            nodes: vec![BspNode {
-                x: TernaryFixed::ZERO,
-                y: TernaryFixed::ZERO,
-                dx: TernaryFixed::ZERO,
-                dy: TernaryFixed::ONE,
-                front_child: BspChild::Subsector(0),
-                back_child: BspChild::Subsector(1),
-            }],
-            subsectors: vec![front_sub, back_sub],
-            root: BspChild::Node(0),
-        };
+        // Windowed mode (244x168 window with 240x150 client area scaling 320x200 Doom frame)
+        let wx = 38i64;
+        let wy = 12i64;
+        let ww = 244i64;
+        let wh = 168i64;
 
-        // Render scene to framebuffer
-        TernaryRenderer::render_bsp_scene(
-            &mut dos.mem,
-            &bsp_tree,
-            TernaryFixed::from_f64(self.doom_cam_x),
-            TernaryFixed::from_f64(self.doom_cam_y),
-        );
+        self.draw_window_frame(dos, wx, wy, ww, wh, "DOOM 1993 - NATIVE ON SETUN-DOS", 176);
 
-        // Re-draw window borders and HUD around client area to keep window frame intact
-        self.draw_window_frame_overlay(dos, wx, wy, ww, wh, "DOOM 3D - 21-TRIT BSP", 176);
+        let mut frame_rendered = false;
+        if let Some(ref mut runner) = self.doom_runner {
+            if let Ok(frame) = runner.step_native_tick() {
+                frame_rendered = true;
+                // Scale 320x200 by 3/4 to 240x150 in client area (x=40..280, y=26..176)
+                for cy in 0..150 {
+                    let y_doom = (cy * 4) / 3;
+                    let row_ofs = (y_doom * 320) as usize;
+                    let fb_row_addr = FRAMEBUFFER_BASE + (26 + cy) * 320 + 40;
+                    for cx in 0..240 {
+                        let x_doom = ((cx * 4) / 3) as usize;
+                        let idx = frame[row_ofs + x_doom];
+                        dos.mem.write_word_fast(fb_row_addr + cx, Tryte6::from_palette_index(idx).to_word21());
+                    }
+                }
+            }
+        }
 
-        // Mini Doom Status Bar at bottom of window (wy + wh - 14)
+        if !frame_rendered {
+            let dark = Tryte6::from_palette_index(0).to_word21();
+            for cy in 0..150 {
+                let fb_row_addr = FRAMEBUFFER_BASE + (26 + cy) * 320 + 40;
+                for cx in 0..240 {
+                    dos.mem.write_word_fast(fb_row_addr + cx, dark);
+                }
+            }
+            self.draw_string(dos, wx + 12, wy + 50, "INITIALIZING NATIVE DOOM ENGINE...", 215);
+            self.draw_string(dos, wx + 12, wy + 66, "VERIFYING WAD CONTAINER IN MEMORY", 112);
+        }
+
+        // Mini Doom Status Hint below client area
         self.draw_raised_rect(dos, wx + 2, wy + wh - 14, ww - 4, 12, 32);
-        self.draw_string(dos, wx + 6, wy + wh - 12, "HP:100% ARM:100% AMMO:50", 180);
+        self.draw_string(dos, wx + 4, wy + wh - 12, "WASD:MOVE | CTRL:FIRE | SPACE:USE | F11:FULL", 112);
     }
 
     /// Renders the T-Shell diagnostic terminal window.
@@ -499,6 +527,7 @@ impl SetunDesktop {
     }
 
     /// Re-draws borders and title bar around client area without clearing interior.
+    #[allow(dead_code)]
     fn draw_window_frame_overlay(&self, dos: &mut SetunDos, x: i64, y: i64, w: i64, h: i64, title: &str, title_color: u8) {
         let border_hi = Tryte6::from_palette_index(4).to_word21();
         let border_lo = Tryte6::from_palette_index(16).to_word21();

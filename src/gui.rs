@@ -23,6 +23,7 @@ const SDL_PIXELFORMAT_ABGR8888: u32 = 376840196; // SDL_PIXELFORMAT_RGBA32 / ABG
 
 const SDL_QUIT: u32 = 0x100;
 const SDL_KEYDOWN: u32 = 0x300;
+const SDL_KEYUP: u32 = 0x301;
 const SDL_MOUSEMOTION: u32 = 0x400;
 const SDL_MOUSEBUTTONDOWN: u32 = 0x401;
 const SDL_MOUSEBUTTONUP: u32 = 0x402;
@@ -280,7 +281,7 @@ impl BenchGui {
     }
 
     /// Polls events, tracking mouse movement and clicks, dispatching keys and clicks to callbacks.
-    pub fn poll_events_desktop<FKey: FnMut(i32), FClick: FnMut(i32, i32)>(
+    pub fn poll_events_desktop<FKey: FnMut(i32, bool), FClick: FnMut(i32, i32)>(
         &mut self,
         mut on_key: FKey,
         mut on_click: FClick,
@@ -294,10 +295,10 @@ impl BenchGui {
                 }
                 if ev_type == SDL_KEYDOWN {
                     let sym = event.key.keysym.sym;
-                    if sym == SDLK_ESCAPE || sym == SDLK_Q {
-                        return false;
-                    }
-                    on_key(sym);
+                    on_key(sym, true);
+                } else if ev_type == SDL_KEYUP {
+                    let sym = event.key.keysym.sym;
+                    on_key(sym, false);
                 } else if ev_type == SDL_MOUSEMOTION {
                     self.mouse_x = (event.motion.x / 2).clamp(0, (FB_WIDTH - 1) as i32);
                     self.mouse_y = (event.motion.y / 2).clamp(0, (FB_HEIGHT - 1) as i32);

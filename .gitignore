@@ -7,6 +7,7 @@
 /vendor/doomgeneric/doomgeneric/build/
 /vendor/doomgeneric/doomgeneric/doomgeneric_setun
 /vendor/doomgeneric/doomgeneric/doomgeneric
+/vendor/libdoomgeneric_core.a
 /vendor/RV32IToREBEL/
 /vendor/setun-emulator-original-isa/
 /vendor/setun-online-simulator/

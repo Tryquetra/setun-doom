@@ -79,18 +79,81 @@ fn main() {
     }
 
     if let Some(path) = exec_path {
-        println!("-> Loading user TFX executable: '{}'...", path);
-        let bytes = fs::read(&path).expect("Failed to read TFX executable");
-        let tfx = TfxExecutable::from_bytes(&bytes).expect("Invalid TFX file format");
-        let pid = dos.load_executable(&tfx, &path).expect("Failed to load TFX into kernel");
-        println!("   [OK] Task PID {} loaded at PC = {}", pid, tfx.entry_pc);
-        println!("-> Executing task...");
-        let steps = dos.run_ticks(100_000);
-        println!("   Execution completed in {} cycles.", steps);
+        if path.eq_ignore_ascii_case("doom") {
+            println!("-> Launching native Doom (1993) directly under Setun-DOS...");
+            let mut desktop = SetunDesktop::new();
+            desktop.set_wad_path(&wad_path);
+            desktop.active_window = setun_doom::dos::ActiveWindow::Doom;
+            desktop.doom_fullscreen = true;
+            let _ = desktop.ensure_doom_runner();
+            desktop.init_desktop_buttons(&mut dos);
+
+            let has_display = env::var("DISPLAY").is_ok() || env::var("WAYLAND_DISPLAY").is_ok();
+            let mut gui = if !headless && has_display {
+                println!("-> Launching SDL2 graphical window (640x400)...");
+                BenchGui::new("Setun-DOS (Level 3) - Native Doom (1993) on 21-Trit Architecture")
+            } else {
+                None
+            };
+
+            let max_frames = target_frames.unwrap_or(if gui.is_some() { usize::MAX } else { 35 });
+            let mut rgba_buf = vec![0u8; 320 * 200 * 4];
+            let mut frame = 0;
+            let mut key_events = Vec::new();
+            let mut clicked_coords = Vec::new();
+
+            while frame < max_frames {
+                if let Some(ref mut g) = gui {
+                    key_events.clear();
+                    clicked_coords.clear();
+
+                    let keep_running = g.poll_events_desktop(
+                        |key, pressed| key_events.push((key, pressed)),
+                        |cx, cy| clicked_coords.push((cx, cy)),
+                    );
+
+                    if !keep_running {
+                        println!("-> User requested exit via GUI.");
+                        break;
+                    }
+
+                    for &(key, pressed) in &key_events {
+                        desktop.handle_key(key, pressed);
+                    }
+                    for &(cx, cy) in &clicked_coords {
+                        desktop.handle_mouse_click(&mut dos, cx as i64, cy as i64);
+                    }
+
+                    desktop.mouse_x = g.mouse_x as i64;
+                    desktop.mouse_y = g.mouse_y as i64;
+                    desktop.mouse_down = g.mouse_down;
+                }
+
+                desktop.render(&mut dos);
+
+                if let Some(ref mut g) = gui {
+                    dos.mem.render_framebuffer_rgba(&mut rgba_buf);
+                    g.present_frame(&rgba_buf);
+                    g.delay(28);
+                }
+
+                frame += 1;
+            }
+        } else {
+            println!("-> Loading user TFX executable: '{}'...", path);
+            let bytes = fs::read(&path).expect("Failed to read TFX executable");
+            let tfx = TfxExecutable::from_bytes(&bytes).expect("Invalid TFX file format");
+            let pid = dos.load_executable(&tfx, &path).expect("Failed to load TFX into kernel");
+            println!("   [OK] Task PID {} loaded at PC = {}", pid, tfx.entry_pc);
+            println!("-> Executing task...");
+            let steps = dos.run_ticks(100_000);
+            println!("   Execution completed in {} cycles.", steps);
+        }
     } else {
         // Initialize desktop environment and icon manager
         println!("-> Initializing Setun-DOS Desktop Environment & Icon Manager...");
         let mut desktop = SetunDesktop::new();
+        desktop.set_wad_path(&wad_path);
         desktop.init_desktop_buttons(&mut dos);
 
         let has_display = env::var("DISPLAY").is_ok() || env::var("WAYLAND_DISPLAY").is_ok();
@@ -104,7 +167,7 @@ fn main() {
         if gui.is_some() {
             println!("   [OK] Desktop window active.");
             println!("   [OK] Clickable Desktop Icons:");
-            println!("        [1] DOOM      -> Interactive 3D BSP game window");
+            println!("        [1] DOOM      -> Authentic 1993 Doom game window (interactive)");
             println!("        [2] T-SHELL   -> Ternary diagnostic console");
             println!("        [3] TELEMETRY -> Real-time 21-trit neon accumulator & flips");
             println!("        [4] ABOUT     -> System heritage & Brusentsov tribute");
@@ -118,16 +181,16 @@ fn main() {
 
         let mut rgba_buf = vec![0u8; 320 * 200 * 4];
         let mut frame = 0;
-        let mut pressed_keys = Vec::new();
+        let mut key_events = Vec::new();
         let mut clicked_coords = Vec::new();
 
         while frame < max_frames {
             if let Some(ref mut g) = gui {
-                pressed_keys.clear();
+                key_events.clear();
                 clicked_coords.clear();
 
                 let keep_running = g.poll_events_desktop(
-                    |key| pressed_keys.push(key),
+                    |key, pressed| key_events.push((key, pressed)),
                     |cx, cy| clicked_coords.push((cx, cy)),
                 );
 
@@ -136,8 +199,8 @@ fn main() {
                     break;
                 }
 
-                for &key in &pressed_keys {
-                    desktop.handle_key(key);
+                for &(key, pressed) in &key_events {
+                    desktop.handle_key(key, pressed);
                 }
                 for &(cx, cy) in &clicked_coords {
                     desktop.handle_mouse_click(&mut dos, cx as i64, cy as i64);

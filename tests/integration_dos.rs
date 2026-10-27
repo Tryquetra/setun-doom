@@ -341,3 +341,29 @@ fn test_setun_desktop_gui_interaction() {
     desktop.handle_mouse_click(&mut dos, 30, 160);
     assert_eq!(desktop.active_window, ActiveWindow::About);
 }
+
+#[test]
+fn test_native_doom_execution_in_setun_dos() {
+    use setun_doom::dos::doom_runner::DoomDosRunner;
+
+    let mut runner = DoomDosRunner::new(None).expect("Failed to create Doom runner");
+    runner
+        .init_native_engine("vendor/DOOM1.WAD")
+        .expect("Failed to initialize native Doom engine");
+
+    assert!(DoomDosRunner::is_engine_initialized());
+
+    // Inject movement keys
+    runner.inject_doom_key(true, 0xad); // Up arrow
+    runner.inject_doom_key(false, 0xad); // Release
+
+    // Step 5 native ticks
+    for _ in 0..5 {
+        let frame = runner
+            .step_native_tick()
+            .expect("Native Doom tick execution failed");
+        assert_eq!(frame.len(), 320 * 200);
+    }
+
+    assert!(runner.frame_counter >= 5);
+}
