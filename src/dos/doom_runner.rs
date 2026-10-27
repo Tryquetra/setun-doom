@@ -55,17 +55,23 @@ impl DoomDosRunner {
             .map_err(|e| format!("Failed to acquire Doom lock: {}", e))?;
 
         if !DOOM_INITIALIZED.load(Ordering::SeqCst) {
-            let args = vec![
-                CString::new("setun_dos").map_err(|e| e.to_string())?,
-                CString::new("-iwad").map_err(|e| e.to_string())?,
-                CString::new(wad_path).map_err(|e| e.to_string())?,
-            ];
+            // Leak arguments to static memory so C engine's global myargv remains valid permanently
+            let args: &'static [CString] = Box::leak(
+                vec![
+                    CString::new("setun_dos").map_err(|e| e.to_string())?,
+                    CString::new("-iwad").map_err(|e| e.to_string())?,
+                    CString::new(wad_path).map_err(|e| e.to_string())?,
+                ]
+                .into_boxed_slice(),
+            );
             let mut c_args: Vec<*mut std::ffi::c_char> =
                 args.iter().map(|s| s.as_ptr() as *mut _).collect();
             c_args.push(std::ptr::null_mut());
+            let leaked_argv: &'static mut [*mut std::ffi::c_char] =
+                Box::leak(c_args.into_boxed_slice());
 
             unsafe {
-                doomgeneric_Create((c_args.len() - 1) as i32, c_args.as_mut_ptr());
+                doomgeneric_Create((leaked_argv.len() - 1) as i32, leaked_argv.as_mut_ptr());
             }
             DOOM_INITIALIZED.store(true, Ordering::SeqCst);
         }
