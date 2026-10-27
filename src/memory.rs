@@ -87,7 +87,7 @@ pub struct Memory {
     /// Vector of `4,782,969` 64-bit words containing `Word21` values.
     cells: Vec<i64>,
     /// 256-color RGBA palette (`[R, G, B, A]`) for fast translation in `DG_DrawFrame`.
-    palette_rgba: [[u8; 4]; 256],
+    pub palette_rgba: [[u8; 4]; 256],
 }
 
 impl Memory {

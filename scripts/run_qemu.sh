@@ -7,10 +7,8 @@ KERNEL_BIN="$REPO_ROOT/target/riscv64gc-unknown-none-elf/release/setun-kernel"
 
 cd "$REPO_ROOT"
 
-if [ ! -f "$KERNEL_BIN" ]; then
-    echo "Compilando Setun-DOS RISC-V Bare-Metal Unikernel..."
-    cargo build --target riscv64gc-unknown-none-elf --release -p setun-kernel
-fi
+echo "Compilando Setun-DOS RISC-V Bare-Metal Unikernel..."
+cargo build --target riscv64gc-unknown-none-elf --release -p setun-kernel
 
 if ! command -v qemu-system-riscv64 &> /dev/null; then
     echo "============================================================"
@@ -21,13 +19,21 @@ if ! command -v qemu-system-riscv64 &> /dev/null; then
     exit 1
 fi
 
+DISPLAY_OPT="${DISPLAY_OPT:--display sdl}"
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    DISPLAY_OPT="-nographic"
+fi
+
 echo "============================================================"
 echo " Executando Setun-DOS RISC-V Unikernel no QEMU (virt)..."
+echo " Opção de exibição: $DISPLAY_OPT"
 echo "============================================================"
 qemu-system-riscv64 \
     -machine virt \
     -cpu rv64 \
     -m 512M \
-    -nographic \
+    -device VGA,vgamem_mb=16 \
+    -serial stdio \
+    $DISPLAY_OPT \
     -bios default \
     -kernel "$KERNEL_BIN"
