@@ -19,7 +19,7 @@ if ! command -v qemu-system-riscv64 &> /dev/null; then
     exit 1
 fi
 
-DISPLAY_OPT="${DISPLAY_OPT:--display sdl}"
+DISPLAY_OPT="${DISPLAY_OPT:--display sdl,show-cursor=on}"
 if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     DISPLAY_OPT="-nographic"
 fi
@@ -27,12 +27,14 @@ fi
 echo "============================================================"
 echo " Executando Setun-DOS RISC-V Unikernel no QEMU (virt)..."
 echo " Opção de exibição: $DISPLAY_OPT"
+echo " Soltar ponteiro do mouse: Pressione Ctrl + Alt + G"
 echo "============================================================"
 qemu-system-riscv64 \
     -machine virt \
     -cpu rv64 \
     -m 512M \
     -device VGA,vgamem_mb=16 \
+    -device virtio-tablet-pci \
     -serial stdio \
     $DISPLAY_OPT \
     -bios default \
