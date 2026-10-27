@@ -6,6 +6,9 @@
 use crate::cpu::{Cpu, INDEX_REGISTER_COUNT};
 use crate::word::Word21;
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, string::ToString, vec::Vec};
+
 /// Execution status of a Setun-DOS task.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskState {

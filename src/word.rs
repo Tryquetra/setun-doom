@@ -9,6 +9,9 @@ use crate::trit::Trit;
 use core::fmt;
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
+#[cfg(not(feature = "std"))]
+use alloc::string::String;
+
 /// Precomputed lookup table of powers of 3 (`3^0` through `3^27`).
 pub const POW3: [i64; 28] = [
     1,

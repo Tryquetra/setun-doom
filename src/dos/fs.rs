@@ -4,6 +4,9 @@
 
 use crate::word::Word21;
 
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, string::ToString, vec::Vec};
+
 /// Represents an in-memory file or Doom WAD lump stored in Setun-DOS.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VirtualFile {
@@ -49,7 +52,7 @@ impl SetunFileSystem {
             return Err("WAD buffer too small for header".to_string());
         }
 
-        let magic = std::str::from_utf8(&wad_bytes[0..4])
+        let magic = core::str::from_utf8(&wad_bytes[0..4])
             .map_err(|_| "Invalid UTF-8 in WAD magic header".to_string())?;
         if magic != "IWAD" && magic != "PWAD" {
             return Err(format!("Unrecognized WAD identification tag: '{}'", magic));

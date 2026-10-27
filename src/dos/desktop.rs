@@ -13,6 +13,9 @@ use crate::dos::syscall::GuiButton;
 use crate::dos::SetunDos;
 use crate::word::Tryte6;
 
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, string::ToString};
+
 pub const BTN_ICON_DOOM: i64 = 1;
 pub const BTN_ICON_SHELL: i64 = 2;
 pub const BTN_ICON_TELEMETRY: i64 = 3;
@@ -41,6 +44,7 @@ pub struct SetunDesktop {
     pub frame_counter: u64,
     pub doom_fullscreen: bool,
     pub wad_path: String,
+    #[cfg(feature = "std")]
     pub doom_runner: Option<crate::dos::doom_runner::DoomDosRunner>,
 }
 
@@ -56,6 +60,7 @@ impl SetunDesktop {
             frame_counter: 0,
             doom_fullscreen: false,
             wad_path: "vendor/DOOM1.WAD".to_string(),
+            #[cfg(feature = "std")]
             doom_runner: None,
         }
     }
@@ -66,6 +71,7 @@ impl SetunDesktop {
     }
 
     /// Ensures the native Doom engine runner is initialized.
+    #[cfg(feature = "std")]
     pub fn ensure_doom_runner(&mut self) -> Result<&mut crate::dos::doom_runner::DoomDosRunner, String> {
         if self.doom_runner.is_none() {
             let mut runner = crate::dos::doom_runner::DoomDosRunner::new(None)?;
@@ -151,6 +157,7 @@ impl SetunDesktop {
                 match btn.id {
                     BTN_ICON_DOOM => {
                         self.active_window = ActiveWindow::Doom;
+                        #[cfg(feature = "std")]
                         let _ = self.ensure_doom_runner();
                     }
                     BTN_ICON_SHELL => {
@@ -205,6 +212,7 @@ impl SetunDesktop {
             }
 
             // Translate key and inject to Doom (both press and release)
+            #[cfg(feature = "std")]
             if let Some(doom_key) = crate::dos::doom_runner::convert_sdl_to_doom_key(key) {
                 if let Some(ref mut runner) = self.doom_runner {
                     runner.inject_doom_key(pressed, doom_key);
@@ -234,6 +242,7 @@ impl SetunDesktop {
         dos.tick_timer();
 
         // Synchronize active Doom runtime palette into Setun-DOS VGA memory
+        #[cfg(feature = "std")]
         if let Some(palette) = crate::mmo::get_active_palette() {
             dos.mem.load_playpal(&palette);
         }
@@ -340,8 +349,10 @@ impl SetunDesktop {
 
     /// Renders the authentic native Doom engine window (or fullscreen).
     fn render_window_doom(&mut self, dos: &mut SetunDos) {
+        #[cfg(feature = "std")]
         let _ = self.ensure_doom_runner();
 
+        #[cfg(feature = "std")]
         if self.doom_fullscreen {
             if let Some(ref mut runner) = self.doom_runner {
                 let _ = runner.step_native_tick();
@@ -363,7 +374,9 @@ impl SetunDesktop {
 
         self.draw_window_frame(dos, wx, wy, ww, wh, "DOOM 1993 - NATIVE ON SETUN-DOS", 176);
 
+        #[allow(unused_mut)]
         let mut frame_rendered = false;
+        #[cfg(feature = "std")]
         if let Some(ref mut runner) = self.doom_runner {
             if let Ok(frame) = runner.step_native_tick() {
                 frame_rendered = true;

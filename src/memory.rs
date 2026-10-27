@@ -18,6 +18,9 @@ use std::fmt;
 
 use crate::word::{Tryte6, Word21, HALF_POW3, POW3};
 
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 /// Total capacity of 14-trit addressing space: $3^{14} = 4,782,969$ words.
 pub const MEMORY_SIZE: usize = POW3[14] as usize; // 4_782_969
 

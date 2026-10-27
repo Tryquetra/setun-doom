@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Robson Cassiano (https://eu.robsoncassiano.software)
 // SPDX-License-Identifier: MIT
 
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! # Setun-Doom Architecture Emulator
 //!
 //! Rust emulator for a balanced ternary computer architecture inspired by
@@ -27,38 +29,57 @@
 //!   `IX0..IX8` registers, `0t+0-` ternary literals, and reverse disassembler.
 //! - [`render`]: 3D column rasterizer (`R_DrawColumn`), floor rasterizer (`R_DrawSpan`), and BSP scene renderer.
 
+#[cfg(not(feature = "std"))]
+#[macro_use]
+extern crate alloc;
+
+#[cfg(feature = "std")]
 pub mod assembler;
+#[cfg(feature = "std")]
 pub mod benchmarks;
 pub mod bsp;
+#[cfg(feature = "std")]
 pub mod codegen;
 pub mod cpu;
+#[cfg(feature = "std")]
 pub mod dbt;
 pub mod dos;
+#[cfg(feature = "std")]
 pub mod elf;
 pub mod fixed;
+#[cfg(feature = "std")]
 pub mod gui;
 pub mod memory;
+#[cfg(feature = "std")]
 pub mod mmo;
 pub mod render;
 pub mod trit;
 pub mod word;
 
+#[cfg(feature = "std")]
 pub use assembler::{AsmError, SetunAssembler};
+#[cfg(feature = "std")]
 pub use benchmarks::{
     BenchmarkRunner, FixedPrecisionReport, FullBenchmarkSuiteReport, IsaBenchmarkResult,
     RenderThroughputReport,
 };
 pub use bsp::{BspChild, BspNode, BspTree, Subsector, TernaryOcclusionClipper, WallSeg};
 pub use cpu::{Cpu, Instruction, Opcode, PowerTelemetry};
+#[cfg(feature = "std")]
 pub use dbt::{
     run_all_riscv_isa_tests, DbtError, DbtExecutionReport, DbtExitReason, RiscvIsaSuiteSummary,
     Rv32iInstr, SetunDbtEngine, SetunTranslatedOp, RISCV_ISA_ELF_TESTS,
 };
-pub use dos::{doom_runner::DoomDosRunner, tfx::TfxExecutable, ActiveWindow, SetunDesktop, SetunDos};
+#[cfg(feature = "std")]
+pub use dos::doom_runner::DoomDosRunner;
+pub use dos::{tfx::TfxExecutable, ActiveWindow, SetunDesktop, SetunDos};
+#[cfg(feature = "std")]
 pub use elf::{Elf32Image, ElfError, ElfSection, ElfSegment, LoadedElfLayout};
 pub use fixed::{TernaryFixed, FRAC_SCALE, FRAC_TRITS, INT_TRITS};
+#[cfg(feature = "std")]
 pub use gui::BenchGui;
 pub use memory::{Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE};
+#[cfg(feature = "std")]
 pub use mmo::{
     DG_DrawFrame, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init, DG_SleepMs,
     DmaTranscodeMode, KeyEvent, SetunDoomMachine, WadDmaLoader, WadLumpInfo, global_machine,

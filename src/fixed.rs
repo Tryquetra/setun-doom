@@ -110,7 +110,12 @@ impl TernaryFixed {
     #[must_use]
     #[inline]
     pub fn from_f64(val: f64) -> Self {
-        let scaled = (val * (FRAC_SCALE as f64)).round() as i64;
+        let x = val * (FRAC_SCALE as f64);
+        let scaled = if x >= 0.0 {
+            (x + 0.5) as i64
+        } else {
+            (x - 0.5) as i64
+        };
         Self::from_raw_i64(scaled)
     }
 

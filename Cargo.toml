@@ -1,3 +1,9 @@
+[workspace]
+members = [
+    ".",
+    "crates/setun-kernel",
+]
+
 [package]
 name = "setun-doom"
 version = "0.1.0"
@@ -8,21 +14,28 @@ homepage = "https://eu.robsoncassiano.software"
 repository = "https://github.com/Tryquetra/setun-doom"
 description = "Balanced Ternary Computer Emulator inspired by Setun (1958) and Setun-70 (1970), scaled to 21-trit architecture for Doom (doomgeneric)"
 
+[features]
+default = ["std"]
+std = []
+
 [lib]
 name = "setun_doom"
-crate-type = ["rlib", "cdylib", "staticlib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "setun-doom"
 path = "src/main.rs"
+required-features = ["std"]
 
 [[bin]]
 name = "setun-ld"
 path = "src/bin/setun_ld.rs"
+required-features = ["std"]
 
 [[bin]]
 name = "setun-run"
 path = "src/bin/setun_run.rs"
+required-features = ["std"]
 
 [profile.test]
 opt-level = 2

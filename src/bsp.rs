@@ -22,6 +22,9 @@ use crate::memory::FB_WIDTH;
 use crate::trit::Trit;
 use crate::word::{Word21, Tryte6};
 
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 /// Identifier of a child in the BSP tree: points to either an internal splitter node or a leaf (Subsector).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BspChild {

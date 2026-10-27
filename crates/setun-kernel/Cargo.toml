@@ -1,0 +1,19 @@
+[package]
+name = "setun-kernel"
+version = "0.1.0"
+edition = "2021"
+authors = ["Robson Cassiano <https://eu.robsoncassiano.software>"]
+license = "MIT"
+description = "RISC-V Bare-Metal Unikernel for Setun-DOS on QEMU"
+
+[dependencies]
+setun-doom = { path = "../..", default-features = false }
+buddy_system_allocator = "0.13.0"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+
+[profile.dev]
+panic = "abort"

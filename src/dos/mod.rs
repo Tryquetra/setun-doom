@@ -5,6 +5,7 @@
 //! and native hardware framebuffer rendering.
 
 pub mod desktop;
+#[cfg(feature = "std")]
 pub mod doom_runner;
 pub mod fs;
 pub mod memmap;
@@ -13,6 +14,9 @@ pub mod task;
 pub mod tfx;
 
 pub use desktop::{ActiveWindow, SetunDesktop};
+
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, string::ToString, vec::Vec};
 
 use crate::cpu::{Cpu, CpuTrap};
 use crate::dos::fs::SetunFileSystem;

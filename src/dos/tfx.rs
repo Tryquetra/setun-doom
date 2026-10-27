@@ -7,6 +7,9 @@ use crate::cpu::Instruction;
 use crate::memory::Memory;
 use crate::word::Word21;
 
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec::Vec};
+
 /// Magic signature for Setun-DOS executable binaries: `TFX1` (1_993_121).
 pub const TFX_MAGIC: i64 = 1_993_121;
 

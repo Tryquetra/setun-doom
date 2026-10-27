@@ -15,6 +15,9 @@ use crate::dos::memmap::{
 use crate::memory::Memory;
 use crate::word::{Tryte6, Word21};
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+
 pub const SYS_DRAW_WINDOW: i64 = 0;
 pub const SYS_SET_PIXEL: i64 = 1;
 pub const SYS_GET_KEY: i64 = 2;

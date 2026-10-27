@@ -2,6 +2,11 @@ use std::path::Path;
 use std::process::Command;
 
 fn main() {
+    let has_std = std::env::var("CARGO_FEATURE_STD").is_ok();
+    if !has_std {
+        return;
+    }
+
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let vendor_dir = Path::new(&manifest_dir).join("vendor");
     let archive_path = vendor_dir.join("libdoomgeneric_core.a");
