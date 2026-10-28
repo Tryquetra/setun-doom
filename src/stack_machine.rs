@@ -12,6 +12,11 @@
 
 use core::fmt;
 
+#[cfg(not(feature = "std"))]
+use alloc::string::{String, ToString};
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use crate::memory::{Memory, MemoryError};
 use crate::word::{wrap_balanced, Word21};
 
@@ -404,6 +409,185 @@ impl StackProgram {
     }
 }
 
+/// Kinds of assembly errors raised by [`StackAssembler`].
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StackAsmErrorKind {
+    /// Mnemonic not present in the two-stack ISA.
+    UnknownMnemonic(String),
+    /// Instruction requires an operand.
+    MissingOperand(String),
+    /// Instruction received more tokens than it accepts.
+    UnexpectedToken(String),
+    /// Numeric operand could not be parsed.
+    InvalidNumber(String),
+    /// Operand outside the 12-trit range.
+    OperandOutOfRange(i64),
+    /// Label referenced but never defined.
+    UndefinedLabel(String),
+    /// Label defined twice.
+    DuplicateLabel(String),
+}
+
+/// Assembly error with the source line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StackAsmError {
+    /// One-based source line.
+    pub line: usize,
+    /// Failure kind.
+    pub kind: StackAsmErrorKind,
+}
+
+impl fmt::Display for StackAsmError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "line {}: ", self.line)?;
+        match &self.kind {
+            StackAsmErrorKind::UnknownMnemonic(name) => write!(f, "unknown mnemonic '{name}'"),
+            StackAsmErrorKind::MissingOperand(name) => write!(f, "'{name}' requires an operand"),
+            StackAsmErrorKind::UnexpectedToken(token) => write!(f, "unexpected token '{token}'"),
+            StackAsmErrorKind::InvalidNumber(token) => write!(f, "invalid number '{token}'"),
+            StackAsmErrorKind::OperandOutOfRange(value) => {
+                write!(f, "operand {value} outside the 12-trit range")
+            }
+            StackAsmErrorKind::UndefinedLabel(name) => write!(f, "undefined label '{name}'"),
+            StackAsmErrorKind::DuplicateLabel(name) => write!(f, "duplicate label '{name}'"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for StackAsmError {}
+
+/// Largest operand representable in two balanced trytes.
+pub const MAX_OPERAND: i64 = 265_720;
+
+/// Textual assembler for the two-stack tryte stream.
+///
+/// Mnemonics are case-insensitive. `;` or `#` starts a comment. Labels are written as `name:`
+/// and may be used by `PUSH`, `JMP`, `JZ` and `CALL`.
+pub struct StackAssembler;
+
+impl StackAssembler {
+    /// Assembles `source` into a tryte stream.
+    pub fn assemble(source: &str) -> Result<Vec<i64>, StackAsmError> {
+        let mut code: Vec<i64> = Vec::new();
+        let mut labels: Vec<(String, usize)> = Vec::new();
+        let mut fixups: Vec<(usize, String, usize)> = Vec::new();
+
+        for (index, raw_line) in source.lines().enumerate() {
+            let line = index + 1;
+            let stripped = raw_line.split([';', '#']).next().unwrap_or("").trim();
+            if stripped.is_empty() {
+                continue;
+            }
+
+            if let Some(label) = stripped.strip_suffix(':') {
+                let name = label.trim();
+                if name.is_empty() || name.contains(char::is_whitespace) {
+                    return Err(StackAsmError {
+                        line,
+                        kind: StackAsmErrorKind::UnexpectedToken(stripped.to_string()),
+                    });
+                }
+                if labels.iter().any(|(existing, _)| existing == name) {
+                    return Err(StackAsmError {
+                        line,
+                        kind: StackAsmErrorKind::DuplicateLabel(name.to_string()),
+                    });
+                }
+                labels.push((name.to_string(), code.len()));
+                continue;
+            }
+
+            let mut tokens = stripped.split_whitespace();
+            let mnemonic = tokens.next().unwrap_or("");
+            let operand = tokens.next();
+            if tokens.next().is_some() {
+                return Err(StackAsmError {
+                    line,
+                    kind: StackAsmErrorKind::UnexpectedToken(stripped.to_string()),
+                });
+            }
+
+            let op = match mnemonic.to_ascii_uppercase().as_str() {
+                "HALT" => StackOp::Halt,
+                "PUSH" => StackOp::Push,
+                "POP" => StackOp::Pop,
+                "DUP" => StackOp::Dup,
+                "SWAP" => StackOp::Swap,
+                "ADD" => StackOp::Add,
+                "SUB" => StackOp::Sub,
+                "MUL" => StackOp::Mul,
+                "DIV" => StackOp::Div,
+                "JMP" => StackOp::Jmp,
+                "JZ" => StackOp::Jz,
+                "CALL" => StackOp::Call,
+                "RET" => StackOp::Ret,
+                "LOAD" => StackOp::Load,
+                "STORE" => StackOp::Store,
+                other => {
+                    return Err(StackAsmError {
+                        line,
+                        kind: StackAsmErrorKind::UnknownMnemonic(other.to_string()),
+                    })
+                }
+            };
+
+            let takes_operand = matches!(
+                op,
+                StackOp::Push | StackOp::Jmp | StackOp::Jz | StackOp::Call
+            );
+            code.push(op as i64);
+
+            match (takes_operand, operand) {
+                (false, None) => {}
+                (false, Some(token)) => {
+                    return Err(StackAsmError {
+                        line,
+                        kind: StackAsmErrorKind::UnexpectedToken(token.to_string()),
+                    })
+                }
+                (true, None) => {
+                    return Err(StackAsmError {
+                        line,
+                        kind: StackAsmErrorKind::MissingOperand(mnemonic.to_string()),
+                    })
+                }
+                (true, Some(token)) => match token.parse::<i64>() {
+                    Ok(value) => {
+                        if value.abs() > MAX_OPERAND {
+                            return Err(StackAsmError {
+                                line,
+                                kind: StackAsmErrorKind::OperandOutOfRange(value),
+                            });
+                        }
+                        code.extend_from_slice(&pack_operand(value));
+                    }
+                    Err(_) => {
+                        let position = code.len();
+                        code.extend_from_slice(&pack_operand(0));
+                        fixups.push((position, token.to_string(), line));
+                    }
+                },
+            }
+        }
+
+        for (position, name, line) in fixups {
+            let Some((_, target)) = labels.iter().find(|(label, _)| label == &name) else {
+                return Err(StackAsmError {
+                    line,
+                    kind: StackAsmErrorKind::UndefinedLabel(name),
+                });
+            };
+            let [low, high] = pack_operand(*target as i64);
+            code[position] = low;
+            code[position + 1] = high;
+        }
+
+        Ok(code)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,6 +737,95 @@ mod tests {
         let (machine, _) = run_code(&code);
         assert_eq!(machine.operand_sp, OPERAND_STACK_TOP - 2);
         assert_eq!(machine.return_sp, RETURN_STACK_TOP);
+    }
+
+    #[test]
+    fn test_assembler_expression_and_comments() {
+        let source = r#"
+            ; ((5 - 2) * (8 + 4)) / 6
+            push 5
+            push 2
+            sub
+            push 8
+            push 4
+            add
+            mul          # multiply the two partial results
+            push 6
+            div
+            halt
+        "#;
+        let code = StackAssembler::assemble(source).expect("assembles");
+        assert_eq!(evaluate(&code), 6);
+    }
+
+    #[test]
+    fn test_assembler_labels_forward_and_backward() {
+        let source = r#"
+            push 1
+            push 5
+            push 700
+            store
+        loop:
+            push 700
+            load
+            dup
+            jz done
+            mul
+            push 700
+            load
+            push 1
+            sub
+            push 700
+            store
+            jmp loop
+        done:
+            pop
+            halt
+        "#;
+        let code = StackAssembler::assemble(source).expect("assembles");
+        assert_eq!(evaluate(&code), 120);
+    }
+
+    #[test]
+    fn test_assembler_rejects_undefined_label() {
+        let error = StackAssembler::assemble("jmp nowhere").expect_err("must fail");
+        assert_eq!(error.line, 1);
+        assert_eq!(
+            error.kind,
+            StackAsmErrorKind::UndefinedLabel("nowhere".to_string())
+        );
+    }
+
+    #[test]
+    fn test_assembler_rejects_duplicate_label() {
+        let error = StackAssembler::assemble("start:\nhalt\nstart:\nhalt").expect_err("must fail");
+        assert_eq!(error.line, 3);
+        assert_eq!(
+            error.kind,
+            StackAsmErrorKind::DuplicateLabel("start".to_string())
+        );
+    }
+
+    #[test]
+    fn test_assembler_rejects_out_of_range_operand() {
+        let error = StackAssembler::assemble("push 300000").expect_err("must fail");
+        assert_eq!(error.kind, StackAsmErrorKind::OperandOutOfRange(300_000));
+    }
+
+    #[test]
+    fn test_assembler_rejects_unknown_mnemonic_and_missing_operand() {
+        assert!(matches!(
+            StackAssembler::assemble("banana")
+                .expect_err("must fail")
+                .kind,
+            StackAsmErrorKind::UnknownMnemonic(_)
+        ));
+        assert!(matches!(
+            StackAssembler::assemble("push")
+                .expect_err("must fail")
+                .kind,
+            StackAsmErrorKind::MissingOperand(_)
+        ));
     }
 
     #[test]

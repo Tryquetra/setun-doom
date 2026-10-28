@@ -65,7 +65,7 @@ cargo build --release -p setun-ffi
 # Cross-compile the Level 1 RV32IM Doom guest (clang + rust-lld)
 make -C vendor/doomgeneric/riscv32
 
-# Run unit tests and integration tests (68 tests, ~2.7s execution)
+# Run unit tests and integration tests (74 tests, ~2.8s execution)
 cargo test
 ```
 
@@ -108,7 +108,7 @@ Outputs:
 * [`src/dbt.rs`](file:///home/robson/coding/setun-doom/src/dbt.rs): Dynamic binary translator (RV32IM to Setun 21-trit), flat operation arena with a direct PC index, peephole fusions, and the `VERACITY` const-generic execution mode.
 * [`src/bsp.rs`](file:///home/robson/coding/setun-doom/src/bsp.rs) / [`src/render.rs`](file:///home/robson/coding/setun-doom/src/render.rs): Trichotomous BSP geometry clipper (`solidsegs`) and 3D column rasterizer.
 * [`src/mmo.rs`](file:///home/robson/coding/setun-doom/src/mmo.rs): FFI bridge and C ABI exports linking `doomgeneric` to `libsetun_ffi.a` (`crates/setun-ffi`).
-* [`src/stack_machine.rs`](file:///home/robson/coding/setun-doom/src/stack_machine.rs): Setun-70 two-stack RPN machine over ternary memory (operand and return stacks, tryte-stream decoder), independent of the accumulator CPU and the DBT.
+* [`src/stack_machine.rs`](file:///home/robson/coding/setun-doom/src/stack_machine.rs): Setun-70 two-stack RPN machine over ternary memory (operand and return stacks, tryte-stream decoder, textual assembler with labels and typed errors), independent of the accumulator CPU and the DBT.
 * [`src/dos/`](file:///home/robson/coding/setun-doom/src/dos/): Setun-DOS kernel, static memory mapping, TFX loader, trichotomic syscalls, and Doom runner.
 * [`vendor/doomgeneric/doomgeneric/doomgeneric_setun.c`](file:///home/robson/coding/setun-doom/vendor/doomgeneric/doomgeneric/doomgeneric_setun.c): SDL2 platform driver with interactive telemetry HUD.
 * [`vendor/doomgeneric/riscv32/`](file:///home/robson/coding/setun-doom/vendor/doomgeneric/riscv32): freestanding RV32IM guest port (libc shim with word-wise copies, soft-float builtins, `ecall` ABI, linker script, Makefile).

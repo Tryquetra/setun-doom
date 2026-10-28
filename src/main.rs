@@ -12,8 +12,9 @@
 
 use setun_doom::{
     lock_machine, BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer,
-    DG_GetKey, DG_GetTicksMs, DG_Init, SetunAssembler, Subsector, TernaryFixed, TernaryRenderer,
-    Tryte6, WallSeg, Word21, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
+    DG_GetKey, DG_GetTicksMs, DG_Init, Memory, SetunAssembler, StackAssembler, StackMachine,
+    Subsector, TernaryFixed, TernaryRenderer, Tryte6, WallSeg, Word21, FB_HEIGHT, FB_SIZE,
+    FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
 };
 
 fn main() {
@@ -170,6 +171,73 @@ fn main() {
         machine.push_key_event(true, b'w');
     }
 
+    // Setun-70 two-stack RPN demo (DSSP-like), independent of the accumulator CPU.
+    let rpn_factorial = r#"
+        ; factorial(6): accumulator on the operand stack, counter in MEM[700]
+        push 1
+        push 6
+        push 700
+        store
+    loop:
+        push 700
+        load
+        dup
+        jz done
+        mul
+        push 700
+        load
+        push 1
+        sub
+        push 700
+        store
+        jmp loop
+    done:
+        pop
+        halt
+    "#;
+    let factorial_code = StackAssembler::assemble(rpn_factorial).expect("RPN factorial assembly");
+    let mut rpn_memory = Memory::new();
+    let mut rpn = StackMachine::new();
+    rpn.run(&mut rpn_memory, &factorial_code, 10_000)
+        .expect("RPN factorial run");
+    let factorial = rpn.pop(&rpn_memory).expect("factorial result");
+
+    let rpn_expression = r#"
+        push 5
+        push 2
+        sub
+        push 8
+        push 4
+        add
+        mul
+        push 6
+        div
+        halt
+    "#;
+    let expression_code =
+        StackAssembler::assemble(rpn_expression).expect("RPN expression assembly");
+    let mut expression_memory = Memory::new();
+    let mut expression = StackMachine::new();
+    expression
+        .run(&mut expression_memory, &expression_code, 10_000)
+        .expect("RPN expression run");
+    let expression_result = expression
+        .pop(&expression_memory)
+        .expect("expression result");
+
+    println!(
+        " * Setun-70 RPN      : factorial(6) = {} | {} trytes | {} steps | {} stack words",
+        factorial,
+        factorial_code.len(),
+        rpn.steps,
+        rpn.words_moved
+    );
+    println!(
+        " * Setun-70 Density  : ((5-2)*(8+4))/6 = {} | {} stack instructions vs 22 accumulator cycles",
+        expression_result,
+        expression.steps
+    );
+
     let mut rgba = vec![0u8; FB_SIZE * 4];
     // SAFETY: rgba vector is allocated with FB_SIZE * 4 bytes matching the expected RGBA output buffer.
     unsafe {
@@ -293,22 +361,27 @@ fn main() {
     );
     println!(
         " * Bare-Metal Console Output (Syscall): {}",
-        String::from_utf8_lossy(&doom_report.stdout_buffer).trim().replace('\n', " | ")
+        String::from_utf8_lossy(&doom_report.stdout_buffer)
+            .trim()
+            .replace('\n', " | ")
     );
     println!("==============================================================================================================");
 
     // If --no-gui argument is not provided and DISPLAY is set, open interactive graphical interface
-    let enable_gui = !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
+    let enable_gui =
+        !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
     if enable_gui {
         println!("\n[GUI] Initializing testbench graphical window (SDL2 640x400)...");
         println!("[GUI] Interactive controls: W/S (camera forward/backward) | A/D (lateral) | Space (reset) | ESC/Q (quit)");
 
-        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench - 21-Trit BSP & ALU Visualizer") {
+        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench - 21-Trit BSP & ALU Visualizer")
+        {
             let mut last_cam_x = gui.cam_x;
             let mut last_cam_y = gui.cam_y;
 
             while gui.poll_events() {
-                if (gui.cam_x - last_cam_x).abs() > 0.001 || (gui.cam_y - last_cam_y).abs() > 0.001 {
+                if (gui.cam_x - last_cam_x).abs() > 0.001 || (gui.cam_y - last_cam_y).abs() > 0.001
+                {
                     last_cam_x = gui.cam_x;
                     last_cam_y = gui.cam_y;
 
