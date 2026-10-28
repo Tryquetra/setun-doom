@@ -54,6 +54,8 @@ pub mod memory;
 #[cfg(feature = "std")]
 pub mod mmo;
 pub mod rebel6;
+#[cfg(all(feature = "std", target_arch = "x86_64"))]
+pub mod simd;
 pub mod render;
 pub mod stack_machine;
 pub mod trit;

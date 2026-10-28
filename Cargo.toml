@@ -58,6 +58,11 @@ name = "rebel6_doom"
 path = "src/bin/rebel6_doom.rs"
 required-features = ["std"]
 
+[[bin]]
+name = "simd_bench"
+path = "src/bin/simd_bench.rs"
+required-features = ["std"]
+
 [profile.test]
 opt-level = 2
 
