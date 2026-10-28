@@ -578,7 +578,8 @@ impl Cpu {
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
                     let acc = self.acc;
-                    let (sum, _cout) = self.add_with_carry_stats(acc, val);                    self.set_acc(sum);
+                    let (sum, _cout) = self.add_with_carry_stats(acc, val);
+                    self.set_acc(sum);
                 }
 
                 Opcode::Sub => {

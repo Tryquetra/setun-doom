@@ -1428,11 +1428,13 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             }
             Rv32iInstr::Slli { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) << (shamt & 0x1f)) as i32);                self.write_reg(rd, res)?;
+                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) << (shamt & 0x1f)) as i32);
+                self.write_reg(rd, res)?;
             }
             Rv32iInstr::Srli { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) >> (shamt & 0x1f)) as i32);                self.write_reg(rd, res)?;
+                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) >> (shamt & 0x1f)) as i32);
+                self.write_reg(rd, res)?;
             }
             Rv32iInstr::Srai { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
