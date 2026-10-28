@@ -22,11 +22,11 @@
 //!      pass through the hardware base converter by J. Ramil Alvarez (1974) in [`Cpu`],
 //!      recording all physical carry propagations.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 
-use crate::cpu::{Cpu, Instruction, Opcode, PowerTelemetry};
+use crate::cpu::{Cpu, PowerTelemetry};
 use crate::elf::{
     read_elf_u16_le, read_elf_u32_le, read_elf_u8, write_elf_u8, Elf32Image, ElfError,
     LoadedElfLayout, DEFAULT_ELF_MEMORY_BASE, DEFAULT_RV32I_STACK_TOP,
@@ -37,12 +37,6 @@ use crate::word::Word21;
 
 /// Base address in Setun memory for the `RV32I` register file `x0..x31`.
 pub const DBT_REGISTER_FILE_BASE: usize = 500;
-
-/// Base address in Setun memory for the translated `Word21` instruction cache.
-pub const DBT_CODE_CACHE_BASE: usize = 1_000;
-
-/// Maximum capacity of the translated code cache in Setun memory.
-pub const DBT_CODE_CACHE_LIMIT: usize = 90_000;
 
 /// Upper limit of `i32` (`+2,147,483,647`) represented in [`Word21`].
 const MAX_I32_WORD21: Word21 = Word21::new(i32::MAX as i64);
@@ -274,30 +268,42 @@ pub enum SetunTranslatedOp {
         rv32i_instrs: u8,
     },
     /// Fused trichotomous conditional branch (`SLT/SLTI/SLTU/SLTIU [+ LI 0|1] + BEQ/BNE -> BCEG`).
-    BcegFused {
-        cmp_rd: u8,
-        aux_li: Option<(u8, i32)>,
-        kind: FusedCmpKind,
-        branch_if_less: bool,
-        target_pc: u32,
-        fallthrough_pc: u32,
-        rv32i_instrs: u8,
-    },
+    /// The payload lives in `bceg_fused` to keep the operation small.
+    BcegFused { index: u32 },
     /// Pure sign inversion via Setun ternary gates (`NEG rd, rs2` / `STI.T`).
     NegT { rd: u8, rs: u8 },
     /// Base instruction mapped 1-to-1 to the 21-trit ternary ALU.
     Single { instr: Rv32iInstr, pc: u32 },
 }
 
-/// Basic block translated and stored in dynamic translation cache.
-#[derive(Clone, Debug)]
-pub struct TranslatedBasicBlock {
+/// Payload of a fused `BCEG` branch, stored outside the compact operation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct BcegFusedData {
+    /// Register holding the comparison result.
+    pub cmp_rd: u8,
+    /// Optional `LI 0|1` fusion that produced the branch expectation.
+    pub aux_li: Option<(u8, i32)>,
+    /// Comparison mode.
+    pub kind: FusedCmpKind,
+    /// Whether the branch is taken when the comparison is "less".
+    pub branch_if_less: bool,
+    /// Target of the taken branch.
+    pub target_pc: u32,
+    /// Address after the fused sequence.
+    pub fallthrough_pc: u32,
+    /// Number of RV32I instructions covered by the fusion.
+    pub rv32i_instrs: u8,
+}
+
+/// Translated basic block stored in the operation arena.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct BlockEntry {
     /// Starting block address in `RV32I` virtual address space.
     pub start_pc: u32,
-    /// Ternary Setun operations generated for this block.
-    pub ops: Vec<SetunTranslatedOp>,
-    /// Base address in Setun memory (`DBT_CODE_CACHE_BASE`) where `Instruction`s were written.
-    pub setun_cache_addr: usize,
+    /// First operation index inside the shared arena.
+    pub ops_start: u32,
+    /// Number of operations belonging to this block.
+    pub ops_len: u16,
 }
 
 /// Execution or translation errors from the DBT engine.
@@ -312,6 +318,8 @@ pub enum DbtError {
     IllegalInstruction { raw: u32, pc: u32 },
     /// Stopped at `EBREAK`.
     Breakpoint { pc: u32 },
+    /// Program counter left the executable ranges of the loaded image.
+    PcOutsideText { pc: u32 },
     /// Maximum cycle/instruction limit exceeded (prevents infinite loop in tests).
     StepLimitExceeded(u64),
 }
@@ -325,6 +333,10 @@ impl fmt::Display for DbtError {
                 write!(f, "Illegal instruction 0x{raw:08X} at PC 0x{pc:08X}")
             }
             Self::Breakpoint { pc } => write!(f, "Breakpoint reached at PC 0x{pc:08X}"),
+            Self::PcOutsideText { pc } => write!(
+                f,
+                "Program counter 0x{pc:08X} is outside the executable ranges"
+            ),
             Self::StepLimitExceeded(limit) => write!(f, "Step limit exceeded: {limit} cycles"),
         }
     }
@@ -417,8 +429,54 @@ impl DbtExecutionReport {
 /// (same technique as the `REBEL-6` simulator, where only a single trit is set: $-3^{16} = -43,046,721$).
 pub const SENTINEL_RETURN_PC: u32 = 0xFFFFFFFE;
 
+/// Host services for guests that need more than the `riscv-tests` exit convention.
+///
+/// The guest issues `ecall` with the service number in `a7`. Returning `Some(value)` resumes
+/// execution with `a0 = value`; returning `None` stops the engine with an [`DbtExitReason::Ecall`].
+pub trait Rv32Platform {
+    /// Services one `ecall` issued by the guest.
+    fn syscall(
+        &mut self,
+        guest: GuestMemory<'_>,
+        number: i32,
+        a0: i32,
+        a1: i32,
+        a2: i32,
+    ) -> Option<i32>;
+}
+
+/// Borrowed view of guest byte memory handed to [`Rv32Platform`] services.
+pub struct GuestMemory<'a> {
+    memory: &'a mut Memory,
+    base_offset: usize,
+}
+
+impl GuestMemory<'_> {
+    /// Copies `out.len()` guest bytes starting at `vaddr`.
+    pub fn read_bytes(&self, vaddr: u32, out: &mut [u8]) -> Result<(), MemoryError> {
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = read_elf_u8(self.memory, self.base_offset, vaddr.wrapping_add(i as u32))?;
+        }
+        Ok(())
+    }
+
+    /// Writes `data` into guest memory starting at `vaddr`.
+    pub fn write_bytes(&mut self, vaddr: u32, data: &[u8]) -> Result<(), MemoryError> {
+        for (i, &byte) in data.iter().enumerate() {
+            write_elf_u8(
+                self.memory,
+                self.base_offset,
+                vaddr.wrapping_add(i as u32),
+                byte,
+            )
+            .map(|_| ())?;
+        }
+        Ok(())
+    }
+}
+
 /// Dynamic Binary Translation (`DBT`) engine executing `ELF32` `RV32I` binaries on Setun CPU and Memory.
-pub struct SetunDbtEngine {
+pub struct SetunDbtEngine<const VERACITY: bool = true> {
     /// Balanced ternary Setun-Doom CPU (accumulator, R register, Alvarez converter, and telemetry).
     pub cpu: Cpu,
     /// Linear ternary memory of $3^{14} = 4,782,969$ words.
@@ -431,10 +489,18 @@ pub struct SetunDbtEngine {
     pub layout: LoadedElfLayout,
     /// Set of addresses that are static targets of jumps/branches (for fusion safety).
     branch_targets: HashSet<u32>,
-    /// Cache of already translated basic blocks (`start_pc -> TranslatedBasicBlock`).
-    block_cache: HashMap<u32, TranslatedBasicBlock>,
-    /// Next free address in the `DBT_CODE_CACHE_BASE` region of Setun memory.
-    next_code_cache_addr: usize,
+    /// Append-only arena shared by every translated block.
+    ops: Vec<SetunTranslatedOp>,
+    /// Translated block descriptors, referenced by `block_table`.
+    blocks: Vec<BlockEntry>,
+    /// Direct index `(pc - code_base) >> 2` into `blocks` (`0` means untranslated).
+    block_table: Vec<u32>,
+    /// Lowest guest address covered by the executable ranges.
+    code_base: u32,
+    /// Scratch buffer reused by the translator to avoid per-block allocation.
+    translation_scratch: Vec<SetunTranslatedOp>,
+    /// Payloads of fused `BCEG` branches referenced by `SetunTranslatedOp::BcegFused`.
+    bceg_fused: Vec<BcegFusedData>,
     /// Instruction and fusion counters.
     pub rv32i_instructions_executed: u64,
     pub setun_instructions_executed: u64,
@@ -443,16 +509,62 @@ pub struct SetunDbtEngine {
     pub neg_fusions_executed: u64,
     /// Console buffer for `write` syscall.
     pub stdout_buffer: Vec<u8>,
+    /// Optional host dispatcher for `ecall` services (video, input, clock, WAD access).
+    platform: Option<Box<dyn Rv32Platform>>,
 }
 
-impl SetunDbtEngine {
-    /// Creates a new `SetunDbtEngine` instance and loads an `ELF32` binary into ternary memory.
+impl SetunDbtEngine<true> {
+    /// Creates a gate-accurate engine (default) and loads an `ELF32` binary into ternary memory.
     pub fn from_elf_bytes(elf_bytes: &[u8]) -> Result<Self, DbtError> {
+        Self::from_elf_bytes_with_stack(elf_bytes, DEFAULT_RV32I_STACK_TOP)
+    }
+
+    /// Loads an `ELF32` binary with an explicit guest stack top, running every operation through
+    /// the ternary gates and recording full telemetry.
+    pub fn from_elf_bytes_with_stack(elf_bytes: &[u8], stack_top: u32) -> Result<Self, DbtError> {
+        Self::load_elf(elf_bytes, stack_top)
+    }
+}
+
+impl SetunDbtEngine<false> {
+    /// Creates the opt-in fast engine, which executes guest operations with direct host
+    /// arithmetic and no switching telemetry.
+    pub fn from_elf_bytes_fast(elf_bytes: &[u8]) -> Result<Self, DbtError> {
+        Self::from_elf_bytes_fast_with_stack(elf_bytes, DEFAULT_RV32I_STACK_TOP)
+    }
+
+    /// Loads an `ELF32` binary with an explicit guest stack top in fast mode.
+    pub fn from_elf_bytes_fast_with_stack(
+        elf_bytes: &[u8],
+        stack_top: u32,
+    ) -> Result<Self, DbtError> {
+        Self::load_elf(elf_bytes, stack_top)
+    }
+}
+
+impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
+    /// Loads an `ELF32` binary with an explicit stack top for the const-generic execution mode.
+    pub fn load_elf_with_stack(elf_bytes: &[u8], stack_top: u32) -> Result<Self, DbtError> {
+        Self::load_elf(elf_bytes, stack_top)
+    }
+
+    /// Parses the ELF, loads it and initializes registers for either execution mode.
+    fn load_elf(elf_bytes: &[u8], stack_top: u32) -> Result<Self, DbtError> {
         let image = Elf32Image::parse(elf_bytes)?;
         let mut memory = Memory::new();
         let layout = image.load_into_setun_memory(&mut memory, DEFAULT_ELF_MEMORY_BASE)?;
 
         let branch_targets = scan_static_branch_targets(&memory, &layout, &image);
+
+        let (code_base, code_end) = if layout.executable_ranges.is_empty() {
+            (layout.min_vaddr, layout.max_vaddr)
+        } else {
+            layout.executable_ranges.iter().fold(
+                (layout.min_vaddr, layout.max_vaddr),
+                |(base, end), &(start, stop)| (base.min(start), end.max(stop)),
+            )
+        };
+        let code_words = code_end.saturating_sub(code_base).div_ceil(4).max(1) as usize;
 
         let mut engine = Self {
             cpu: Cpu::new(),
@@ -461,19 +573,24 @@ impl SetunDbtEngine {
             pc: layout.entry_point,
             layout,
             branch_targets,
-            block_cache: HashMap::new(),
-            next_code_cache_addr: DBT_CODE_CACHE_BASE,
+            ops: Vec::new(),
+            blocks: Vec::new(),
+            translation_scratch: Vec::with_capacity(16),
+            bceg_fused: Vec::new(),
+            block_table: vec![0u32; code_words],
+            code_base,
             rv32i_instructions_executed: 0,
             setun_instructions_executed: 0,
             immediate_fusions_executed: 0,
             branch_fusions_executed: 0,
             neg_fusions_executed: 0,
             stdout_buffer: Vec::new(),
+            platform: None,
         };
 
         // Initialize Stack Pointer (sp = x2) and sentinel Return Address (ra = x1)
         // synchronized in Setun memory without polluting user program telemetry.
-        let sp_word = Word21::new(DEFAULT_RV32I_STACK_TOP as i64);
+        let sp_word = Word21::new(stack_top as i64);
         let ra_word = Word21::new(SENTINEL_RETURN_PC as i32 as i64);
         engine.regs[2] = sp_word;
         engine.regs[1] = ra_word;
@@ -484,6 +601,37 @@ impl SetunDbtEngine {
         }
 
         Ok(engine)
+    }
+
+    /// Installs the host service dispatcher used for `ecall` services other than `write`.
+    pub fn set_platform(&mut self, platform: Box<dyn Rv32Platform>) {
+        self.platform = Some(platform);
+    }
+
+    /// Copies `out.len()` guest bytes starting at `vaddr` (one byte per Setun word).
+    pub fn guest_read_bytes(&self, vaddr: u32, out: &mut [u8]) -> Result<(), MemoryError> {
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = read_elf_u8(
+                &self.memory,
+                self.layout.setun_base_offset,
+                vaddr.wrapping_add(i as u32),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Writes `data` into guest memory starting at `vaddr`.
+    pub fn guest_write_bytes(&mut self, vaddr: u32, data: &[u8]) -> Result<(), MemoryError> {
+        for (i, &byte) in data.iter().enumerate() {
+            write_elf_u8(
+                &mut self.memory,
+                self.layout.setun_base_offset,
+                vaddr.wrapping_add(i as u32),
+                byte,
+            )
+            .map(|_| ())?;
+        }
+        Ok(())
     }
 
     /// Reads register `x0..x31` as [`Word21`] (`x0` always returns `Word21::ZERO`).
@@ -505,11 +653,13 @@ impl SetunDbtEngine {
         if idx == 0 {
             return Ok(());
         }
-        let old_val = self.regs[idx];
+        if VERACITY {
+            let old_val = self.regs[idx];
+            self.memory
+                .write_word((DBT_REGISTER_FILE_BASE + idx) as i64, new_val)?;
+            self.cpu.telemetry.record_transition(old_val, new_val);
+        }
         self.regs[idx] = new_val;
-        self.memory
-            .write_word((DBT_REGISTER_FILE_BASE + idx) as i64, new_val)?;
-        self.cpu.telemetry.record_transition(old_val, new_val);
         Ok(())
     }
 
@@ -518,6 +668,9 @@ impl SetunDbtEngine {
     /// carry propagations from `Trit::full_add` gates.
     #[inline]
     pub fn gate_alvarez_bin_to_ter(&mut self, val: i32) -> Word21 {
+        if !VERACITY {
+            return Word21::from_i32(val);
+        }
         let (trits, carries) = Word21::alvarez_from_i32_gates(val);
         self.cpu.telemetry.adder_carry_propagations += carries as u64;
         Word21::from_trits(&trits)
@@ -533,6 +686,10 @@ impl SetunDbtEngine {
     /// and applies 32-bit wrapping (`[-2^31, 2^31 - 1]`) through ternary gates.
     #[inline]
     pub fn gate_add_i32(&mut self, a: Word21, b: Word21) -> Word21 {
+        if !VERACITY {
+            self.cpu.cycles += 1;
+            return Word21::from_i32(a.to_i32_saturating().wrapping_add(b.to_i32_saturating()));
+        }
         let (sum, _cout, carries) = a.gate_ripple_carry_add(b, Trit::Zero);
         self.cpu.telemetry.adder_carry_propagations += carries as u64;
         self.cpu.cycles += 1;
@@ -554,6 +711,10 @@ impl SetunDbtEngine {
     /// the 21-stage Ripple-Carry adder (`gate_add_i32`).
     #[inline]
     pub fn gate_sub_i32(&mut self, a: Word21, b: Word21) -> Word21 {
+        if !VERACITY {
+            self.cpu.cycles += 1;
+            return Word21::from_i32(a.to_i32_saturating().wrapping_sub(b.to_i32_saturating()));
+        }
         let neg_b = b.gate_invert_trits();
         self.gate_add_i32(a, neg_b)
     }
@@ -562,6 +723,14 @@ impl SetunDbtEngine {
     /// (`[0, 2^32 - 1]`) inside a `Word21` using the ternary Ripple-Carry adder.
     #[inline]
     pub fn gate_to_unsigned32_word21(&mut self, w: Word21) -> Word21 {
+        if !VERACITY {
+            let value = w.to_i32_saturating();
+            return if value < 0 {
+                Word21::new(value as i64 + 4_294_967_296)
+            } else {
+                w
+            };
+        }
         if w.sign_trit() == Trit::Negative {
             let (pos, _c, carries) = w.gate_ripple_carry_add(POS_MOD32_WORD21, Trit::Zero);
             self.cpu.telemetry.adder_carry_propagations += carries as u64;
@@ -574,23 +743,51 @@ impl SetunDbtEngine {
     /// Compares two `Word21` values as unsigned 32-bit integers using the 21-gate comparator `gate_cmp_t`.
     #[inline]
     pub fn gate_cmp_u32(&mut self, a: Word21, b: Word21) -> Trit {
+        if !VERACITY {
+            let ua = a.to_i32_saturating() as u32;
+            let ub = b.to_i32_saturating() as u32;
+            return Trit::from_i64_sign(ua as i64 - ub as i64);
+        }
         let ua = self.gate_to_unsigned32_word21(a);
         let ub = self.gate_to_unsigned32_word21(b);
         ua.gate_cmp_t(ub)
     }
 
-    /// Translates (or retrieves from cache) the basic block starting at `start_pc`.
-    pub fn get_or_translate_block(
-        &mut self,
-        start_pc: u32,
-    ) -> Result<TranslatedBasicBlock, DbtError> {
-        if let Some(block) = self.block_cache.get(&start_pc) {
-            return Ok(block.clone());
+    /// Trichotomous comparison of two words in the current execution mode.
+    #[inline(always)]
+    pub fn cmp_t(&self, a: Word21, b: Word21) -> Trit {
+        if VERACITY {
+            a.gate_cmp_t(b)
+        } else {
+            Trit::from_i64_sign(a.as_i64() - b.as_i64())
+        }
+    }
+
+    /// Returns the direct-index slot for `pc` when it falls inside the executable ranges.
+    #[inline(always)]
+    fn block_slot(&self, pc: u32) -> Option<usize> {
+        let offset = pc.checked_sub(self.code_base)?;
+        let slot = (offset >> 2) as usize;
+        if slot < self.block_table.len() {
+            Some(slot)
+        } else {
+            None
+        }
+    }
+
+    /// Translates (or retrieves from the arena) the basic block starting at `start_pc`.
+    pub fn get_or_translate_block(&mut self, start_pc: u32) -> Result<BlockEntry, DbtError> {
+        let slot = self
+            .block_slot(start_pc)
+            .ok_or(DbtError::PcOutsideText { pc: start_pc })?;
+        let cached = self.block_table[slot];
+        if cached != 0 {
+            return Ok(self.blocks[(cached - 1) as usize]);
         }
 
-        let mut ops = Vec::with_capacity(16);
+        let mut ops = std::mem::take(&mut self.translation_scratch);
+        ops.clear();
         let mut cur_pc = start_pc;
-        let cache_addr = self.next_code_cache_addr;
 
         for _ in 0..64 {
             let raw0 = read_elf_u32_le(&self.memory, self.layout.setun_base_offset, cur_pc)?;
@@ -622,7 +819,6 @@ impl SetunDbtEngine {
                                     intermediate_hi20: Some(hi20),
                                     rv32i_instrs: 2,
                                 });
-                                self.emit_setun_code_word(Opcode::Load, rd as i64);
                                 cur_pc = cur_pc.wrapping_add(8);
                                 if self.branch_targets.contains(&cur_pc) {
                                     break;
@@ -655,7 +851,6 @@ impl SetunDbtEngine {
                                     intermediate_hi20: Some(hi_addr),
                                     rv32i_instrs: 2,
                                 });
-                                self.emit_setun_code_word(Opcode::Load, rd as i64);
                                 cur_pc = cur_pc.wrapping_add(8);
                                 if self.branch_targets.contains(&cur_pc) {
                                     break;
@@ -710,7 +905,8 @@ impl SetunDbtEngine {
                             if let Some((branch_if_less, offset)) = branch_match_2 {
                                 let target_pc = (next_pc as i32).wrapping_add(offset) as u32;
                                 let fallthrough_pc = cur_pc.wrapping_add(8);
-                                ops.push(SetunTranslatedOp::BcegFused {
+                                let index = self.bceg_fused.len() as u32;
+                                self.bceg_fused.push(BcegFusedData {
                                     cmp_rd,
                                     kind,
                                     aux_li: None,
@@ -719,7 +915,7 @@ impl SetunDbtEngine {
                                     fallthrough_pc,
                                     rv32i_instrs: 2,
                                 });
-                                self.emit_setun_code_word(Opcode::Bceg, offset as i64);
+                                ops.push(SetunTranslatedOp::BcegFused { index });
                                 break;
                             }
 
@@ -767,7 +963,8 @@ impl SetunDbtEngine {
                                                 let target_pc =
                                                     (third_pc as i32).wrapping_add(offset) as u32;
                                                 let fallthrough_pc = cur_pc.wrapping_add(12);
-                                                ops.push(SetunTranslatedOp::BcegFused {
+                                                let index = self.bceg_fused.len() as u32;
+                                                self.bceg_fused.push(BcegFusedData {
                                                     cmp_rd,
                                                     kind,
                                                     aux_li: Some((exp_rd, exp_imm)),
@@ -776,10 +973,7 @@ impl SetunDbtEngine {
                                                     fallthrough_pc,
                                                     rv32i_instrs: 3,
                                                 });
-                                                self.emit_setun_code_word(
-                                                    Opcode::Bceg,
-                                                    offset as i64,
-                                                );
+                                                ops.push(SetunTranslatedOp::BcegFused { index });
                                                 break;
                                             }
                                         }
@@ -797,7 +991,6 @@ impl SetunDbtEngine {
             // executing directly via physical wire-by-wire inversion of 21 trits (+1 <-> -1).
             if let Rv32iInstr::Sub { rd, rs1: 0, rs2 } = instr0 {
                 ops.push(SetunTranslatedOp::NegT { rd, rs: rs2 });
-                self.emit_setun_code_word(Opcode::Neg, rd as i64);
                 cur_pc = next_pc;
                 if self.branch_targets.contains(&cur_pc) {
                     break;
@@ -810,7 +1003,6 @@ impl SetunDbtEngine {
                 instr: instr0,
                 pc: cur_pc,
             });
-            self.emit_setun_code_word(map_rv32i_to_setun_opcode(&instr0), cur_pc as i64);
 
             let is_terminator = matches!(
                 instr0,
@@ -832,25 +1024,20 @@ impl SetunDbtEngine {
             }
         }
 
-        let block = TranslatedBasicBlock {
-            start_pc,
-            ops,
-            setun_cache_addr: cache_addr,
-        };
-        self.block_cache.insert(start_pc, block.clone());
-        Ok(block)
-    }
+        let ops_start = self.ops.len() as u32;
+        let ops_len = ops.len() as u16;
+        self.ops.extend_from_slice(&ops);
+        self.translation_scratch = ops;
 
-    /// Emits a 21-trit encoded instruction into the `DBT_CODE_CACHE_BASE` region of Setun memory.
-    fn emit_setun_code_word(&mut self, opcode: Opcode, operand: i64) {
-        if self.next_code_cache_addr < DBT_CODE_CACHE_LIMIT {
-            let clamped = operand.clamp(-7_000_000, 7_000_000);
-            let instr = Instruction::new(opcode, 0, clamped);
-            let _ = self
-                .memory
-                .write_word(self.next_code_cache_addr as i64, instr.encode());
-            self.next_code_cache_addr += 1;
-        }
+        let block_id = self.blocks.len() as u32;
+        let block = BlockEntry {
+            start_pc,
+            ops_start,
+            ops_len,
+        };
+        self.blocks.push(block);
+        self.block_table[slot] = block_id + 1;
+        Ok(block)
     }
 
     /// Executes the translated `RV32I` program until encountering an exit call (`ecall` / `main` return)
@@ -866,8 +1053,9 @@ impl SetunDbtEngine {
 
             let block = self.get_or_translate_block(self.pc)?;
 
-            for op in &block.ops {
-                match *op {
+            for index in 0..block.ops_len {
+                let op = self.ops[(block.ops_start + index as u32) as usize];
+                match op {
                     SetunTranslatedOp::LiT {
                         rd,
                         imm32,
@@ -876,15 +1064,17 @@ impl SetunDbtEngine {
                     } => {
                         // In unfused binary RV32I reference, LUI writes hi20 and ADDI writes imm32.
                         // On Setun (LI.T), we write the 21-trit Word21 directly in a single cycle.
-                        if let Some(hi20) = intermediate_hi20 {
-                            if rd != 0 {
-                                let old_bin = self.read_reg(rd).to_i32_saturating();
-                                let extra_flips =
-                                    ((old_bin ^ hi20).count_ones() + (hi20 ^ imm32).count_ones())
+                        if VERACITY {
+                            if let Some(hi20) = intermediate_hi20 {
+                                if rd != 0 {
+                                    let old_bin = self.read_reg(rd).to_i32_saturating();
+                                    let extra_flips = ((old_bin ^ hi20).count_ones()
+                                        + (hi20 ^ imm32).count_ones())
                                         as u64;
-                                let direct_flips = (old_bin ^ imm32).count_ones() as u64;
-                                self.cpu.telemetry.binary32_bit_flips +=
-                                    extra_flips.saturating_sub(direct_flips);
+                                    let direct_flips = (old_bin ^ imm32).count_ones() as u64;
+                                    self.cpu.telemetry.binary32_bit_flips +=
+                                        extra_flips.saturating_sub(direct_flips);
+                                }
                             }
                         }
                         self.write_reg(rd, Word21::from_i32(imm32))?;
@@ -901,15 +1091,17 @@ impl SetunDbtEngine {
                         intermediate_hi20,
                         rv32i_instrs,
                     } => {
-                        if let Some(hi20) = intermediate_hi20 {
-                            if rd != 0 {
-                                let old_bin = self.read_reg(rd).to_i32_saturating();
-                                let extra_flips = ((old_bin ^ hi20).count_ones()
-                                    + (hi20 ^ target_addr).count_ones())
-                                    as u64;
-                                let direct_flips = (old_bin ^ target_addr).count_ones() as u64;
-                                self.cpu.telemetry.binary32_bit_flips +=
-                                    extra_flips.saturating_sub(direct_flips);
+                        if VERACITY {
+                            if let Some(hi20) = intermediate_hi20 {
+                                if rd != 0 {
+                                    let old_bin = self.read_reg(rd).to_i32_saturating();
+                                    let extra_flips = ((old_bin ^ hi20).count_ones()
+                                        + (hi20 ^ target_addr).count_ones())
+                                        as u64;
+                                    let direct_flips = (old_bin ^ target_addr).count_ones() as u64;
+                                    self.cpu.telemetry.binary32_bit_flips +=
+                                        extra_flips.saturating_sub(direct_flips);
+                                }
                             }
                         }
                         self.write_reg(rd, Word21::from_i32(target_addr))?;
@@ -920,20 +1112,21 @@ impl SetunDbtEngine {
                         self.pc = self.pc.wrapping_add((rv32i_instrs as u32) * 4);
                     }
 
-                    SetunTranslatedOp::BcegFused {
-                        cmp_rd,
-                        kind,
-                        aux_li,
-                        branch_if_less,
-                        target_pc,
-                        fallthrough_pc,
-                        rv32i_instrs,
-                    } => {
+                    SetunTranslatedOp::BcegFused { index } => {
+                        let BcegFusedData {
+                            cmp_rd,
+                            kind,
+                            aux_li,
+                            branch_if_less,
+                            target_pc,
+                            fallthrough_pc,
+                            rv32i_instrs,
+                        } = self.bceg_fused[index as usize];
                         let cmp_trit = match kind {
                             FusedCmpKind::RegSigned { rs1, rs2 } => {
                                 let a = self.read_reg(rs1);
                                 let b = self.read_reg(rs2);
-                                a.gate_cmp_t(b)
+                                self.cmp_t(a, b)
                             }
                             FusedCmpKind::RegUnsigned { rs1, rs2 } => {
                                 let a = self.read_reg(rs1);
@@ -943,7 +1136,7 @@ impl SetunDbtEngine {
                             FusedCmpKind::ImmSigned { rs1, imm } => {
                                 let a = self.read_reg(rs1);
                                 let b = Word21::from_i32(imm);
-                                a.gate_cmp_t(b)
+                                self.cmp_t(a, b)
                             }
                             FusedCmpKind::ImmUnsigned { rs1, imm } => {
                                 let a = self.read_reg(rs1);
@@ -1057,7 +1250,7 @@ impl SetunDbtEngine {
             Rv32iInstr::Beq { rs1, rs2, offset } => {
                 let a = self.read_reg(rs1);
                 let b = self.read_reg(rs2);
-                if a.gate_cmp_t(b) == Trit::Zero {
+                if self.cmp_t(a, b) == Trit::Zero {
                     let target =
                         self.gate_add_i32(Word21::from_i32(pc as i32), Word21::from_i32(offset));
                     next_pc = target.to_i32_saturating() as u32;
@@ -1066,7 +1259,7 @@ impl SetunDbtEngine {
             Rv32iInstr::Bne { rs1, rs2, offset } => {
                 let a = self.read_reg(rs1);
                 let b = self.read_reg(rs2);
-                if a.gate_cmp_t(b) != Trit::Zero {
+                if self.cmp_t(a, b) != Trit::Zero {
                     let target =
                         self.gate_add_i32(Word21::from_i32(pc as i32), Word21::from_i32(offset));
                     next_pc = target.to_i32_saturating() as u32;
@@ -1075,7 +1268,7 @@ impl SetunDbtEngine {
             Rv32iInstr::Blt { rs1, rs2, offset } => {
                 let a = self.read_reg(rs1);
                 let b = self.read_reg(rs2);
-                if a.gate_cmp_t(b) == Trit::Negative {
+                if self.cmp_t(a, b) == Trit::Negative {
                     let target =
                         self.gate_add_i32(Word21::from_i32(pc as i32), Word21::from_i32(offset));
                     next_pc = target.to_i32_saturating() as u32;
@@ -1084,7 +1277,7 @@ impl SetunDbtEngine {
             Rv32iInstr::Bge { rs1, rs2, offset } => {
                 let a = self.read_reg(rs1);
                 let b = self.read_reg(rs2);
-                if a.gate_cmp_t(b) != Trit::Negative {
+                if self.cmp_t(a, b) != Trit::Negative {
                     let target =
                         self.gate_add_i32(Word21::from_i32(pc as i32), Word21::from_i32(offset));
                     next_pc = target.to_i32_saturating() as u32;
@@ -1194,7 +1387,7 @@ impl SetunDbtEngine {
             Rv32iInstr::Slti { rd, rs1, imm } => {
                 let a = self.read_reg(rs1);
                 let b = Word21::from_i32(imm);
-                let res = if a.gate_cmp_t(b) == Trit::Negative {
+                let res = if self.cmp_t(a, b) == Trit::Negative {
                     Word21::new(1)
                 } else {
                     Word21::ZERO
@@ -1260,7 +1453,7 @@ impl SetunDbtEngine {
             Rv32iInstr::Slt { rd, rs1, rs2 } => {
                 let a = self.read_reg(rs1);
                 let b = self.read_reg(rs2);
-                let res = if a.gate_cmp_t(b) == Trit::Negative {
+                let res = if self.cmp_t(a, b) == Trit::Negative {
                     Word21::new(1)
                 } else {
                     Word21::ZERO
@@ -1386,23 +1579,46 @@ impl SetunDbtEngine {
             Rv32iInstr::Fence => {}
             Rv32iInstr::Ecall => {
                 let a0 = self.read_reg(10).to_i32_saturating();
-                let a1 = self.read_reg(11).to_i32_saturating() as u32;
-                let a2 = self.read_reg(12).to_i32_saturating() as u32;
+                let a1 = self.read_reg(11).to_i32_saturating();
+                let a2 = self.read_reg(12).to_i32_saturating();
                 let a7 = self.read_reg(17).to_i32_saturating();
                 let gp = self.read_reg(3).to_i32_saturating();
 
                 // Linux/Newlib write(fd=a0, buf=a1, count=a2) syscall when a7 == 64
                 if a7 == 64 {
-                    for i in 0..a2 {
+                    let count = a2 as u32;
+                    for i in 0..count {
                         if let Ok(b) = read_elf_u8(
                             &self.memory,
                             self.layout.setun_base_offset,
-                            a1.wrapping_add(i),
+                            (a1 as u32).wrapping_add(i),
                         ) {
                             self.stdout_buffer.push(b);
                         }
                     }
-                    self.write_reg(10, Word21::from_i32(a2 as i32))?;
+                    self.write_reg(10, Word21::from_i32(count as i32))?;
+                } else if let Some(mut platform) = self.platform.take() {
+                    let outcome = {
+                        let guest = GuestMemory {
+                            memory: &mut self.memory,
+                            base_offset: self.layout.setun_base_offset,
+                        };
+                        platform.syscall(guest, a7, a0, a1, a2)
+                    };
+                    self.platform = Some(platform);
+                    match outcome {
+                        Some(value) => {
+                            self.write_reg(10, Word21::from_i32(value))?;
+                        }
+                        None => {
+                            self.pc = next_pc;
+                            return Ok(Some(DbtExitReason::Ecall {
+                                a0_exit_code: a0,
+                                gp_test_id: gp,
+                                a7_syscall: a7,
+                            }));
+                        }
+                    }
                 } else {
                     // riscv-tests convention or exit(a0)
                     self.pc = next_pc;
@@ -1470,48 +1686,6 @@ fn scan_static_branch_targets(
         }
     }
     targets
-}
-
-/// Maps an `RV32I` instruction to the corresponding [`Opcode`] in Setun 21-trit ISA.
-fn map_rv32i_to_setun_opcode(instr: &Rv32iInstr) -> Opcode {
-    match instr {
-        Rv32iInstr::Lui { .. } | Rv32iInstr::Auipc { .. } => Opcode::Load,
-        Rv32iInstr::Jal { .. } | Rv32iInstr::Jalr { .. } => Opcode::Call,
-        Rv32iInstr::Beq { .. } | Rv32iInstr::Bne { .. } => Opcode::JmpZ,
-        Rv32iInstr::Blt { .. } | Rv32iInstr::Bltu { .. } => Opcode::JmpN,
-        Rv32iInstr::Bge { .. } | Rv32iInstr::Bgeu { .. } => Opcode::JmpP,
-        Rv32iInstr::Lb { .. }
-        | Rv32iInstr::Lbu { .. }
-        | Rv32iInstr::Lh { .. }
-        | Rv32iInstr::Lhu { .. }
-        | Rv32iInstr::Lw { .. } => Opcode::Load,
-        Rv32iInstr::Sb { .. } | Rv32iInstr::Sh { .. } | Rv32iInstr::Sw { .. } => Opcode::Store,
-        Rv32iInstr::Addi { .. } | Rv32iInstr::Add { .. } => Opcode::Add,
-        Rv32iInstr::Sub { .. } => Opcode::Sub,
-        Rv32iInstr::Slti { .. }
-        | Rv32iInstr::Sltiu { .. }
-        | Rv32iInstr::Slt { .. }
-        | Rv32iInstr::Sltu { .. } => Opcode::CmpT,
-        Rv32iInstr::Slli { .. }
-        | Rv32iInstr::Sll { .. }
-        | Rv32iInstr::Srli { .. }
-        | Rv32iInstr::Srai { .. }
-        | Rv32iInstr::Srl { .. }
-        | Rv32iInstr::Sra { .. } => Opcode::Shift,
-        Rv32iInstr::Xori { .. } | Rv32iInstr::Xor { .. } => Opcode::Smt,
-        Rv32iInstr::Ori { .. } | Rv32iInstr::Or { .. } => Opcode::Sat,
-        Rv32iInstr::Andi { .. } | Rv32iInstr::And { .. } => Opcode::Sit,
-        Rv32iInstr::Mul { .. }
-        | Rv32iInstr::Mulh { .. }
-        | Rv32iInstr::Mulhsu { .. }
-        | Rv32iInstr::Mulhu { .. } => Opcode::Mul,
-        Rv32iInstr::Div { .. }
-        | Rv32iInstr::Divu { .. }
-        | Rv32iInstr::Rem { .. }
-        | Rv32iInstr::Remu { .. } => Opcode::Div,
-        Rv32iInstr::Fence => Opcode::Nop,
-        Rv32iInstr::Ecall | Rv32iInstr::Ebreak => Opcode::Halt,
-    }
 }
 
 #[inline]
@@ -1625,7 +1799,7 @@ pub fn run_all_riscv_isa_tests() -> Result<RiscvIsaSuiteSummary, DbtError> {
     let mut total_telemetry = PowerTelemetry::default();
 
     for &(name, elf_bytes) in &RISCV_ISA_ELF_TESTS {
-        let mut engine = SetunDbtEngine::from_elf_bytes(elf_bytes)?;
+        let mut engine = SetunDbtEngine::<true>::from_elf_bytes(elf_bytes)?;
         let report = engine.run(100_000)?;
         total_rv32i_instrs += report.rv32i_instructions_executed;
         total_setun_instrs += report.setun_instructions_executed;

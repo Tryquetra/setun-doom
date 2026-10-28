@@ -68,6 +68,12 @@ pub enum SyscallResult {
     InvalidSyscall(i64),
 }
 
+/// Writes one framebuffer cell, reporting a memory fault to the caller instead of discarding it.
+#[inline]
+fn put_pixel(mem: &mut Memory, addr: i64, color: Tryte6) -> bool {
+    mem.write_word(addr, color.to_word21()).is_ok()
+}
+
 /// Dispatches a system call using Setun-DOS register state.
 pub struct SyscallDispatcher;
 
@@ -97,22 +103,29 @@ impl SyscallDispatcher {
                 }
 
                 let color = Tryte6::from_palette_index(color_idx as u8);
+                let mut drawn = true;
                 // Draw top and bottom borders
                 for col in x..(x + w) {
                     let top_addr = FRAMEBUFFER_BASE + y * (FRAMEBUFFER_WIDTH as i64) + col;
-                    let bot_addr = FRAMEBUFFER_BASE + (y + h - 1) * (FRAMEBUFFER_WIDTH as i64) + col;
-                    let _ = mem.write_word(top_addr, color.to_word21());
-                    let _ = mem.write_word(bot_addr, color.to_word21());
+                    let bot_addr =
+                        FRAMEBUFFER_BASE + (y + h - 1) * (FRAMEBUFFER_WIDTH as i64) + col;
+                    drawn &= put_pixel(mem, top_addr, color);
+                    drawn &= put_pixel(mem, bot_addr, color);
                 }
                 // Draw left and right borders
                 for row in y..(y + h) {
                     let left_addr = FRAMEBUFFER_BASE + row * (FRAMEBUFFER_WIDTH as i64) + x;
-                    let right_addr = FRAMEBUFFER_BASE + row * (FRAMEBUFFER_WIDTH as i64) + (x + w - 1);
-                    let _ = mem.write_word(left_addr, color.to_word21());
-                    let _ = mem.write_word(right_addr, color.to_word21());
+                    let right_addr =
+                        FRAMEBUFFER_BASE + row * (FRAMEBUFFER_WIDTH as i64) + (x + w - 1);
+                    drawn &= put_pixel(mem, left_addr, color);
+                    drawn &= put_pixel(mem, right_addr, color);
                 }
 
-                SyscallResult::Continue(Word21::ZERO)
+                if drawn {
+                    SyscallResult::Continue(Word21::ZERO)
+                } else {
+                    SyscallResult::Continue(Word21::new(-1))
+                }
             }
 
             SYS_SET_PIXEL => {
@@ -126,8 +139,11 @@ impl SyscallDispatcher {
 
                 let addr = FRAMEBUFFER_BASE + y * (FRAMEBUFFER_WIDTH as i64) + x;
                 let color = Tryte6::from_palette_index(color_idx as u8);
-                let _ = mem.write_word(addr, color.to_word21());
-                SyscallResult::Continue(Word21::ZERO)
+                if put_pixel(mem, addr, color) {
+                    SyscallResult::Continue(Word21::ZERO)
+                } else {
+                    SyscallResult::Continue(Word21::new(-1))
+                }
             }
 
             SYS_GET_PIXEL => {
@@ -211,17 +227,24 @@ impl SyscallDispatcher {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
+                let mut drawn = true;
                 for row in 0..height {
                     for col in 0..width {
                         let src_idx = src_addr + row * width + col;
                         let dst_idx = FRAMEBUFFER_BASE + (dst_y + row) * (FRAMEBUFFER_WIDTH as i64) + (dst_x + col);
-                        if let Ok(pixel) = mem.read_word(src_idx) {
-                            let _ = mem.write_word(dst_idx, pixel);
-                        }
+                        let pixel = match mem.read_word(src_idx) {
+                            Ok(pixel) => pixel,
+                            Err(_) => return SyscallResult::Continue(Word21::new(-1)),
+                        };
+                        drawn &= mem.write_word(dst_idx, pixel).is_ok();
                     }
                 }
 
-                SyscallResult::Continue(Word21::ZERO)
+                if drawn {
+                    SyscallResult::Continue(Word21::ZERO)
+                } else {
+                    SyscallResult::Continue(Word21::new(-1))
+                }
             }
 
             SYS_GET_TICKS => {
@@ -236,6 +259,7 @@ impl SyscallDispatcher {
                 let color = Tryte6::from_palette_index(color_idx as u8);
 
                 let mut count = 0;
+                let mut drawn = true;
                 let mut curr = str_ptr;
                 while let Ok(val) = mem.read_word(curr) {
                     let ch = val.as_i64();
@@ -246,7 +270,7 @@ impl SyscallDispatcher {
                     for dy in 0..5 {
                         for dx in 0..3 {
                             let addr = FRAMEBUFFER_BASE + (y + dy) * (FRAMEBUFFER_WIDTH as i64) + (x + dx);
-                            let _ = mem.write_word(addr, color.to_word21());
+                            drawn &= put_pixel(mem, addr, color);
                         }
                     }
                     x += 4;
@@ -254,7 +278,11 @@ impl SyscallDispatcher {
                     count += 1;
                 }
 
-                SyscallResult::Continue(Word21::new(count))
+                if drawn {
+                    SyscallResult::Continue(Word21::new(count))
+                } else {
+                    SyscallResult::Continue(Word21::new(-1))
+                }
             }
 
             SYS_DEFINE_BUTTON => {
@@ -303,6 +331,7 @@ impl SyscallDispatcher {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
+                let mut drawn = true;
                 for row in 0..h {
                     for col in 0..w {
                         let word_idx = ptr + row * w + col;
@@ -315,20 +344,24 @@ impl SyscallDispatcher {
                         if val > 0 {
                             // Opaque pixel (+1 logic)
                             let color = Tryte6::from_palette_index(val as u8);
-                            let _ = mem.write_word(fb_addr, color.to_word21());
+                            drawn &= put_pixel(mem, fb_addr, color);
                         } else if val < 0 {
                             // Shadow pixel (-1 logic): darkens background by decrementing palette index
                             if let Ok(curr) = mem.read_word(fb_addr) {
                                 let curr_idx = Tryte6::from_i64(curr.as_i64()).to_palette_index();
                                 let darkened = Tryte6::from_palette_index(curr_idx.saturating_sub(24));
-                                let _ = mem.write_word(fb_addr, darkened.to_word21());
+                                drawn &= put_pixel(mem, fb_addr, darkened);
                             }
                         }
                         // val == 0: transparent pass-through
                     }
                 }
 
-                SyscallResult::Continue(Word21::ZERO)
+                if drawn {
+                    SyscallResult::Continue(Word21::ZERO)
+                } else {
+                    SyscallResult::Continue(Word21::new(-1))
+                }
             }
 
             SYS_UPDATE_MOUSE => {

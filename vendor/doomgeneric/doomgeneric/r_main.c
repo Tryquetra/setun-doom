@@ -32,6 +32,7 @@
 #include "d_loop.h"
 
 #include "m_bbox.h"
+#include "setun_hooks.h"
 #include "m_menu.h"
 
 #include "r_local.h"
@@ -155,6 +156,7 @@ R_PointOnSide
   node_t*	node )
 {
 #ifdef SETUN_TERNARY_ALU
+    setun_c_point_on_side_calls++;
     return (int)setun_PointOnSide(x, y, node->x, node->y, node->dx, node->dy);
 #else
     fixed_t	dx;
@@ -216,6 +218,7 @@ R_PointOnSegSide
     fixed_t ly = line->v1->y;
     fixed_t ldx = line->v2->x - lx;
     fixed_t ldy = line->v2->y - ly;
+    setun_c_point_on_side_calls++;
     return (int)setun_PointOnSide(x, y, lx, ly, ldx, ldy);
 #else
     fixed_t	lx;

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![warn(let_underscore_drop, clippy::let_underscore_must_use)]
 
 //! # Setun-Doom Architecture Emulator
 //!
@@ -68,7 +69,7 @@ pub use cpu::{Cpu, Instruction, Opcode, PowerTelemetry};
 #[cfg(feature = "std")]
 pub use dbt::{
     run_all_riscv_isa_tests, DbtError, DbtExecutionReport, DbtExitReason, RiscvIsaSuiteSummary,
-    Rv32iInstr, SetunDbtEngine, SetunTranslatedOp, RISCV_ISA_ELF_TESTS,
+    Rv32Platform, Rv32iInstr, SetunDbtEngine, SetunTranslatedOp, RISCV_ISA_ELF_TESTS,
 };
 #[cfg(feature = "std")]
 pub use dos::doom_runner::DoomDosRunner;
@@ -82,7 +83,8 @@ pub use memory::{Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_
 #[cfg(feature = "std")]
 pub use mmo::{
     DG_DrawFrame, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init, DG_SleepMs,
-    DmaTranscodeMode, KeyEvent, SetunDoomMachine, WadDmaLoader, WadLumpInfo, global_machine,
+    DmaTranscodeMode, KeyEvent, SetunDoomMachine, SetunHookCounters, WadDmaLoader, WadLumpInfo,
+    global_machine, lock_machine, setun_GetHookCounters,
 };
 pub use render::{ColumnDrawParams, TernaryRenderer};
 pub use trit::Trit;

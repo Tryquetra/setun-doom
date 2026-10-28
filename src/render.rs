@@ -36,12 +36,18 @@ pub struct TernaryRenderer;
 impl TernaryRenderer {
     /// Ternary equivalent of `R_DrawColumn`: renders vertical wall column `x`
     /// between `yl..=yh` interpolating coordinate `frac` in [`TernaryFixed`] (`11.10` trits).
-    pub fn draw_column(mem: &mut Memory, params: &ColumnDrawParams<'_>) {
-        if params.x >= FB_WIDTH || params.yl > params.yh || params.yl >= FB_HEIGHT {
-            return;
+    /// Returns the number of pixels the framebuffer rejected.
+    pub fn draw_column(mem: &mut Memory, params: &ColumnDrawParams<'_>) -> u64 {
+        if params.yl > params.yh {
+            return 0;
+        }
+        let requested = (params.yh - params.yl) as u64 + 1;
+        if params.x >= FB_WIDTH || params.yl >= FB_HEIGHT {
+            return requested;
         }
         let y_end = params.yh.min(FB_HEIGHT - 1);
         let mut frac = params.tex_frac_start;
+        let mut dropped = 0u64;
 
         for y in params.yl..=y_end {
             // Extracts texel index using balanced integer part modulo 64
@@ -52,13 +58,17 @@ impl TernaryRenderer {
             let lit_val = (base_color.as_i16() + params.light_shift).clamp(-128, 127);
             let final_color = Tryte6::from_i64(lit_val as i64);
 
-            let _ = mem.write_pixel_tryte(params.x, y, final_color);
+            if mem.write_pixel_tryte(params.x, y, final_color).is_err() {
+                dropped += 1;
+            }
             frac += params.tex_step;
         }
+        dropped
     }
 
     /// Ternary equivalent of `R_DrawSpan`: renders horizontal floor or ceiling span (`y`)
     /// between `x1..=x2` interpolating 2D coordinates `(u, v)` in [`TernaryFixed`].
+    /// Returns the number of pixels the framebuffer rejected.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_span(
         mem: &mut Memory,
@@ -70,34 +80,44 @@ impl TernaryRenderer {
         du: TernaryFixed,
         dv: TernaryFixed,
         flat_tex: &[Tryte6; 4096], // Standard 64x64 Doom flat
-    ) {
-        if y >= FB_HEIGHT || x1 > x2 || x1 >= FB_WIDTH {
-            return;
+    ) -> u64 {
+        if x1 > x2 {
+            return 0;
+        }
+        let requested = (x2 - x1) as u64 + 1;
+        if y >= FB_HEIGHT || x1 >= FB_WIDTH {
+            return requested;
         }
         let x_end = x2.min(FB_WIDTH - 1);
+        let mut dropped = 0u64;
         for x in x1..=x_end {
             let tx = (u.to_int_balanced().rem_euclid(64)) as usize;
             let ty = (v.to_int_balanced().rem_euclid(64)) as usize;
             let color = flat_tex[ty * 64 + tx];
-            let _ = mem.write_pixel_tryte(x, y, color);
+            if mem.write_pixel_tryte(x, y, color).is_err() {
+                dropped += 1;
+            }
             u += du;
             v += dv;
         }
+        dropped
     }
 
     /// Renders a full 3D scene traversing the [`BspTree`] Front-to-Back from
     /// `(cam_x, cam_y)`, culling occluded walls with [`TernaryOcclusionClipper`] and projecting
     /// ceiling, textured wall, and floor for each visible column.
-    /// Returns total wall segments drawn and column pixels rendered.
+    /// Returns total wall segments drawn, column pixels rendered, and pixels the framebuffer
+    /// rejected (0 in normal operation).
     pub fn render_bsp_scene(
         mem: &mut Memory,
         tree: &BspTree,
         cam_x: TernaryFixed,
         cam_y: TernaryFixed,
-    ) -> (usize, usize) {
+    ) -> (usize, usize, u64) {
         let mut clipper = TernaryOcclusionClipper::new();
         let mut segs_drawn = 0usize;
         let mut cols_drawn = 0usize;
+        let mut dropped_pixels = 0u64;
 
         // Generates procedural brick/metal texture of 64 texels in Tryte6
         let mut brick_tex = [Tryte6::ZERO; 64];
@@ -128,7 +148,9 @@ impl TernaryRenderer {
             for &x in visible_cols {
                 // Fills ceiling above wall
                 for y in 0..yl {
-                    let _ = mem.write_pixel_tryte(x, y, ceiling_color);
+                    if mem.write_pixel_tryte(x, y, ceiling_color).is_err() {
+                        dropped_pixels += 1;
+                    }
                 }
                 // Renders vertical wall column with 11.10 fixed-point interpolator
                 let col_params = ColumnDrawParams {
@@ -140,15 +162,17 @@ impl TernaryRenderer {
                     texture_column: &brick_tex,
                     light_shift,
                 };
-                Self::draw_column(mem, &col_params);
+                dropped_pixels += Self::draw_column(mem, &col_params);
                 // Fills floor below wall
                 for y in (yh + 1)..FB_HEIGHT {
-                    let _ = mem.write_pixel_tryte(x, y, floor_color);
+                    if mem.write_pixel_tryte(x, y, floor_color).is_err() {
+                        dropped_pixels += 1;
+                    }
                 }
             }
         });
 
-        (segs_drawn, cols_drawn)
+        (segs_drawn, cols_drawn, dropped_pixels)
     }
 }
 
@@ -196,7 +220,7 @@ mod tests {
             root: BspChild::Node(0),
         };
 
-        let (segs, cols) = TernaryRenderer::render_bsp_scene(
+        let (segs, cols, dropped) = TernaryRenderer::render_bsp_scene(
             &mut mem,
             &tree,
             TernaryFixed::from_int(4),
@@ -205,6 +229,7 @@ mod tests {
 
         assert_eq!(segs, 1);
         assert_eq!(cols, 320);
+        assert_eq!(dropped, 0);
 
         // Verifies that ceiling (y=5), wall (y=100), and floor (y=195) receive distinct Tryte6 values
         let px_ceil = mem.read_pixel_tryte(160, 5).unwrap();

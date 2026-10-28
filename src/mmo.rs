@@ -25,7 +25,8 @@ use crate::word::{Tryte6, Word21};
 use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -224,6 +225,7 @@ pub struct SetunDoomMachine {
 
 impl SetunDoomMachine {
     /// Creates and initializes full Setun-Doom machine and writes ternary Firmware ROM to memory.
+    #[must_use]
     pub fn new() -> Self {
         let mut machine = Self {
             cpu: Cpu::new(),
@@ -321,9 +323,9 @@ impl SetunDoomMachine {
         self.cpu
             .load_program(&mut self.memory, ROM_POINT_ON_SIDE_ENTRY, &pos_prog);
 
-        // Constant 0.5 in TernaryFixed (11.10) in MEM[73] for P_AproxDistance
-        self.memory
-            .write_word_fast(73, crate::fixed::TernaryFixed::from_f64(0.5).raw_word());
+        // Integer divisor 2 in MEM[76]: Doom halves the smaller magnitude with `>> 1`, which is
+        // exact floor division; multiplying by the 11.10 constant 0.5 would bias the result.
+        self.memory.write_word_fast(76, Word21::new(2));
 
         let dist_asm = r#"
             LOAD 70
@@ -347,7 +349,7 @@ impl SetunDoomMachine {
         .dx_smaller:
             LOAD 70
         .sub_half:
-            MUL 73
+            DIV_INT 76
             STORE 74
             LOAD 72
             SUB 74
@@ -467,12 +469,92 @@ impl Default for SetunDoomMachine {
     }
 }
 
+/// Per-hook invocation counters used to cross-check the C engine against the ternary bridge.
+///
+/// The C side keeps its own counters at each call site, so comparing both proves the hooks are
+/// actually invoked instead of inferred from telemetry.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct SetunHookCounters {
+    /// Calls received by [`setun_DrawColumn`].
+    pub draw_column_calls: u64,
+    /// Vertical pixels written by [`setun_DrawColumn`].
+    pub draw_column_pixels: u64,
+    /// Calls received by [`setun_DrawSpan`].
+    pub draw_span_calls: u64,
+    /// Horizontal pixels written by [`setun_DrawSpan`].
+    pub draw_span_pixels: u64,
+    /// Calls received by [`setun_FixedMul`].
+    pub fixed_mul_calls: u64,
+    /// Calls received by [`setun_FixedDiv`].
+    pub fixed_div_calls: u64,
+    /// Calls received by [`setun_PointOnSide`].
+    pub point_on_side_calls: u64,
+    /// Calls received by [`setun_AproxDistance`].
+    pub aprox_distance_calls: u64,
+}
+
+static HOOK_DRAW_COLUMN_CALLS: AtomicU64 = AtomicU64::new(0);
+static HOOK_DRAW_COLUMN_PIXELS: AtomicU64 = AtomicU64::new(0);
+static HOOK_DRAW_SPAN_CALLS: AtomicU64 = AtomicU64::new(0);
+static HOOK_DRAW_SPAN_PIXELS: AtomicU64 = AtomicU64::new(0);
+static HOOK_FIXED_MUL_CALLS: AtomicU64 = AtomicU64::new(0);
+static HOOK_FIXED_DIV_CALLS: AtomicU64 = AtomicU64::new(0);
+static HOOK_POINT_ON_SIDE_CALLS: AtomicU64 = AtomicU64::new(0);
+static HOOK_APROX_DISTANCE_CALLS: AtomicU64 = AtomicU64::new(0);
+
+/// Copies the per-hook invocation counters into `out`.
+///
+/// # Safety
+/// `out` must be null or point to writable aligned memory for [`SetunHookCounters`].
+// SAFETY: the pointer is null-checked before the write; when non-null it addresses a
+// `SetunHookCounters` local owned by the C driver, which has `#[repr(C)]` layout and therefore
+// the alignment of its `u64` fields, written once with no aliasing reference alive.
+#[no_mangle]
+pub unsafe extern "C" fn setun_GetHookCounters(out: *mut SetunHookCounters) {
+    if out.is_null() {
+        return;
+    }
+    let snapshot = SetunHookCounters {
+        draw_column_calls: HOOK_DRAW_COLUMN_CALLS.load(Ordering::Relaxed),
+        draw_column_pixels: HOOK_DRAW_COLUMN_PIXELS.load(Ordering::Relaxed),
+        draw_span_calls: HOOK_DRAW_SPAN_CALLS.load(Ordering::Relaxed),
+        draw_span_pixels: HOOK_DRAW_SPAN_PIXELS.load(Ordering::Relaxed),
+        fixed_mul_calls: HOOK_FIXED_MUL_CALLS.load(Ordering::Relaxed),
+        fixed_div_calls: HOOK_FIXED_DIV_CALLS.load(Ordering::Relaxed),
+        point_on_side_calls: HOOK_POINT_ON_SIDE_CALLS.load(Ordering::Relaxed),
+        aprox_distance_calls: HOOK_APROX_DISTANCE_CALLS.load(Ordering::Relaxed),
+    };
+    *out = snapshot;
+}
+
 /// Global thread-safe instance for direct servicing of `doomgeneric` C FFI calls.
 static GLOBAL_MACHINE: OnceLock<Mutex<SetunDoomMachine>> = OnceLock::new();
 
 /// Returns a reference to the global Setun-Doom machine mutex.
 pub fn global_machine() -> &'static Mutex<SetunDoomMachine> {
     GLOBAL_MACHINE.get_or_init(|| Mutex::new(SetunDoomMachine::new()))
+}
+
+/// Acquires `mutex`, recovering from a poisoned lock.
+///
+/// A poisoned lock means a previous holder panicked while owning the state. The emulator state
+/// is a flat memory image plus counters, with no cross-field invariant a panic can break, so the
+/// guard is recovered instead of aborting the C engine. The event is reported on stderr so the
+/// failure is never silent.
+fn lock_or_recover<T>(mutex: &'static Mutex<T>, label: &str) -> MutexGuard<'static, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            eprintln!("setun-doom: {label} mutex poisoned, recovering state");
+            poisoned.into_inner()
+        }
+    }
+}
+
+/// Acquires the global machine guard, recovering from a poisoned mutex.
+pub fn lock_machine() -> MutexGuard<'static, SetunDoomMachine> {
+    lock_or_recover(global_machine(), "global machine")
 }
 
 // ============================================================================
@@ -482,9 +564,7 @@ pub fn global_machine() -> &'static Mutex<SetunDoomMachine> {
 /// Initializes Setun-Doom platform for `doomgeneric` main loop.
 #[no_mangle]
 pub extern "C" fn DG_Init() {
-    if let Ok(mut machine) = global_machine().lock() {
-        machine.dg_init();
-    }
+    lock_machine().dg_init();
 }
 
 /// Translates 64,000 `Tryte6` entries from ternary framebuffer to RGBA window buffer.
@@ -492,9 +572,7 @@ pub extern "C" fn DG_Init() {
 /// also copies RGBA pixels to external buffer.
 #[no_mangle]
 pub extern "C" fn DG_DrawFrame() {
-    if let Ok(mut machine) = global_machine().lock() {
-        let _ = machine.dg_draw_frame();
-    }
+    lock_machine().dg_draw_frame();
 }
 
 /// Extended FFI variant copying rendered RGBA framebuffer directly to C buffer
@@ -502,34 +580,29 @@ pub extern "C" fn DG_DrawFrame() {
 ///
 /// # Safety
 /// `out_rgba` must be null or point to at least 256,000 valid writable bytes.
+// SAFETY: `out_rgba` is null-checked before any write; when non-null the caller (doomgeneric
+// `DG_DrawFrame` platform hook) supplies the 256,000-byte RGBA window buffer with `u8`
+// alignment, and the copy source is the machine-owned `rgba_frame` vector, so source and
+// destination never alias.
 #[no_mangle]
 pub unsafe extern "C" fn DG_DrawFrameToBuffer(out_rgba: *mut u8) {
-    if let Ok(mut machine) = global_machine().lock() {
-        let rgba = machine.dg_draw_frame();
-        if !out_rgba.is_null() {
-            core::ptr::copy_nonoverlapping(rgba.as_ptr(), out_rgba, FB_SIZE * 4);
-        }
+    let mut machine = lock_machine();
+    let rgba = machine.dg_draw_frame();
+    if !out_rgba.is_null() {
+        core::ptr::copy_nonoverlapping(rgba.as_ptr(), out_rgba, FB_SIZE * 4);
     }
 }
 
 /// Suspends execution for `ms` milliseconds.
 #[no_mangle]
 pub extern "C" fn DG_SleepMs(ms: u32) {
-    if let Ok(machine) = global_machine().lock() {
-        machine.dg_sleep_ms(ms);
-    } else if ms > 0 {
-        thread::sleep(Duration::from_millis(ms as u64));
-    }
+    lock_machine().dg_sleep_ms(ms);
 }
 
 /// Returns millisecond count elapsed since `DG_Init`.
 #[no_mangle]
 pub extern "C" fn DG_GetTicksMs() -> u32 {
-    if let Ok(mut machine) = global_machine().lock() {
-        machine.dg_get_ticks_ms()
-    } else {
-        0
-    }
+    lock_machine().dg_get_ticks_ms()
 }
 
 /// Queries `doomgeneric` keyboard event queue.
@@ -537,17 +610,19 @@ pub extern "C" fn DG_GetTicksMs() -> u32 {
 ///
 /// # Safety
 /// `pressed` and `doom_key` must be valid aligned pointers when events are present in queue.
+// SAFETY: both pointers are null-checked before use; when non-null they point to `int` and
+// `unsigned char` locals owned by the doomgeneric input loop, correctly aligned for their
+// types, and no other reference to those locals exists across this call.
 #[no_mangle]
 pub unsafe extern "C" fn DG_GetKey(pressed: *mut i32, doom_key: *mut u8) -> i32 {
     if pressed.is_null() || doom_key.is_null() {
         return 0;
     }
-    if let Ok(mut machine) = global_machine().lock() {
-        if let Some((is_pressed, key)) = machine.dg_get_key() {
-            *pressed = is_pressed;
-            *doom_key = key;
-            return 1;
-        }
+    let mut machine = lock_machine();
+    if let Some((is_pressed, key)) = machine.dg_get_key() {
+        *pressed = is_pressed;
+        *doom_key = key;
+        return 1;
     }
     0
 }
@@ -560,9 +635,7 @@ pub extern "C" fn DG_SetWindowTitle(_title: *const core::ffi::c_char) {}
 /// and keyboard controller queue of Setun-Doom machine.
 #[no_mangle]
 pub extern "C" fn setun_PushKeyEvent(pressed: i32, doom_key: u8) {
-    if let Ok(mut machine) = global_machine().lock() {
-        machine.push_key_event(pressed != 0, doom_key);
-    }
+    lock_machine().push_key_event(pressed != 0, doom_key);
 }
 
 // ============================================================================
@@ -575,11 +648,10 @@ pub extern "C" fn setun_PushKeyEvent(pressed: i32, doom_key: u8) {
 /// and unbiased $3^{10}$ vs $2^{16}$ telemetry), and reads `MEM[52]`.
 #[no_mangle]
 pub extern "C" fn setun_FixedMul(a: i32, b: i32) -> i32 {
+    HOOK_FIXED_MUL_CALLS.fetch_add(1, Ordering::Relaxed);
     let ta = crate::fixed::TernaryFixed::from_doom_fixed16(a);
     let tb = crate::fixed::TernaryFixed::from_doom_fixed16(b);
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted SetunDoomMachine mutex in setun_FixedMul");
+    let mut machine = lock_machine();
     machine.memory.write_word_fast(50, ta.raw_word());
     machine.memory.write_word_fast(51, tb.raw_word());
     machine.execute_rom_routine(ROM_FIXED_MUL_ENTRY, 8);
@@ -592,19 +664,33 @@ pub extern "C" fn setun_FixedMul(a: i32, b: i32) -> i32 {
 /// via `Cpu::step_checked()`.
 #[no_mangle]
 pub extern "C" fn setun_FixedDiv(a: i32, b: i32) -> i32 {
+    HOOK_FIXED_DIV_CALLS.fetch_add(1, Ordering::Relaxed);
     if (a.unsigned_abs() >> 14) >= b.unsigned_abs() {
         return if (a ^ b) < 0 { i32::MIN } else { i32::MAX };
     }
     let ta = crate::fixed::TernaryFixed::from_doom_fixed16(a);
     let tb = crate::fixed::TernaryFixed::from_doom_fixed16(b);
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted SetunDoomMachine mutex in setun_FixedDiv");
+    let mut machine = lock_machine();
     machine.memory.write_word_fast(50, ta.raw_word());
     machine.memory.write_word_fast(51, tb.raw_word());
     machine.execute_rom_routine(ROM_FIXED_DIV_ENTRY, 8);
     let quot_word = machine.memory.read_word_fast(52);
     crate::fixed::TernaryFixed::from_raw(quot_word).to_doom_fixed16()
+}
+
+/// Truncates a 16.16 delta to its integer part the way Doom's `>> FRACBITS` does (floor),
+/// keeping small nonzero deltas nonzero so the ROM's axis-aligned branches are not taken.
+///
+/// The ROM's wire shift rounds to nearest, while Doom floors; pre-flooring here removes that
+/// difference before the ternary multiply.
+#[inline]
+fn delta_integer_part(delta: i32) -> i32 {
+    let integer = delta >> 16;
+    if integer == 0 && delta != 0 {
+        if delta > 0 { 1 } else { -1 }
+    } else {
+        integer << 16
+    }
 }
 
 /// Executes Doom `R_PointOnSide` / `R_PointOnSegSide` / `P_PointOnLineSide`
@@ -620,16 +706,15 @@ pub extern "C" fn setun_PointOnSide(
     ldx: i32,
     ldy: i32,
 ) -> i32 {
+    HOOK_POINT_ON_SIDE_CALLS.fetch_add(1, Ordering::Relaxed);
     let tx = crate::fixed::TernaryFixed::from_doom_fixed16(x).raw_word();
     let ty = crate::fixed::TernaryFixed::from_doom_fixed16(y).raw_word();
     let tlx = crate::fixed::TernaryFixed::from_doom_fixed16(lx).raw_word();
     let tly = crate::fixed::TernaryFixed::from_doom_fixed16(ly).raw_word();
-    let tldx = crate::fixed::TernaryFixed::from_doom_fixed16(ldx).raw_word();
-    let tldy = crate::fixed::TernaryFixed::from_doom_fixed16(ldy).raw_word();
+    let tldx = crate::fixed::TernaryFixed::from_doom_fixed16(delta_integer_part(ldx)).raw_word();
+    let tldy = crate::fixed::TernaryFixed::from_doom_fixed16(delta_integer_part(ldy)).raw_word();
 
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted SetunDoomMachine mutex in setun_PointOnSide");
+    let mut machine = lock_machine();
     machine.memory.write_word_fast(60, tx);
     machine.memory.write_word_fast(61, ty);
     machine.memory.write_word_fast(62, tlx);
@@ -642,14 +727,13 @@ pub extern "C" fn setun_PointOnSide(
 
 /// Executes Doom `P_AproxDistance(dx, dy)` in `p_maputl.c` entirely inside Setun-Doom CPU
 /// via `ROM_APROX_DIST_ENTRY` (`PC=220`), using `STI.T` for ternary absolute value,
-/// `CMP_T` for minimum and `ADD`/`SUB`/`MUL` in `TernaryFixed` (`11.10`).
+/// `CMP_T` for minimum and `ADD`/`SUB`/`DIV_INT` in `TernaryFixed` (`11.10`).
 #[no_mangle]
 pub extern "C" fn setun_AproxDistance(dx: i32, dy: i32) -> i32 {
+    HOOK_APROX_DISTANCE_CALLS.fetch_add(1, Ordering::Relaxed);
     let tdx = crate::fixed::TernaryFixed::from_doom_fixed16(dx).raw_word();
     let tdy = crate::fixed::TernaryFixed::from_doom_fixed16(dy).raw_word();
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_AproxDistance");
+    let mut machine = lock_machine();
     machine.memory.write_word_fast(70, tdx);
     machine.memory.write_word_fast(71, tdy);
     machine.execute_rom_routine(ROM_APROX_DIST_ENTRY, 32);
@@ -663,6 +747,10 @@ pub extern "C" fn setun_AproxDistance(dx: i32, dy: i32) -> i32 {
 ///
 /// # Safety
 /// `dest`, `dc_source`, and `dc_colormap` must be valid pointers to Doom framebuffer and lumps.
+// SAFETY: `dc_source`, `dc_colormap` and `dest_start` are asserted non-null before use and
+// bounds-checked against the 320x200 screen; doomgeneric passes its texture column, colormap
+// and `I_VideoBuffer` row, all `u8`-aligned and valid for the call, and the destination never
+// aliases the two read-only sources.
 #[no_mangle]
 #[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawColumn(
@@ -677,10 +765,12 @@ pub unsafe extern "C" fn setun_DrawColumn(
     dest_start: *mut u8,
     screenwidth: i32,
 ) {
+    HOOK_DRAW_COLUMN_CALLS.fetch_add(1, Ordering::Relaxed);
     let count = dc_yh - dc_yl;
     if count < 0 {
         return;
     }
+    HOOK_DRAW_COLUMN_PIXELS.fetch_add((count + 1) as u64, Ordering::Relaxed);
     assert!(
         !dc_source.is_null() && !dc_colormap.is_null() && !dest_start.is_null(),
         "Null pointer in setun_DrawColumn"
@@ -701,9 +791,7 @@ pub unsafe extern "C" fn setun_DrawColumn(
     let mut b_frac16 = frac16_init;
     let b_step16 = dc_iscale;
 
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_DrawColumn");
+    let mut machine = lock_machine();
 
     let mut dest_ptr = dest_start;
     let mut y = dc_yl as usize;
@@ -747,6 +835,10 @@ pub unsafe extern "C" fn setun_DrawColumn(
 ///
 /// # Safety
 /// Pointers must be valid for reading and writing in framebuffer.
+// SAFETY: same layout contract as `setun_DrawColumn`: `dc_source`, `dc_colormap` and
+// `dest_start` are asserted non-null and bounds-checked against the 320x200 screen, all buffers
+// are `u8`-aligned and live for the call, and the translated colormap index stays inside the
+// 256-entry table.
 #[no_mangle]
 #[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawTranslatedColumn(
@@ -781,9 +873,7 @@ pub unsafe extern "C" fn setun_DrawTranslatedColumn(
     let mut b_frac16 = frac16_init;
     let b_step16 = dc_iscale;
 
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_DrawTranslatedColumn");
+    let mut machine = lock_machine();
 
     let mut dest_ptr = dest_start;
     let mut y = dc_yl as usize;
@@ -825,6 +915,9 @@ pub unsafe extern "C" fn setun_DrawTranslatedColumn(
 ///
 /// # Safety
 /// Pointers must be valid.
+// SAFETY: `colormaps`, `fuzzoffset`, `fuzzpos_ptr` and `dest_start` are asserted non-null and
+// `fuzzpos` is kept inside `fuzztable_len`; doomgeneric owns the fuzz table, the fuzz position
+// variable and the framebuffer row, all aligned for `u8`/`i32` and exclusively borrowed here.
 #[no_mangle]
 #[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawFuzzColumn(
@@ -860,9 +953,7 @@ pub unsafe extern "C" fn setun_DrawFuzzColumn(
     let mut b_frac16 = frac16_init;
     let b_step16 = dc_iscale;
 
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_DrawFuzzColumn");
+    let mut machine = lock_machine();
 
     let mut dest_ptr = dest_start;
     let mut y = dc_yl as usize;
@@ -910,6 +1001,9 @@ pub unsafe extern "C" fn setun_DrawFuzzColumn(
 ///
 /// # Safety
 /// `dest_start`, `ds_source`, and `ds_colormap` must be valid pointers.
+// SAFETY: the three pointers are asserted non-null and the span is clamped to the 320x200
+// screen; doomgeneric supplies its flat texture, colormap and `I_VideoBuffer` row, all
+// `u8`-aligned and valid for the call, and the destination never aliases the sources.
 #[no_mangle]
 #[allow(clippy::explicit_counter_loop)]
 pub unsafe extern "C" fn setun_DrawSpan(
@@ -924,10 +1018,12 @@ pub unsafe extern "C" fn setun_DrawSpan(
     ds_colormap: *const u8,
     dest_start: *mut u8,
 ) {
+    HOOK_DRAW_SPAN_CALLS.fetch_add(1, Ordering::Relaxed);
     let count = ds_x2 - ds_x1;
     if count < 0 {
         return;
     }
+    HOOK_DRAW_SPAN_PIXELS.fetch_add((count + 1) as u64, Ordering::Relaxed);
     assert!(
         !ds_source.is_null() && !ds_colormap.is_null() && !dest_start.is_null(),
         "Null pointer in setun_DrawSpan"
@@ -951,9 +1047,7 @@ pub unsafe extern "C" fn setun_DrawSpan(
     let mut bx_frac16 = ds_xfrac;
     let mut by_frac16 = ds_yfrac;
 
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_DrawSpan");
+    let mut machine = lock_machine();
 
     let mut dest_ptr = dest_start;
     let y = ds_y as usize;
@@ -1002,11 +1096,19 @@ pub unsafe extern "C" fn setun_DrawSpan(
 
 static ACTIVE_PALETTE: Mutex<Option<[u8; 768]>> = Mutex::new(None);
 
+/// Acquires the synchronized palette guard, recovering from a poisoned mutex.
+fn lock_active_palette() -> MutexGuard<'static, Option<[u8; 768]>> {
+    lock_or_recover(&ACTIVE_PALETTE, "palette")
+}
+
 /// Synchronizes 256-color RGB `PLAYPAL` palette from `I_SetPalette` in `doomgeneric`
 /// with the `PALETTE_BASE` region of Setun-Doom ternary memory.
 ///
 /// # Safety
 /// `rgb_palette` must point to 768 bytes (`256 * 3`).
+// SAFETY: the pointer is null-checked before any read; when non-null, doomgeneric passes the
+// address of its 768-byte `PLAYPAL` table (`unsigned char[768]`), aligned for `u8` and valid for
+// the duration of the call, and the slice never aliases the machine-owned palette copy.
 #[no_mangle]
 pub unsafe extern "C" fn setun_SyncPalette(rgb_palette: *const u8) {
     assert!(
@@ -1014,20 +1116,17 @@ pub unsafe extern "C" fn setun_SyncPalette(rgb_palette: *const u8) {
         "Null pointer passed to setun_SyncPalette"
     );
     let slice = core::slice::from_raw_parts(rgb_palette, 768);
-    if let Ok(mut lock) = ACTIVE_PALETTE.lock() {
-        let mut arr = [0u8; 768];
-        arr.copy_from_slice(slice);
-        *lock = Some(arr);
-    }
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_SyncPalette");
-    machine.memory.load_playpal(slice);
+    let mut lock = lock_active_palette();
+    let mut arr = [0u8; 768];
+    arr.copy_from_slice(slice);
+    *lock = Some(arr);
+    drop(lock);
+    lock_machine().memory.load_playpal(slice);
 }
 
 /// Retrieves the latest 768-byte palette synchronized by the Doom engine.
 pub fn get_active_palette() -> Option<[u8; 768]> {
-    ACTIVE_PALETTE.lock().ok().and_then(|p| *p)
+    *lock_active_palette()
 }
 
 /// Copies 64,000 bytes from `I_VideoBuffer` (`320x200` Doom palette indices)
@@ -1036,6 +1135,9 @@ pub fn get_active_palette() -> Option<[u8; 768]> {
 ///
 /// # Safety
 /// `video_buffer_320x200` must point to 64,000 bytes and `out_rgba_320x200` to 256,000 bytes.
+// SAFETY: the video pointer is asserted non-null and read for exactly `FB_SIZE` (64,000) bytes;
+// the RGBA pointer is null-checked before writing 256,000 bytes; both are `u8`-aligned, owned by
+// the doomgeneric video driver, live for the call, and do not alias the machine `rgba_frame`.
 #[no_mangle]
 pub unsafe extern "C" fn setun_BlitVideoBuffer(
     video_buffer_320x200: *const u8,
@@ -1046,9 +1148,7 @@ pub unsafe extern "C" fn setun_BlitVideoBuffer(
         "Null pointer in setun_BlitVideoBuffer"
     );
     let vbuf = core::slice::from_raw_parts(video_buffer_320x200, FB_SIZE);
-    let mut machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_BlitVideoBuffer");
+    let mut machine = lock_machine();
     for (i, &pal_idx) in vbuf.iter().enumerate() {
         let tryte = Tryte6::from_palette_index(pal_idx);
         machine.memory.raw_cells_mut()[crate::memory::FRAMEBUFFER_BASE + i] = tryte.as_i64();
@@ -1081,14 +1181,16 @@ pub struct SetunLiveTelemetrySnapshot {
 ///
 /// # Safety
 /// `out_snap` must point to valid aligned memory for [`SetunLiveTelemetrySnapshot`].
+// SAFETY: the pointer is null-checked before the write; when non-null it addresses a
+// `SetunLiveTelemetrySnapshot` local owned by the SDL2 HUD, which has `#[repr(C)]` layout and
+// therefore the alignment of its `i64`/`u64` fields, and it is written once with no aliasing
+// reference alive.
 #[no_mangle]
 pub unsafe extern "C" fn setun_GetLiveTelemetrySnapshot(out_snap: *mut SetunLiveTelemetrySnapshot) {
     if out_snap.is_null() {
         return;
     }
-    let machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_GetLiveTelemetrySnapshot");
+    let machine = lock_machine();
     let tel = machine.cpu.telemetry;
     let acc_word = machine.cpu.acc;
     let mut trits_arr = [0i8; 21];
@@ -1116,9 +1218,7 @@ pub unsafe extern "C" fn setun_GetLiveTelemetrySnapshot(out_snap: *mut SetunLive
 /// during `doomgeneric` execution.
 #[no_mangle]
 pub extern "C" fn setun_PrintTelemetry(frame_num: u32) {
-    let machine = global_machine()
-        .lock()
-        .expect("Corrupted mutex in setun_PrintTelemetry");
+    let machine = lock_machine();
     let tel = machine.cpu.telemetry;
     println!(
         "[Setun-Doom Frame {:>4}] ISA Instrs: {:>8} | Gate Carries: {:>8} | Trit Flips: {:>9} (Half: {:>9}, Full: {:>7}) vs RV32I Bit Flips: {:>9} ({:+.2}% Flips | {:+.2}% Energy dV^2)",
@@ -1220,5 +1320,26 @@ mod tests {
         // SAFETY: pressed and key are valid stack pointers.
         let empty_key = unsafe { DG_GetKey(&mut pressed, &mut key) };
         assert_eq!(empty_key, 0);
+    }
+
+    #[test]
+    fn test_lock_or_recover_survives_poisoned_mutex() {
+        static TEST_LOCK: Mutex<u32> = Mutex::new(7);
+
+        let poisoned_thread = std::thread::spawn(|| {
+            let _guard = TEST_LOCK.lock().unwrap();
+            panic!("intentional panic to poison TEST_LOCK");
+        })
+        .join();
+        assert!(
+            poisoned_thread.is_err(),
+            "the holder thread must unwind while owning the lock"
+        );
+
+        assert!(
+            TEST_LOCK.lock().is_err(),
+            "the mutex must be poisoned by the panicking holder"
+        );
+        assert_eq!(*lock_or_recover(&TEST_LOCK, "test"), 7);
     }
 }

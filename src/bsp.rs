@@ -127,6 +127,7 @@ pub struct TernaryOcclusionClipper {
 
 impl TernaryOcclusionClipper {
     /// Initializes all 320 screen columns as fully open (`Trit::Positive`).
+    #[must_use]
     pub fn new() -> Self {
         let all_open_trits = [Trit::Positive; 21];
         let all_open_word = Word21::from_trits(&all_open_trits);

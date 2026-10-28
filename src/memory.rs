@@ -94,6 +94,7 @@ pub struct Memory {
 
 impl Memory {
     /// Allocates and initializes $3^{14}$-word main memory and default Doom VGA palette.
+    #[must_use]
     pub fn new() -> Self {
         let mut mem = Self {
             cells: vec![0i64; MEMORY_SIZE],

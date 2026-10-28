@@ -39,6 +39,7 @@ pub struct ProcessControlBlock {
 
 impl ProcessControlBlock {
     /// Creates a new task ready for scheduling.
+    #[must_use]
     pub fn new(pid: usize, name: String, entry_pc: i64, sp: i64, heap_brk: i64) -> Self {
         Self {
             pid,
@@ -85,6 +86,7 @@ pub struct TaskScheduler {
 }
 
 impl TaskScheduler {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             tasks: Vec::new(),

@@ -10,6 +10,7 @@
 #include "doomkeys.h"
 #include "doomgeneric.h"
 #include "i_video.h"
+#include "setun_hooks.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -41,6 +42,15 @@ extern void setun_GetLiveTelemetrySnapshot(SetunLiveTelemetrySnapshot* out_snap)
 
 static uint32_t     s_FrameCount = 0;
 static uint32_t     s_MaxFrames  = 0; // 0 = unlimited
+uint64_t setun_c_draw_column_calls = 0;
+uint64_t setun_c_draw_column_pixels = 0;
+uint64_t setun_c_draw_span_calls = 0;
+uint64_t setun_c_draw_span_pixels = 0;
+uint64_t setun_c_fixed_mul_calls = 0;
+uint64_t setun_c_fixed_div_calls = 0;
+uint64_t setun_c_point_on_side_calls = 0;
+uint64_t setun_c_aprox_distance_calls = 0;
+
 static int          s_Headless   = 0;
 static uint8_t      s_SetunRgba320x200[320 * 200 * 4];
 
@@ -372,6 +382,48 @@ int main(int argc, char **argv)
         if (s_Renderer) SDL_DestroyRenderer(s_Renderer);
         if (s_Window)   SDL_DestroyWindow(s_Window);
         SDL_Quit();
+    }
+
+    {
+        setun_hook_counters_t rust;
+        setun_GetHookCounters(&rust);
+        int match = rust.draw_column_calls == setun_c_draw_column_calls
+                 && rust.draw_column_pixels == setun_c_draw_column_pixels
+                 && rust.draw_span_calls == setun_c_draw_span_calls
+                 && rust.draw_span_pixels == setun_c_draw_span_pixels
+                 && rust.fixed_mul_calls == setun_c_fixed_mul_calls
+                 && rust.fixed_div_calls == setun_c_fixed_div_calls
+                 && rust.point_on_side_calls == setun_c_point_on_side_calls
+                 && rust.aprox_distance_calls == setun_c_aprox_distance_calls;
+
+        printf("\n================================================================\n");
+        printf(" INDEPENDENT HOOK CROSS-CHECK (C call sites vs ternary bridge)\n");
+        printf("================================================================\n");
+        printf(" hook           | C calls    | Rust calls | C pixels     | Rust pixels\n");
+        printf(" draw_column    | %10llu | %10llu | %12llu | %11llu\n",
+               (unsigned long long)setun_c_draw_column_calls,
+               (unsigned long long)rust.draw_column_calls,
+               (unsigned long long)setun_c_draw_column_pixels,
+               (unsigned long long)rust.draw_column_pixels);
+        printf(" draw_span      | %10llu | %10llu | %12llu | %11llu\n",
+               (unsigned long long)setun_c_draw_span_calls,
+               (unsigned long long)rust.draw_span_calls,
+               (unsigned long long)setun_c_draw_span_pixels,
+               (unsigned long long)rust.draw_span_pixels);
+        printf(" fixed_mul      | %10llu | %10llu |            - |             -\n",
+               (unsigned long long)setun_c_fixed_mul_calls,
+               (unsigned long long)rust.fixed_mul_calls);
+        printf(" fixed_div      | %10llu | %10llu |            - |             -\n",
+               (unsigned long long)setun_c_fixed_div_calls,
+               (unsigned long long)rust.fixed_div_calls);
+        printf(" point_on_side  | %10llu | %10llu |            - |             -\n",
+               (unsigned long long)setun_c_point_on_side_calls,
+               (unsigned long long)rust.point_on_side_calls);
+        printf(" aprox_distance | %10llu | %10llu |            - |             -\n",
+               (unsigned long long)setun_c_aprox_distance_calls,
+               (unsigned long long)rust.aprox_distance_calls);
+        printf(" VERDICT: %s\n", match ? "MATCH (hooks invoked, pixel counts agree)" : "MISMATCH");
+        printf("================================================================\n");
     }
 
     return 0;

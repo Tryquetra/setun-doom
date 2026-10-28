@@ -1,6 +1,7 @@
 [workspace]
 members = [
     ".",
+    "crates/setun-ffi",
     "crates/setun-kernel",
 ]
 
@@ -35,6 +36,11 @@ required-features = ["std"]
 [[bin]]
 name = "setun-run"
 path = "src/bin/setun_run.rs"
+required-features = ["std"]
+
+[[bin]]
+name = "setun-doom-rv32"
+path = "src/bin/setun_doom_rv32.rs"
 required-features = ["std"]
 
 [profile.test]

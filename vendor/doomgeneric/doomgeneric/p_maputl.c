@@ -28,6 +28,7 @@
 
 
 #include "m_bbox.h"
+#include "setun_hooks.h"
 
 #include "doomdef.h"
 #include "doomstat.h"
@@ -53,6 +54,7 @@ P_AproxDistance
   fixed_t	dy )
 {
 #ifdef SETUN_TERNARY_ALU
+    setun_c_aprox_distance_calls++;
     return (fixed_t)setun_AproxDistance(dx, dy);
 #else
     dx = abs(dx);
@@ -74,6 +76,7 @@ P_PointOnLineSide
   line_t*	line )
 {
 #ifdef SETUN_TERNARY_ALU
+    setun_c_point_on_side_calls++;
     return (int)setun_PointOnSide(x, y, line->v1->x, line->v1->y, line->dx, line->dy);
 #else
     fixed_t	dx;

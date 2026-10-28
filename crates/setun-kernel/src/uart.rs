@@ -52,6 +52,9 @@ impl Write for Uart {
 
 pub fn _print(args: fmt::Arguments) {
     let mut uart = Uart;
+    // The discard is intentional: `write_fmt` only fails when the formatter does, and a print
+    // macro has no caller to return the error to. UART faults surface as lost console bytes.
+    #[allow(clippy::let_underscore_must_use)]
     let _ = uart.write_fmt(args);
 }
 

@@ -42,6 +42,7 @@ pub struct SetunDos {
 
 impl SetunDos {
     /// Creates an uninitialized Setun-DOS instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cpu: Cpu::new(),

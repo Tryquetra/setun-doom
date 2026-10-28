@@ -272,6 +272,7 @@ impl Tryte6 {
     }
 
     #[inline]
+    #[must_use]
     pub fn from_trits(trits: &[Trit; 6]) -> Self {
         Self::from_i64(trits_to_i64::<6>(trits))
     }
@@ -573,6 +574,7 @@ impl Word21 {
 
     /// Constructs a `Word21` from 21 individual trits.
     #[inline]
+    #[must_use]
     pub fn from_trits(trits: &[Trit; 21]) -> Self {
         Self::new(trits_to_i64::<21>(trits))
     }
@@ -585,6 +587,7 @@ impl Word21 {
 
     /// Reconstructs `Word21` from 42-bit dual-bit encoding.
     #[inline]
+    #[must_use]
     pub fn from_dual_bits(packed: u64) -> Self {
         Self::from_trits(&unpack_dual_bits::<21>(packed))
     }
@@ -905,6 +908,7 @@ impl Word27 {
     pub const ZERO: Self = Self(0);
 
     #[inline(always)]
+    #[must_use]
     pub const fn new(val: i64) -> Self {
         Self(wrap_balanced::<27>(val))
     }
@@ -930,6 +934,7 @@ impl Word27 {
     }
 
     #[inline]
+    #[must_use]
     pub fn from_trits(trits: &[Trit; 27]) -> Self {
         Self::new(trits_to_i64::<27>(trits))
     }

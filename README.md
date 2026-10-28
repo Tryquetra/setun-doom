@@ -106,6 +106,12 @@ The project progresses through five architectural levels of balanced ternary emu
 
 The codebase conforms to the Google Rust Style Guide and advanced system engineering standards:
 * **Zero Linter Warnings**: 100% clean passes on `cargo clippy --all-targets` with no warnings.
+* **Independent Hook Cross-Check**: `setun_GetHookCounters` reports how many times the ternary bridge was invoked, and the C engine keeps its own counters at every call site (`setun_hooks.h`). A 600-frame run matches exactly: 157,104 `R_DrawColumn` calls / 7,931,609 pixels, 40,249 `R_DrawSpan` calls / 7,459,496 pixels, 421,032 `FixedMul`, 29,097 `FixedDiv`, 42,220 `R_PointOnSide`, 379 `P_AproxDistance`.
+* **Fixed-Point Oracle Comparison**: `tests/integration_fixed_oracle.rs` compares `setun_FixedMul` and `setun_FixedDiv` against the vendored C algorithms and against the exact real value across 19,391 samples. Error stays inside the `3^-10` quantization bound (max error/bound 0.89 for multiplication, 1.00 for division); for divisors at or above 0.25 the maximum relative error is `4.6e-5`; the saturation guard matches the C engine in 68/68 cases. Exact equality with C is 47% for multiplication and 1.3% for division, because C truncates while the bridge rounds to nearest.
+* **BSP Geometry Oracle**: `tests/integration_bsp_oracle.rs` compares `setun_PointOnSide` and `setun_AproxDistance` against the vendored C algorithms over 10,568 map-scale samples. Side classification matches the C classifier everywhere except points exactly on the plane (7 of 5,561, where Doom's own side is arbitrary); `P_AproxDistance` matches within 2 units of `2^-16` (54% exact). Two fidelity fixes came out of it: the ROM now receives floor-truncated deltas like Doom's `>> 16` (rounding to nearest flipped 4 of 3,544 sides), and the distance ROM halves with `DIV_INT 2` instead of multiplying by an 11.10 `0.5` constant, which biased results by up to 2,244 units.
+* **Guest libc word-wise copies**: `memcpy`, `memset` and `memmove` in the RV32 guest copy four bytes per iteration when aligned, falling back to bytes otherwise. The frame copy that `I_FinishUpdate` performs every frame dropped the guest instruction count by 23% (136.6M to 104.9M for 100 frames), which cut the gate-accurate first frame from 11.0 s to 8.3 s. The fast mode stays at ~66 FPS because it is memory-access bound, not instruction bound.
+* **Flat Translation Arena**: translated blocks live in one append-only operation arena referenced by a direct `(pc - code_base) >> 2` index, with a reusable translation scratch buffer. Block lookup dropped from 7.7 ns (`HashMap`) to 0.33 ns (`Vec` index), each operation shrank from 32 to 16 bytes, and the fast mode went from ~52 to ~65 FPS headless.
+* **Miri on Unsafe Paths**: `cargo +nightly miri test --lib mmo::tests::` (FFI pointers, `from_raw_parts`, `copy_nonoverlapping`), `memory::tests::` and `word::tests::` pass with no undefined behavior. The full `--lib` suite exceeds a 15-minute CI budget because `dbt::tests::test_rv32im_doom_benchmark_execution_on_setun_dbt` interprets 833k instructions.
 * **Documented Safety Contracts (`// SAFETY:`)**: Every `unsafe` block is preceded by an explanatory comment specifying memory alignment, pointer validity, and absence of data races.
 * **Explicit Error Types**: `MemoryError`, `ElfError`, `DbtError`, and `CpuTrap` implement canonical `std::fmt::Display` and `std::error::Error` traits.
 * **Structural Pattern Matching**: Eradication of check-then-unwrap anti-patterns in favor of direct `let-else`, `if let`, or `match` extractions.
@@ -152,6 +158,43 @@ cargo build --release
 make -C vendor/doomgeneric/doomgeneric -f Makefile.setun
 ./vendor/doomgeneric/doomgeneric/doomgeneric_setun -iwad ./vendor/DOOM1.WAD
 ```
+
+### 6. Run Doom on Level 1 (RV32IM guest on the DBT)
+```bash
+# Cross-compile doomgeneric to bare-metal RV32IM (clang + rust-lld)
+make -C vendor/doomgeneric/riscv32
+
+# Execute every guest instruction through the 21-trit DBT and play
+cargo run --release --bin setun-doom-rv32
+
+# Headless with frame telemetry
+SETUN_RV32_HEADLESS=1 cargo run --release --bin setun-doom-rv32
+
+# Throughput benchmark: stop after N frames, optionally skip Doom's 1 ms tic sleeps
+SETUN_RV32_MAX_FRAMES=300 SETUN_RV32_NO_SLEEP=1 cargo run --release --bin setun-doom-rv32
+```
+
+The guest is a freestanding RV32IM binary with its own libc shim, soft-float builtins and a
+`ecall` ABI: `a7` selects exit (0), write (1), ticks (2), framebuffer blit (3), keyboard (4),
+WAD open/seek/read/size (5-8), sleep (9) and palette (10). The host side lives in
+`src/bin/setun_doom_rv32.rs`; no C code runs on the host CPU.
+
+Two execution modes exist, and the choice is explicit:
+
+| Mode | How to enable | Semantics | Measured |
+| :-- | :-- | :-- | :-- |
+| **Fast** (driver default) | `setun-doom-rv32` | direct host arithmetic, no switching telemetry | first frame 0.2 s, ~55 FPS (vsync) / ~65 headless |
+| **Veracity** | `SETUN_RV32_VERACITY=1 setun-doom-rv32` | every operation through the ternary gates, full telemetry | first frame 8.3 s, ~0.6 FPS |
+
+The library default is veracity: `SetunDbtEngine` is `SetunDbtEngine<true>`, and the fast engine
+requires `SetunDbtEngine<false>` or the driver's opt-in flag. Telemetry numbers (trit flips,
+carry propagations, energy) are only meaningful in veracity mode; the fast mode records none,
+which `tests/integration_execution_modes.rs` enforces together with architectural equivalence
+between both modes on the Doom RV32IM benchmark.
+
+Memory map: ELF at guest `0x000000` (Setun word 100,000), 3.7 MB heap up to `0x430000`, stack
+top `0x44A000`, host framebuffer at Setun word 4,600,000. Sound is disabled (`-nosound`); WAD
+lumps are read from the host by offset.
 
 ---
 

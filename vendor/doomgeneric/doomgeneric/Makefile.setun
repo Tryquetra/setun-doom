@@ -1,12 +1,15 @@
 ################################################################
 # Makefile.setun — Compila o motor C do Doom (doomgeneric)
-# ligado contra a biblioteca estática Rust `libsetun_doom.a`
+# ligado contra a biblioteca estática Rust `libsetun_ffi.a` (crates/setun-ffi)
 ################################################################
 
 CC=gcc
 CFLAGS+=-O2 -g -Wall -DNORMALUNIX -DLINUX -D_DEFAULT_SOURCE -DSETUN_TERNARY_ALU $(shell pkg-config --cflags sdl2)
 LDFLAGS+=-Wl,--gc-sections
-LIBS+=/home/robson/coding/setun-doom/target/release/libsetun_doom.a $(shell pkg-config --libs sdl2) -lm -lc -lpthread -ldl
+# Repository root, derived from this Makefile location (vendor/doomgeneric/doomgeneric).
+REPO_ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../../..)
+SETUN_STATICLIB := $(REPO_ROOT)/target/release/libsetun_ffi.a
+LIBS+=$(SETUN_STATICLIB) $(shell pkg-config --libs sdl2) -lm -lc -lpthread -ldl
 
 OBJDIR=build_setun
 OUTPUT=doomgeneric_setun
@@ -20,7 +23,11 @@ clean:
 	rm -rf $(OBJDIR)
 	rm -f $(OUTPUT)
 
-$(OUTPUT): $(OBJS)
+.PHONY: setun-staticlib
+setun-staticlib:
+	cd $(REPO_ROOT) && cargo build --release -p setun-ffi
+
+$(OUTPUT): $(OBJS) setun-staticlib
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $(OUTPUT) $(LIBS)
 
 $(OBJS): | $(OBJDIR)

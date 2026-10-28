@@ -11,7 +11,7 @@
 //! 4. Platform cycle for `doomgeneric` (`DG_Init`, `DG_DrawFrameToBuffer`, `DG_GetTicksMs`, `DG_GetKey`).
 
 use setun_doom::{
-    global_machine, BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer,
+    lock_machine, BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer,
     DG_GetKey, DG_GetTicksMs, DG_Init, SetunAssembler, Subsector, TernaryFixed, TernaryRenderer,
     Tryte6, WallSeg, Word21, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
 };
@@ -42,7 +42,7 @@ fn main() {
     DG_Init();
 
     {
-        let mut machine = global_machine().lock().expect("Failed to lock global machine");
+        let mut machine = lock_machine();
 
         // 1. Render a 3D BSP scene with frontal portal and back wall
         let front_sub = Subsector {
@@ -90,11 +90,15 @@ fn main() {
             root: BspChild::Node(0),
         };
 
-        let (segs_drawn, cols_drawn) = TernaryRenderer::render_bsp_scene(
+        let (segs_drawn, cols_drawn, dropped_pixels) = TernaryRenderer::render_bsp_scene(
             &mut machine.memory,
             &bsp_tree,
             TernaryFixed::from_int(3),
             TernaryFixed::ZERO,
+        );
+        assert_eq!(
+            dropped_pixels, 0,
+            "framebuffer rejected {dropped_pixels} pixels in the BSP scene"
         );
         println!(
             " * 3D BSP Scene      : {} visible segments | {} columns drawn (120..199 through rear portal)",
@@ -267,7 +271,7 @@ fn main() {
     );
 
     let doom_elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");
-    let mut doom_engine = setun_doom::dbt::SetunDbtEngine::from_elf_bytes(doom_elf_bytes)
+    let mut doom_engine = setun_doom::dbt::SetunDbtEngine::<true>::from_elf_bytes(doom_elf_bytes)
         .expect("Failed to initialize DBT engine for Doom RV32IM benchmark");
     let doom_report = doom_engine
         .run(5_000_000)
@@ -308,7 +312,7 @@ fn main() {
                     last_cam_x = gui.cam_x;
                     last_cam_y = gui.cam_y;
 
-                    let mut machine = global_machine().lock().expect("Failed to lock global machine");
+                    let mut machine = lock_machine();
                     let front_sub = Subsector {
                         id: 0,
                         segs: vec![
@@ -354,7 +358,7 @@ fn main() {
                         root: BspChild::Node(0),
                     };
 
-                    TernaryRenderer::render_bsp_scene(
+                    let (_segs, _cols, _dropped) = TernaryRenderer::render_bsp_scene(
                         &mut machine.memory,
                         &bsp_tree,
                         TernaryFixed::from_f64(gui.cam_x),

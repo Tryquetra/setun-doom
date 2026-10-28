@@ -205,6 +205,7 @@ pub struct Instruction {
 impl Instruction {
     /// Creates a new instruction validating register index (`0..9`).
     #[inline(always)]
+    #[must_use]
     pub const fn new(opcode: Opcode, reg_idx: usize, operand: i64) -> Self {
         assert!(reg_idx < INDEX_REGISTER_COUNT);
         Self {
@@ -276,6 +277,7 @@ impl Instruction {
 
     /// Constructs a `BCEG` instruction comparing `ACC` with `IX[reg_idx]`.
     #[inline(always)]
+    #[must_use]
     pub const fn new_bceg(reg_idx: usize, offset_eq: i64, offset_gt: i64) -> Self {
         Self::new(
             Opcode::Bceg,
@@ -411,6 +413,16 @@ impl PowerTelemetry {
             (self.ternary_half_swings as f64) * 0.25 + (self.ternary_full_swings as f64) * 1.0;
         ((b_energy - t_energy) / b_energy) * 100.0
     }
+
+    /// Returns [`Self::weighted_energy_reduction_pct`] only when a binary reference counter was
+    /// recorded, so callers report `None` instead of a placeholder percentage.
+    pub fn weighted_energy_reduction_opt(&self) -> Option<f64> {
+        if self.binary32_bit_flips == 0 {
+            None
+        } else {
+            Some(self.weighted_energy_reduction_pct())
+        }
+    }
 }
 
 /// Full architectural state of Setun-Doom CPU.
@@ -437,6 +449,7 @@ pub struct Cpu {
 
 impl Cpu {
     /// Initializes CPU with zeroed registers and `SP` at top of RAM.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             acc: Word21::ZERO,
@@ -1394,5 +1407,20 @@ mod tests {
         assert_eq!(mem.read_word(714).unwrap(), norm_neg_expected);
         assert_eq!(mem.read_word(715).unwrap().as_i64(), 5);
         assert_eq!(norm_expected.as_i64(), -norm_neg_expected.as_i64());
+    }
+
+    #[test]
+    fn test_energy_reduction_requires_binary_reference() {
+        // Without a binary reference counter, no percentage may be reported.
+        assert_eq!(PowerTelemetry::default().weighted_energy_reduction_opt(), None);
+
+        // Ternary energy = 40 half-swings * 0.25 + 10 full-swings = 20 against 200 binary toggles.
+        let measured = PowerTelemetry {
+            ternary_half_swings: 40,
+            ternary_full_swings: 10,
+            binary32_bit_flips: 200,
+            ..PowerTelemetry::default()
+        };
+        assert_eq!(measured.weighted_energy_reduction_opt(), Some(90.0));
     }
 }

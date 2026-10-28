@@ -108,6 +108,7 @@ pub struct Rv32iReferenceCpu {
 }
 
 impl Rv32iReferenceCpu {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

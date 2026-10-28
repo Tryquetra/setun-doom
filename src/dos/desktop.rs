@@ -46,9 +46,13 @@ pub struct SetunDesktop {
     pub wad_path: String,
     #[cfg(feature = "std")]
     pub doom_runner: Option<crate::dos::doom_runner::DoomDosRunner>,
+    /// Last native Doom engine failure, kept so the desktop can display it instead of a blank window.
+    #[cfg(feature = "std")]
+    pub doom_error: Option<String>,
 }
 
 impl SetunDesktop {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             active_window: ActiveWindow::None,
@@ -62,6 +66,8 @@ impl SetunDesktop {
             wad_path: "vendor/DOOM1.WAD".to_string(),
             #[cfg(feature = "std")]
             doom_runner: None,
+            #[cfg(feature = "std")]
+            doom_error: None,
         }
     }
 
@@ -158,7 +164,9 @@ impl SetunDesktop {
                     BTN_ICON_DOOM => {
                         self.active_window = ActiveWindow::Doom;
                         #[cfg(feature = "std")]
-                        let _ = self.ensure_doom_runner();
+                        if let Err(error) = self.ensure_doom_runner() {
+                            self.doom_error = Some(error);
+                        }
                     }
                     BTN_ICON_SHELL => {
                         self.active_window = ActiveWindow::Shell;
@@ -350,19 +358,28 @@ impl SetunDesktop {
     /// Renders the authentic native Doom engine window (or fullscreen).
     fn render_window_doom(&mut self, dos: &mut SetunDos) {
         #[cfg(feature = "std")]
-        let _ = self.ensure_doom_runner();
+        if let Err(error) = self.ensure_doom_runner() {
+            self.doom_error = Some(error);
+        }
 
         #[cfg(feature = "std")]
         if self.doom_fullscreen {
+            let mut tick_error = None;
             if let Some(ref mut runner) = self.doom_runner {
-                let _ = runner.step_native_tick();
+                if let Err(error) = runner.step_native_tick() {
+                    tick_error = Some(error);
+                }
                 let frame = &runner.last_frame_pixels;
                 for (i, &idx) in frame.iter().enumerate() {
                     let col = Tryte6::from_palette_index(idx).to_word21();
                     dos.mem.write_word_fast(FRAMEBUFFER_BASE + (i as i64), col);
                 }
             }
+            if let Some(error) = tick_error {
+                self.doom_error = Some(error);
+            }
             self.draw_string(dos, 4, 4, "DOOM NATIVE [F11/ESC: WIN]", 112);
+            self.draw_doom_error(dos, 4, 16);
             return;
         }
 
@@ -377,21 +394,30 @@ impl SetunDesktop {
         #[allow(unused_mut)]
         let mut frame_rendered = false;
         #[cfg(feature = "std")]
+        let mut step_error: Option<String> = None;
+        #[cfg(feature = "std")]
         if let Some(ref mut runner) = self.doom_runner {
-            if let Ok(frame) = runner.step_native_tick() {
-                frame_rendered = true;
-                // Scale 320x200 by 3/4 to 240x150 in client area (x=40..280, y=26..176)
-                for cy in 0..150 {
-                    let y_doom = (cy * 4) / 3;
-                    let row_ofs = (y_doom * 320) as usize;
-                    let fb_row_addr = FRAMEBUFFER_BASE + (26 + cy) * 320 + 40;
-                    for cx in 0..240 {
-                        let x_doom = ((cx * 4) / 3) as usize;
-                        let idx = frame[row_ofs + x_doom];
-                        dos.mem.write_word_fast(fb_row_addr + cx, Tryte6::from_palette_index(idx).to_word21());
+            match runner.step_native_tick() {
+                Ok(frame) => {
+                    frame_rendered = true;
+                    // Scale 320x200 by 3/4 to 240x150 in client area (x=40..280, y=26..176)
+                    for cy in 0..150 {
+                        let y_doom = (cy * 4) / 3;
+                        let row_ofs = (y_doom * 320) as usize;
+                        let fb_row_addr = FRAMEBUFFER_BASE + (26 + cy) * 320 + 40;
+                        for cx in 0..240 {
+                            let x_doom = ((cx * 4) / 3) as usize;
+                            let idx = frame[row_ofs + x_doom];
+                            dos.mem.write_word_fast(fb_row_addr + cx, Tryte6::from_palette_index(idx).to_word21());
+                        }
                     }
                 }
+                Err(error) => step_error = Some(error),
             }
+        }
+        #[cfg(feature = "std")]
+        if let Some(error) = step_error {
+            self.doom_error = Some(error);
         }
 
         if !frame_rendered {
@@ -406,11 +432,22 @@ impl SetunDesktop {
             self.draw_string(dos, wx + 12, wy + 66, "VERIFYING WAD CONTAINER IN MEMORY", 112);
         }
 
+        #[cfg(feature = "std")]
+        self.draw_doom_error(dos, wx + 12, wy + 82);
+
         // Mini Doom Status Hint below client area
         self.draw_raised_rect(dos, wx + 2, wy + wh - 14, ww - 4, 12, 32);
         self.draw_string(dos, wx + 4, wy + wh - 12, "WASD:MOVE | CTRL:FIRE | SPACE:USE | F11:FULL", 112);
     }
 
+    /// Draws the last native Doom failure, so a broken engine shows a diagnostic instead of a blank frame.
+    #[cfg(feature = "std")]
+    fn draw_doom_error(&self, dos: &mut SetunDos, x: i64, y: i64) {
+        if let Some(error) = self.doom_error.as_ref() {
+            let brief: String = error.chars().take(36).collect();
+            self.draw_string(dos, x, y, &format!("ERR: {brief}"), 215);
+        }
+    }
     /// Renders the T-Shell diagnostic terminal window.
     fn render_window_shell(&self, dos: &mut SetunDos) {
         let wx = 44i64;
@@ -476,12 +513,15 @@ impl SetunDesktop {
         let s1 = format!("TRIT FLIPS: {}", tel.ternary_trit_flips);
         let s2 = format!("HALF SWINGS (0<->1): {}", tel.ternary_half_swings);
         let s3 = format!("FULL SWINGS (-1<->1): {}", tel.ternary_full_swings);
-        let s4 = "DYNAMIC ENERGY SAVE: 36.90% (DV^2)";
+        let s4 = match tel.weighted_energy_reduction_opt() {
+            Some(pct) => format!("DYNAMIC ENERGY SAVE: {pct:.2}% (DV^2)"),
+            None => String::from("DYNAMIC ENERGY SAVE: N/A (NO BINARY REF)"),
+        };
 
         self.draw_string(dos, wx + 6, wy + 60, &s1, 112);
         self.draw_string(dos, wx + 6, wy + 74, &s2, 4);
         self.draw_string(dos, wx + 6, wy + 88, &s3, 4);
-        self.draw_string(dos, wx + 6, wy + 104, s4, 215);
+        self.draw_string(dos, wx + 6, wy + 104, &s4, 215);
     }
 
     /// Renders the About Setun-DOS info window.
@@ -855,5 +895,35 @@ fn get_glyph_bitmap(ch: char) -> [u8; 6] {
         '\'' => [0b0100, 0b0100, 0b0000, 0b0000, 0b0000, 0b0000],
         '=' => [0b0000, 0b1111, 0b0000, 0b1111, 0b0000, 0b0000],
         _ => [0b0000, 0b0000, 0b0000, 0b0000, 0b0000, 0b0000],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_doom_error_is_drawn_instead_of_blank_window() {
+        let mut dos = SetunDos::new();
+        let mut desktop = SetunDesktop::new();
+        desktop.doom_error = Some("engine failed to initialize".to_string());
+
+        let blank = dos.mem.read_pixel_tryte(12, 90).expect("valid pixel");
+        desktop.draw_doom_error(&mut dos, 12, 90);
+        let painted = dos.mem.read_pixel_tryte(12, 90).expect("valid pixel");
+
+        assert_ne!(blank, painted, "the error line must paint visible glyphs");
+    }
+
+    #[test]
+    fn test_doom_error_absent_leaves_framebuffer_untouched() {
+        let mut dos = SetunDos::new();
+        let desktop = SetunDesktop::new();
+
+        let blank = dos.mem.read_pixel_tryte(12, 90).expect("valid pixel");
+        desktop.draw_doom_error(&mut dos, 12, 90);
+        let after = dos.mem.read_pixel_tryte(12, 90).expect("valid pixel");
+
+        assert_eq!(blank, after);
     }
 }

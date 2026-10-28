@@ -85,7 +85,9 @@ fn main() {
             desktop.set_wad_path(&wad_path);
             desktop.active_window = setun_doom::dos::ActiveWindow::Doom;
             desktop.doom_fullscreen = true;
-            let _ = desktop.ensure_doom_runner();
+            if let Err(error) = desktop.ensure_doom_runner() {
+                eprintln!("   [ERROR] Native Doom engine unavailable: {error}");
+            }
             desktop.init_desktop_buttons(&mut dos);
 
             let has_display = env::var("DISPLAY").is_ok() || env::var("WAYLAND_DISPLAY").is_ok();
@@ -231,12 +233,10 @@ fn main() {
         println!("  Total Trit Flips:      {}", telemetry.ternary_trit_flips);
         println!("  Half Swings (0 <-> 1): {}", telemetry.ternary_half_swings);
         println!("  Full Swings (-1 <-> 1):{}", telemetry.ternary_full_swings);
-        let save_pct = if telemetry.binary32_bit_flips > 0 {
-            100.0 * (1.0 - (telemetry.ternary_trit_flips as f64) / (telemetry.binary32_bit_flips as f64))
-        } else {
-            36.9
-        };
-        println!("  Dynamic Energy Save:   {:.2}%", save_pct);
+        match telemetry.weighted_energy_reduction_opt() {
+            Some(pct) => println!("  Dynamic Energy Save:   {pct:.2}%"),
+            None => println!("  Dynamic Energy Save:   N/A (no binary reference counter)"),
+        }
         println!("============================================================");
     }
 }

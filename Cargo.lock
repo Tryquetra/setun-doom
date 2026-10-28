@@ -16,6 +16,13 @@ name = "setun-doom"
 version = "0.1.0"
 
 [[package]]
+name = "setun-ffi"
+version = "0.1.0"
+dependencies = [
+ "setun-doom",
+]
+
+[[package]]
 name = "setun-kernel"
 version = "0.1.0"
 dependencies = [

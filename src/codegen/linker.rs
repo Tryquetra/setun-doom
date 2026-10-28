@@ -166,6 +166,7 @@ pub struct SetunLinker {
 
 impl SetunLinker {
     /// Creates a new, empty static linker instance.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             modules: Vec::new(),

@@ -39,8 +39,8 @@ The primary mission is executing the original 1993 **Id Software Doom** engine (
 
 | Level | Scope & Status | Git Branch | Binary Artifacts |
 | :---: | :--- | :--- | :--- |
-| **Level 0** | **DDA Co-Processor & Gate-Level ALU**<br>C-engine FFI hooks in `r_draw.c`, `m_fixed.c`, `r_main.c`, and `p_maputl.c` routing fixed-point and BSP partitioning through `libsetun_doom.a`. Completed. | [`main`](https://github.com/Tryquetra/setun-doom/tree/main) (Tag: `v0.1.0-level-0`) | `libsetun_doom.a`<br>`doomgeneric_setun` |
-| **Level 1** | **Dynamic Binary Translation (DBT / JIT)**<br>Static RISC-V ELF32 parser, 37 official RV32I ISA tests + RV32M validation (100% pass), peephole fusions (`LI.T`, `AIPC.T`, `BCEG`, `STI.T`). Bare-metal Doom RV32IM execution. Completed. | [`feat/level-1-dbt-rv32i`](https://github.com/Tryquetra/setun-doom/tree/feat/level-1-dbt-rv32i) | `target/release/setun-doom`<br>`vendor/riscv_tests/elf/*.elf`<br>`vendor/riscv_tests/rv32m/*.elf` |
+| **Level 0** | **DDA Co-Processor & Gate-Level ALU**<br>C-engine FFI hooks in `r_draw.c`, `m_fixed.c`, `r_main.c`, and `p_maputl.c` routing fixed-point and BSP partitioning through `libsetun_ffi.a`. Completed. | [`main`](https://github.com/Tryquetra/setun-doom/tree/main) (Tag: `v0.1.0-level-0`) | `libsetun_ffi.a`<br>`doomgeneric_setun` |
+| **Level 1** | **Dynamic Binary Translation (DBT / JIT)**<br>Static RISC-V ELF32 parser, 37 official RV32I ISA tests + RV32M validation (100% pass), peephole fusions (`LI.T`, `AIPC.T`, `BCEG`, `STI.T`). Playable bare-metal Doom RV32IM guest (`vendor/doomgeneric/riscv32`, `setun-doom-rv32`) driven by host `ecall` services. Two execution modes: `SetunDbtEngine<true>` (default, gate-accurate, telemetry) and `SetunDbtEngine<false>` (opt-in fast mode, no telemetry, ~50 FPS). Completed. | [`feat/level-1-dbt-rv32i`](https://github.com/Tryquetra/setun-doom/tree/feat/level-1-dbt-rv32i) | `target/release/setun-doom`<br>`target/release/setun-doom-rv32`<br>`vendor/doomgeneric/riscv32/doom_rv32.elf`<br>`vendor/riscv_tests/elf/*.elf`<br>`vendor/riscv_tests/rv32m/*.elf` |
 | **Level 2** | **Native LLVM Backend (`ternary21-setun`)**<br>Emits native 21-trit machine instructions from C/C++ without DBT layer. Planned. | `feat/level-2-llvm-target` | Clang/LLVM target |
 | **Level 3** | **Full-System DOS Emulation (`Setun-DOS`)**<br>Ternary operating environment with BIOS interrupts, TFX flat loader, and DMA WAD loading inspired by KolibriOS architecture. Completed. | [`feat/level-3-full-system-dos`](https://github.com/Tryquetra/setun-doom/tree/feat/level-3-full-system-dos) | `target/release/setun_dos`<br>`src/dos/` |
 | **Level 4** | **Physical FPGA Synthesis**<br>Lattice iCE40 and Xilinx Artix-7 dual-rail Verilog synthesis with physical VGA DAC. Planned. | `feat/level-4-fpga-synthesis` | Bitstreams |
@@ -56,10 +56,16 @@ The primary mission is executing the original 1993 **Id Software Doom** engine (
 
 ### B. Building the Release Suite
 ```bash
-# Build Rust static library, shared library, and testbench binary
+# Build testbench binary (rlib only, keeps the no_std RISC-V unikernel buildable)
 cargo build --release
 
-# Run unit tests and integration tests (33 tests, ~1.2s execution)
+# Build the C ABI artifacts consumed by the doomgeneric engine
+cargo build --release -p setun-ffi
+
+# Cross-compile the Level 1 RV32IM Doom guest (clang + rust-lld)
+make -C vendor/doomgeneric/riscv32
+
+# Run unit tests and integration tests (60 tests, ~2.6s execution)
 cargo test
 ```
 
@@ -99,11 +105,13 @@ Outputs:
 * [`src/memory.rs`](file:///home/robson/coding/setun-doom/src/memory.rs): Linear $3^{14}$-word memory, VGA framebuffer translation, and MMIO registers.
 * [`src/cpu.rs`](file:///home/robson/coding/setun-doom/src/cpu.rs): 35-opcode Setun/REBEL-6 CPU pipeline, hardware traps, and switching telemetry.
 * [`src/elf.rs`](file:///home/robson/coding/setun-doom/src/elf.rs): Static RISC-V ELF32 parser and memory segment loader.
-* [`src/dbt.rs`](file:///home/robson/coding/setun-doom/src/dbt.rs): Dynamic binary translator (RV32IM to Setun 21-trit), basic-block JIT cache, peephole fusions.
+* [`src/dbt.rs`](file:///home/robson/coding/setun-doom/src/dbt.rs): Dynamic binary translator (RV32IM to Setun 21-trit), flat operation arena with a direct PC index, peephole fusions, and the `VERACITY` const-generic execution mode.
 * [`src/bsp.rs`](file:///home/robson/coding/setun-doom/src/bsp.rs) / [`src/render.rs`](file:///home/robson/coding/setun-doom/src/render.rs): Trichotomous BSP geometry clipper (`solidsegs`) and 3D column rasterizer.
-* [`src/mmo.rs`](file:///home/robson/coding/setun-doom/src/mmo.rs): FFI bridge and C ABI exports linking `doomgeneric` to `libsetun_doom.a`.
+* [`src/mmo.rs`](file:///home/robson/coding/setun-doom/src/mmo.rs): FFI bridge and C ABI exports linking `doomgeneric` to `libsetun_ffi.a` (`crates/setun-ffi`).
 * [`src/dos/`](file:///home/robson/coding/setun-doom/src/dos/): Setun-DOS kernel, static memory mapping, TFX loader, trichotomic syscalls, and Doom runner.
 * [`vendor/doomgeneric/doomgeneric/doomgeneric_setun.c`](file:///home/robson/coding/setun-doom/vendor/doomgeneric/doomgeneric/doomgeneric_setun.c): SDL2 platform driver with interactive telemetry HUD.
+* [`vendor/doomgeneric/riscv32/`](file:///home/robson/coding/setun-doom/vendor/doomgeneric/riscv32): freestanding RV32IM guest port (libc shim with word-wise copies, soft-float builtins, `ecall` ABI, linker script, Makefile).
+* [`src/bin/setun_doom_rv32.rs`](file:///home/robson/coding/setun-doom/src/bin/setun_doom_rv32.rs): Level 1 host driver and `ecall` platform services (framebuffer, palette, keyboard, clock, WAD reads).
 * [`tests/integration_dbt.rs`](file:///home/robson/coding/setun-doom/tests/integration_dbt.rs): External black-box integration tests.
 
 ---

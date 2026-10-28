@@ -27,6 +27,8 @@ This document records the copyright notices, license terms, and academic attribu
   4. `vendor/doomgeneric/doomgeneric/r_draw.c` (hooked `R_DrawColumn` and `R_DrawSpan` to `setun_DrawColumn` / `setun_DrawSpan` under `SETUN_TERNARY_ALU`)
   5. `vendor/doomgeneric/doomgeneric/i_video.c` (hooked `I_SetPalette` to `setun_SyncPalette` under `SETUN_TERNARY_ALU`)
   6. `vendor/doomgeneric/doomgeneric/doomgeneric_setun.c` and `vendor/doomgeneric/doomgeneric/Makefile.setun` (added SDL2/headless Setun-Doom platform driver and build configuration)
+  7. `vendor/doomgeneric/doomgeneric/setun_hooks.h`, plus counter increments in `r_draw.c`, `m_fixed.c`, `r_main.c` and `p_maputl.c` (added on **2026-10-27** to cross-check that the C engine actually invokes the ternary hooks, comparing C-side call/pixel counts against the Rust bridge)
+  8. `vendor/doomgeneric/doomgeneric/m_fixed.c` (modified on **2026-10-27**: `FixedMul` now computes a 64-bit product and `FixedDiv` uses a 32-bit long-division fraction, because the original 32-bit split algorithms overflow for large operands and corrupted the projection focal length in the RV32IM guest). The freestanding guest port under `vendor/doomgeneric/riscv32/` (headers, libc shim, soft-float builtins, `ecall` platform layer, linker script, Makefile) is original code released under the same GPL-2.0-or-later terms as the engine it links.
 
 ---
 

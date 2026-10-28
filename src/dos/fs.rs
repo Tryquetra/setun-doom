@@ -21,6 +21,7 @@ pub struct SetunFileSystem {
 }
 
 impl SetunFileSystem {
+    #[must_use]
     pub fn new() -> Self {
         Self { files: Vec::new() }
     }

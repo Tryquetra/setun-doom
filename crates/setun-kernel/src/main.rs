@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![warn(let_underscore_drop, clippy::let_underscore_must_use)]
 
 extern crate alloc;
 
@@ -78,8 +79,12 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
     let tfx = TfxExecutable::from_instructions(1000, &test_instructions, 50_000);
 
     // Seed test memory cells
-    let _ = dos.mem.write_word(100, Word21::new(42));
-    let _ = dos.mem.write_word(101, Word21::new(13));
+    dos.mem
+        .write_word(100, Word21::new(42))
+        .expect("boot self-test must seed MEM[100]");
+    dos.mem
+        .write_word(101, Word21::new(13))
+        .expect("boot self-test must seed MEM[101]");
 
     match dos.load_executable(&tfx, "DEMO.TFX") {
         Ok(pid) => {
@@ -157,7 +162,7 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
         }
 
         tick_counter += 1;
-        if tick_counter % 350 == 0 {
+        if tick_counter.is_multiple_of(350) {
             kprintln!(
                 " * Setun-DOS Heartbeat: frame {}, timer ticks {}, active window: {:?}",
                 desktop.frame_counter,

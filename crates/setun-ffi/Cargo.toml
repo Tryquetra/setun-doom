@@ -1,0 +1,14 @@
+[package]
+name = "setun-ffi"
+version = "0.1.0"
+edition = "2021"
+authors = ["Robson Cassiano <https://eu.robsoncassiano.software>"]
+license = "MIT"
+description = "C ABI artifacts (libsetun_ffi.a / .so) exposing the Setun-Doom emulator to the doomgeneric engine"
+
+[lib]
+name = "setun_ffi"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+setun-doom = { path = "../.." }

@@ -236,6 +236,7 @@ impl Trit {
 
     /// Decodes a dual-bit pair (`u8` masked with `0b11`) into a `Trit`.
     #[inline(always)]
+    #[must_use]
     pub const fn from_dual_bits(bits: u8) -> Self {
         match bits & 0b11 {
             0b01 => Self::Positive,

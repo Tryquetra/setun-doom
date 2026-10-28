@@ -37,6 +37,7 @@
 
 // State.
 #include "doomstat.h"
+#include "setun_hooks.h"
 
 
 // ?
@@ -164,6 +165,8 @@ void R_DrawColumn (void)
     dest = ylookup[dc_yl] + columnofs[dc_x];  
 
 #ifdef SETUN_TERNARY_ALU
+    setun_c_draw_column_calls++;
+    setun_c_draw_column_pixels += (uint64_t)(dc_yh - dc_yl + 1);
     setun_DrawColumn(
         dc_x,
         dc_yl,
@@ -704,6 +707,8 @@ void R_DrawSpan (void)
     dest = ylookup[ds_y] + columnofs[ds_x1];
 
 #ifdef SETUN_TERNARY_ALU
+    setun_c_draw_span_calls++;
+    setun_c_draw_span_pixels += (uint64_t)(ds_x2 - ds_x1 + 1);
     setun_DrawSpan(
         ds_y,
         ds_x1,
