@@ -36,6 +36,8 @@ struct Host {
     frames: u64,
     max_frames: u64,
     rgba: Vec<u8>,
+    started: Instant,
+    last_frame: Instant,
     exit_code: Option<i64>,
 }
 
@@ -49,6 +51,8 @@ impl Host {
             frames: 0,
             max_frames,
             rgba: vec![0; WIDTH * HEIGHT * 4],
+            started: Instant::now(),
+            last_frame: Instant::now(),
             exit_code: None,
         }
     }
@@ -111,6 +115,17 @@ impl Host {
                         );
                     }
                     self.frames += 1;
+                    if std::env::var("REBEL6_FRAME_TRACE").is_ok() {
+                        let now = Instant::now();
+                        eprintln!(
+                            "frame={} cycles={} since_start={:?} since_last={:?}",
+                            self.frames,
+                            cpu.cycles,
+                            self.started.elapsed(),
+                            now.duration_since(self.last_frame)
+                        );
+                        self.last_frame = now;
+                    }
                     if self.frames <= 3 {
                         let name = format!("rebel6_frame_{}.ppm", self.frames);
                         let _ = save_ppm(&name, &self.rgba);
