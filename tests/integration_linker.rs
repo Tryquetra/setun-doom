@@ -50,13 +50,27 @@ fn test_multimodule_linking_and_tree_shaking() {
 
     // Compile both C modules with Clang to LLVM IR
     let status_a = Command::new("clang")
-        .args(["-O1", "-S", "-emit-llvm", a_c_path.to_str().unwrap(), "-o", a_ll_path.to_str().unwrap()])
+        .args([
+            "-O1",
+            "-S",
+            "-emit-llvm",
+            a_c_path.to_str().unwrap(),
+            "-o",
+            a_ll_path.to_str().unwrap(),
+        ])
         .status()
         .expect("Failed to compile mod_a.c");
     assert!(status_a.success());
 
     let status_b = Command::new("clang")
-        .args(["-O1", "-S", "-emit-llvm", b_c_path.to_str().unwrap(), "-o", b_ll_path.to_str().unwrap()])
+        .args([
+            "-O1",
+            "-S",
+            "-emit-llvm",
+            b_c_path.to_str().unwrap(),
+            "-o",
+            b_ll_path.to_str().unwrap(),
+        ])
         .status()
         .expect("Failed to compile mod_b.c");
     assert!(status_b.success());
@@ -78,7 +92,9 @@ fn test_multimodule_linking_and_tree_shaking() {
     linker.add_module(parsed_b);
 
     // 2. Link from entry point 'main_entry'
-    let image = linker.link("main_entry").expect("Linker failed to produce image");
+    let image = linker
+        .link("main_entry")
+        .expect("Linker failed to produce image");
 
     // 3. Verify entry point layout
     assert_eq!(image.entry_pc, CODE_SEGMENT_BASE);
@@ -102,7 +118,11 @@ fn test_multimodule_linking_and_tree_shaking() {
     cpu.pc = image.entry_pc as i64;
 
     let steps = cpu.run_ticks(&mut mem, 100);
-    println!("[Linker Test] Executed {} steps. Return ACC = {}", steps, cpu.acc.as_i64());
+    println!(
+        "[Linker Test] Executed {} steps. Return ACC = {}",
+        steps,
+        cpu.acc.as_i64()
+    );
 
     assert_eq!(
         cpu.acc.as_i64(),
@@ -136,8 +156,28 @@ fn test_multimodule_with_function_calls() {
     fs::write(&math_c, mod_math).unwrap();
     fs::write(&main_c, mod_main).unwrap();
 
-    let _ = Command::new("clang").args(["-O1", "-S", "-emit-llvm", math_c.to_str().unwrap(), "-o", math_ll.to_str().unwrap()]).status().unwrap();
-    let _ = Command::new("clang").args(["-O1", "-S", "-emit-llvm", main_c.to_str().unwrap(), "-o", main_ll.to_str().unwrap()]).status().unwrap();
+    let _ = Command::new("clang")
+        .args([
+            "-O1",
+            "-S",
+            "-emit-llvm",
+            math_c.to_str().unwrap(),
+            "-o",
+            math_ll.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    let _ = Command::new("clang")
+        .args([
+            "-O1",
+            "-S",
+            "-emit-llvm",
+            main_c.to_str().unwrap(),
+            "-o",
+            main_ll.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
 
     let parsed_math = LlvmParser::parse(&fs::read_to_string(&math_ll).unwrap()).unwrap();
     let parsed_main = LlvmParser::parse(&fs::read_to_string(&main_ll).unwrap()).unwrap();
@@ -180,7 +220,14 @@ fn test_global_variables_and_arrays() {
 
     fs::write(&src_path, code).unwrap();
     let status = Command::new("clang")
-        .args(["-O1", "-S", "-emit-llvm", src_path.to_str().unwrap(), "-o", ll_path.to_str().unwrap()])
+        .args([
+            "-O1",
+            "-S",
+            "-emit-llvm",
+            src_path.to_str().unwrap(),
+            "-o",
+            ll_path.to_str().unwrap(),
+        ])
         .status()
         .unwrap();
     assert!(status.success());
@@ -194,7 +241,9 @@ fn test_global_variables_and_arrays() {
     let mut linker = SetunLinker::new();
     linker.add_module(parsed);
 
-    let image = linker.link("test_globals").expect("Failed to link globals module");
+    let image = linker
+        .link("test_globals")
+        .expect("Failed to link globals module");
 
     let mut mem = Memory::new();
     let mut cpu = Cpu::new();
@@ -206,7 +255,11 @@ fn test_global_variables_and_arrays() {
     cpu.pc = image.entry_pc as i64;
 
     let steps = cpu.run_ticks(&mut mem, 100);
-    println!("[Globals Test] Executed in {} steps. Result ACC = {}", steps, cpu.acc.as_i64());
+    println!(
+        "[Globals Test] Executed in {} steps. Result ACC = {}",
+        steps,
+        cpu.acc.as_i64()
+    );
 
     assert_eq!(cpu.acc.as_i64(), 135);
 

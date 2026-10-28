@@ -103,50 +103,59 @@ impl TernaryRenderer {
         let mut brick_tex = [Tryte6::ZERO; 64];
         for (i, slot) in brick_tex.iter_mut().enumerate() {
             let mortar = (i % 16 == 0) || (i % 8 == 0 && (i / 8) % 2 == 1);
-            let shade = if mortar { 40u8 } else { 160u8.wrapping_add((i as u8) * 2) };
+            let shade = if mortar {
+                40u8
+            } else {
+                160u8.wrapping_add((i as u8) * 2)
+            };
             *slot = Tryte6::from_palette_index(shade);
         }
 
         let ceiling_color = Tryte6::from_palette_index(24);
         let floor_color = Tryte6::from_palette_index(72);
 
-        tree.traverse_front_to_back(cam_x, cam_y, &mut clipper, |seg: &WallSeg, visible_cols: &[usize]| {
-            segs_drawn += 1;
-            cols_drawn += visible_cols.len();
+        tree.traverse_front_to_back(
+            cam_x,
+            cam_y,
+            &mut clipper,
+            |seg: &WallSeg, visible_cols: &[usize]| {
+                segs_drawn += 1;
+                cols_drawn += visible_cols.len();
 
-            // Computes apparent half-height of wall on screen: half_h = 80 / distance
-            let dist_int = seg.distance.to_int_balanced().max(1) as usize;
-            let half_h = (80 / dist_int).clamp(8, 95);
-            let center_y = FB_HEIGHT / 2;
-            let yl = center_y.saturating_sub(half_h);
-            let yh = (center_y + half_h).min(FB_HEIGHT - 1);
+                // Computes apparent half-height of wall on screen: half_h = 80 / distance
+                let dist_int = seg.distance.to_int_balanced().max(1) as usize;
+                let half_h = (80 / dist_int).clamp(8, 95);
+                let center_y = FB_HEIGHT / 2;
+                let yl = center_y.saturating_sub(half_h);
+                let yh = (center_y + half_h).min(FB_HEIGHT - 1);
 
-            let wall_height_px = (yh - yl + 1).max(1) as i64;
-            let tex_step = TernaryFixed::from_int(64) / TernaryFixed::from_int(wall_height_px);
-            let light_shift = -(dist_int as i16 * 4);
+                let wall_height_px = (yh - yl + 1).max(1) as i64;
+                let tex_step = TernaryFixed::from_int(64) / TernaryFixed::from_int(wall_height_px);
+                let light_shift = -(dist_int as i16 * 4);
 
-            for &x in visible_cols {
-                // Fills ceiling above wall
-                for y in 0..yl {
-                    let _ = mem.write_pixel_tryte(x, y, ceiling_color);
+                for &x in visible_cols {
+                    // Fills ceiling above wall
+                    for y in 0..yl {
+                        let _ = mem.write_pixel_tryte(x, y, ceiling_color);
+                    }
+                    // Renders vertical wall column with 11.10 fixed-point interpolator
+                    let col_params = ColumnDrawParams {
+                        x,
+                        yl,
+                        yh,
+                        tex_frac_start: TernaryFixed::from_int((x % 16) as i64),
+                        tex_step,
+                        texture_column: &brick_tex,
+                        light_shift,
+                    };
+                    Self::draw_column(mem, &col_params);
+                    // Fills floor below wall
+                    for y in (yh + 1)..FB_HEIGHT {
+                        let _ = mem.write_pixel_tryte(x, y, floor_color);
+                    }
                 }
-                // Renders vertical wall column with 11.10 fixed-point interpolator
-                let col_params = ColumnDrawParams {
-                    x,
-                    yl,
-                    yh,
-                    tex_frac_start: TernaryFixed::from_int((x % 16) as i64),
-                    tex_step,
-                    texture_column: &brick_tex,
-                    light_shift,
-                };
-                Self::draw_column(mem, &col_params);
-                // Fills floor below wall
-                for y in (yh + 1)..FB_HEIGHT {
-                    let _ = mem.write_pixel_tryte(x, y, floor_color);
-                }
-            }
-        });
+            },
+        );
 
         (segs_drawn, cols_drawn)
     }
