@@ -15,7 +15,7 @@
 * **Balanced Ternary Fixed-Point (`TernaryFixed` `11.10`)**:
   * Replaces Doom's binary `16.16` `fixed_t` ($2^{16} = 65,536$) with a symmetric **11-trit integer, 10-trit fractional** representation (scale $3^{10} = 59,049$).
   * Physical 10-trit wire slicing (`prod42[10..31]`) performs exact round-to-nearest division by $3^{10}$ without a rounding adder or negative truncation bias (`RMSE = 0.0000` vs binary `16.16` `RMSE = 0.7085`).
-* **36-Opcode Orthogonal Ternary ISA**:
+* **45-Opcode Orthogonal Ternary ISA**:
   * **Instruction Format (`Word21`)**: `trits[0..13]` (14-trit operand/address, $3^{14} = 4,782,969$ words), `trits[14..15]` (2-trit register/mode selector, $3^2 = 9$ states), `trits[16..20]` (5-trit opcode).
   * **Setun-1958 & Setun-70 Instructions**: `MUL` (`++0` `MULTIPLICATION_ZERO` / `L*T` `B26`), `MAC_POS` (`+++` / `LBT` `B25`), `MAC_NEG` (`++-`), `LOAD_R` (`+-+` / `YRT`), `SMT` (`+-0` / `B19` tritwise multiply), `SAT` (`B21` threshold addition), `SIT` (`B20` $S + T(1 - |S|)$), `BIX` (index loop branch).
   * **REBEL-6 & REBEL-2 Instructions** (adapted from the 32-trit REBEL-6 ISA to this 21-trit word, see [`docs/rebel6.md`](docs/rebel6.md)): `CMP.T` (`<=>` comparator), `MAJV.T` (majority vote), `MINV.T` (minority vote), `STI.T` (wire inverter), `BCEG` (single-cycle 3-way branch compare equal or greater with two 7-trit relative offsets, from REBEL-2).
@@ -25,9 +25,9 @@
 
 ---
 
-## 36-Opcode Ternary ISA Table
+## 45-Opcode Ternary ISA Table
 
-The Setun-Doom CPU implements 36 authentic opcodes utilizing a 21-trit instruction format: `trits[0..13]` (14-trit address/operand, $3^{14} = 4,782,969$ reach), `trits[14..15]` (2-trit index register `IX0..IX8`), and `trits[16..20]` (5-trit opcode in $[-121, +121]$).
+The Setun-Doom CPU implements 45 authentic opcodes utilizing a 21-trit instruction format: `trits[0..13]` (14-trit address/operand, $3^{14} = 4,782,969$ reach), `trits[14..15]` (2-trit index register `IX0..IX8`), and `trits[16..20]` (5-trit opcode in $[-121, +121]$).
 
 | Opcode | Mnemonic | Trit Field | Operation Semantics | Architectural Origin |
 | :---: | :--- | :---: | :--- | :--- |
@@ -42,48 +42,52 @@ The Setun-Doom CPU implements 36 authentic opcodes utilizing a 21-trit instructi
 | `+5` | **LOAD_INDEX** | `00+--` | `ACC = MEM[addr + IX[reg]]` | Setun-70 |
 | `-5` | **STORE_INDEX** | `00-++` | `MEM[addr + IX[reg]] = ACC` | Setun-70 |
 | `+6` | **JMP** | `00+-0` | Unconditional jump: `PC = addr` | Setun-58 |
-| `-7` | **JMPN** / **JMP_GE** | `00+0-` | Trichotomous branch: jump if `ACC < 0` (or `ACC >= 0` if `reg == 1`) | Setun-58 (`+-0`) |
-| `+7` | **JMPZ** / **JMP_NE** | `00-0+` | Trichotomous branch: jump if `ACC == 0` (or `ACC != 0` if `reg == 1`) | Setun-58 (`0-0`) |
-| `+8` | **JMPP** / **JMP_LE** | `00-+0` | Trichotomous branch: jump if `ACC > 0` (or `ACC <= 0` if `reg == 1`) | Setun-58 (`++0`) |
-| `+19` | **BCEG** | `0+-++` | Single-cycle 3-way branch compare equal or greater via relative offsets | REBEL-2 |
-| `+9` | **PUSH** | `00-++` | `MEM[SP] = ACC; SP -= 1` | Setun-70 |
-| `-9` | **POP** | `00+--` | `SP += 1; ACC = MEM[SP]` | Setun-70 |
+| `-7` | **JMPN** / **JMP_GE** | `00-+-` | Trichotomous branch: jump if `ACC < 0` (or `ACC >= 0` if `reg == 1`) | Setun-58 (`+-0`) |
+| `+7` | **JMPZ** / **JMP_NE** | `00+-+` | Trichotomous branch: jump if `ACC == 0` (or `ACC != 0` if `reg == 1`) | Setun-58 (`0-0`) |
+| `+8` | **JMPP** / **JMP_LE** | `00+0-` | Trichotomous branch: jump if `ACC > 0` (or `ACC <= 0` if `reg == 1`) | Setun-58 (`++0`) |
+| `+19` | **BCEG** | `0+-0+` | Single-cycle 3-way branch compare equal or greater via relative offsets | REBEL-2 |
+| `+9` | **PUSH** | `00+00` | `MEM[SP] = ACC; SP -= 1` | Setun-70 |
+| `-9` | **POP** | `00-00` | `SP += 1; ACC = MEM[SP]` | Setun-70 |
 | `+10` | **CALL** | `00+0+` | Subroutine call: push `PC+1` to return stack and jump to `addr` | Setun-70 |
 | `-10` | **RET** | `00-0-` | Subroutine return: pop return address and restore `PC` | Setun-70 |
-| `+11` | **LOAD_IMM** (`LI.T`) | `00+++` | `ACC = imm14` (load 14-trit immediate constant directly into accumulator) | Setun-Doom / REBEL-6 |
-| `-11` | **ADD_IMM** | `00---` | `ACC = ACC + imm14` (add 14-trit immediate constant to accumulator) | Setun-Doom |
-| `+12` | **LOAD_IX_IMM** | `0+---` | `IX[reg] = imm14` (load 14-trit immediate into target index register) | Setun-70 |
-| `-12` | **ADD_IX_IMM** | `0-+++` | `IX[reg] = IX[reg] + imm14` (add immediate to index register) | Setun-70 |
-| `+13` | **MOV_ACC_IX** | `0+--0` | `IX[reg] = ACC` (copies accumulator into index register) | Setun-70 |
-| `-13` | **MOV_IX_ACC** | `0-++0` | `ACC = IX[reg]` (copies index register into accumulator) | Setun-70 |
-| `+14` | **SHIFT** | `0+--+` | Physical trit-shift in register wires by `addr` positions | Setun-58 |
-| `-14` | **MUL_INT** | `0-++-` | Exact 21-trit integer multiplication: `ACC = ACC * MEM[addr]` | Setun-Doom |
-| `+15` | **DIV_INT** | `0+-0-` | Exact 21-trit integer division: `ACC = ACC / MEM[addr]` | Setun-Doom |
-| `+16` | **CMP.T** | `0+-00` | Trichotomous comparison: `ACC = (ACC <=> MEM[addr])` in $\{-1, 0, +1\}$ | REBEL-6 |
-| `+17` | **MAJV.T** | `0+-0+` | Ternary majority vote: `MajorityVote(ACC, IX[reg], MEM[addr])` trit-by-trit | REBEL-6 |
-| `-17` | **MINV.T** | `0-+0-` | Ternary minority vote: `MinorityVote(ACC, IX[reg], MEM[addr])` trit-by-trit | REBEL-6 |
-| `+20` | **ADD_IX** | `0++--` | `IX[reg] = IX[reg] + MEM[addr]` (preserves accumulator contents) | Setun-70 |
-| `-20` | **DEC_IX_JMP_GE** | `0--++` | Index loop counter: decrement `IX[reg]` and jump to `addr` if $\ge 0$ | Setun-58 (`BIX`) |
-| `+22` | **LOAD_R** | `0++0-` | Load auxiliary multiplier register: `R = MEM[addr]` | Setun-58 (`PARCEL_TO_R`) |
-| `+24` | **MAC_POS** | `0+++0` | Multiply-accumulate positive: `ACC = ACC + (MEM[addr] * R)` | Setun-58 (`MULT_POS`) |
-| `-24` | **MAC_NEG** | `0---0` | Multiply-accumulate negative: `ACC = ACC - (MEM[addr] * R)` | Setun-58 (`MULT_NEG`) |
-| `+25` | **SMT** | `0++++` | Trit-by-trit logic multiplication without carry propagation | Setun-58 / Setun-70 (`B19`) |
-| `-25` | **SAT** | `0----` | Trit-by-trit threshold addition | Setun-70 (`B21`) |
-| `+26` | **SIT** | `+----` | Trit-by-trit inhibition: `ACC + MEM * (1 - \|ACC\|)` | Setun-70 (`B20`) |
-| `+27` | **NORM.T** / **CLZ.T** | `+---0` | Mantissa normalization & leading zero count: `(ACC, IX[reg]) = ACC.normalize()` | Setun-Doom / Zbb |
-| `+40` | **HALT** | `++--+` | Controlled CPU halt | Setun-58 / Setun-Doom |
+| `+11` | **LOAD_IMM** (`LI.T`) | `00++-` | `ACC = imm14` (load 14-trit immediate constant directly into accumulator) | Setun-Doom / REBEL-6 |
+| `-11` | **ADD_IMM** | `00--+` | `ACC = ACC + imm14` (add 14-trit immediate constant to accumulator) | Setun-Doom |
+| `+12` | **LOAD_IX_IMM** | `00++0` | `IX[reg] = imm14` (load 14-trit immediate into target index register) | Setun-70 |
+| `-12` | **ADD_IX_IMM** | `00--0` | `IX[reg] = IX[reg] + imm14` (add immediate to index register) | Setun-70 |
+| `+13` | **MOV_ACC_IX** | `00+++` | `IX[reg] = ACC` (copies accumulator into index register) | Setun-70 |
+| `-13` | **MOV_IX_ACC** | `00---` | `ACC = IX[reg]` (copies index register into accumulator) | Setun-70 |
+| `+14` | **SHIFT** | `0+---` | Physical trit-shift in register wires by `addr` positions | Setun-58 |
+| `-14` | **MUL_INT** | `0-+++` | Exact 21-trit integer multiplication: `ACC = ACC * MEM[addr]` | Setun-Doom |
+| `+15` | **DIV_INT** | `0+--0` | Exact 21-trit integer division: `ACC = ACC / MEM[addr]` | Setun-Doom |
+| `+16` | **CMP.T** | `0+--+` | Trichotomous comparison: `ACC = (ACC <=> MEM[addr])` in $\{-1, 0, +1\}$ | REBEL-6 |
+| `+17` | **MAJV.T** | `0+-0-` | Ternary majority vote: `MajorityVote(ACC, IX[reg], MEM[addr])` trit-by-trit | REBEL-6 |
+| `-17` | **MINV.T** | `0-+0+` | Ternary minority vote: `MinorityVote(ACC, IX[reg], MEM[addr])` trit-by-trit | REBEL-6 |
+| `+20` | **ADD_IX** | `0+-+-` | `IX[reg] = IX[reg] + MEM[addr]` (preserves accumulator contents) | Setun-70 |
+| `-20` | **DEC_IX_JMP_GE** | `0-+-+` | Index loop counter: decrement `IX[reg]` and jump to `addr` if $\ge 0$ | Setun-58 (`BIX`) |
+| `+22` | **LOAD_R** | `0+-++` | Load auxiliary multiplier register: `R = MEM[addr]` | Setun-58 (`PARCEL_TO_R`) |
+| `+24` | **MAC_POS** | `0+0-0` | Multiply-accumulate positive: `ACC = ACC + (MEM[addr] * R)` | Setun-58 (`MULT_POS`) |
+| `-24` | **MAC_NEG** | `0-0+0` | Multiply-accumulate negative: `ACC = ACC - (MEM[addr] * R)` | Setun-58 (`MULT_NEG`) |
+| `+25` | **SMT** | `0+0-+` | Trit-by-trit logic multiplication without carry propagation | Setun-58 / Setun-70 (`B19`) |
+| `-25` | **SAT** | `0-0+-` | Trit-by-trit threshold addition | Setun-70 (`B21`) |
+| `+26` | **SIT** | `0+00-` | Trit-by-trit inhibition: `ACC + MEM * (1 - \|ACC\|)` | Setun-70 (`B20`) |
+| `+27` | **NORM.T** / **CLZ.T** | `0+000` | Mantissa normalization & leading zero count: `(ACC, IX[reg]) = ACC.normalize()` | Setun-Doom / Zbb |
+| `+28` | **AND** | `0+00+` | Bitwise AND: `ACC = ACC & MEM[addr]` | Setun-Doom (RV32I bridge) |
+| `+29` | **OR** | `0+0+-` | Bitwise OR: `ACC = ACC \| MEM[addr]` | Setun-Doom (RV32I bridge) |
+| `+30` | **XOR** | `0+0+0` | Bitwise XOR: `ACC = ACC ^ MEM[addr]` | Setun-Doom (RV32I bridge) |
+| `+40` | **HALT** | `0++++` | Controlled CPU halt | Setun-58 / Setun-Doom |
+| `+41` | **SYSCALL** | `+----` | Software interrupt: traps `CpuTrap::Syscall` with `ACC` as the call number | Setun-DOS (`SYS` / `TRAP`) |
 
 ---
 
 ## Emulation Evolution Levels & Branch Roadmap
 
-The project progresses through five architectural levels of balanced ternary emulation, advancing from arithmetic co-processing to full dynamic translation, native compiler targeting, full-system OS emulation, and physical FPGA synthesis:
+The project progresses through five architectural levels of balanced ternary emulation, advancing from arithmetic co-processing to full dynamic translation, an in-repo compiler over LLVM IR text, full-system OS emulation, and physical FPGA synthesis:
 
 | Level | Architecture Stage | Scope & Implementation Details | Git Branch | Tag / Status |
 | :---: | :--- | :--- | :--- | :---: |
 | **Level 0** | **DDA Co-Processor & Gate-Level ALU** | Gate-level combinational arithmetic (`Trit::full_add`, 21-stage ripple-carry adders, 42-trit multipliers, non-restoring ternary division). Symmetric $11.10$ fixed-point arithmetic (`TernaryFixed`). Linear VGA framebuffer in 6-trit trytes (`Tryte6`). C-engine FFI hooks in `r_draw.c` for `R_DrawColumn`, `R_DrawSpan`, `R_DrawFuzzColumn`, and `R_DrawTranslatedColumn`. Strict zero false positives audit. | [`main`](https://github.com/Tryquetra/setun-doom/tree/main) | [`v0.1.0-level-0`](https://github.com/Tryquetra/setun-doom/releases/tag/v0.1.0-level-0) (Completed) |
 | **Level 1** | **Dynamic Binary Translation (DBT / JIT)** | Direct execution of standard binary RV32IM ELF executables without host C hooks. 32-bit register file ($x0..x31$) mapped directly into `[Word21; 32]`. Basic-block translator fusing branch comparisons into native 3-way `BCEG` instructions, immediate fusion (`LI.T`/`AIPC.T`), and Setun `STI.T` signal inversion. Full official 37-test RV32I suite + RV32M validation (100% pass) and native Doom RV32IM benchmark execution. | [`feat/level-1-dbt-rv32i`](https://github.com/Tryquetra/setun-doom/tree/feat/level-1-dbt-rv32i) | **Completed** |
-| **Level 2** | **Native Compiler Backend (`LLVM Target`)** | Clang/LLVM target backend emitting native 21-trit Setun machine instructions directly from C/C++ source code via LLVM IR. Parses SSA basic blocks, handles PHI elimination, lowers comparisons and branches (`CMP.T`/`JMPP`/`JMP`), performs local memory alloca and load/store frame layout, executing native Setun instructions directly on `Cpu`. | [`feat/level-2-llvm-target`](https://github.com/Tryquetra/setun-doom/tree/feat/level-2-llvm-target) | **Completed** |
+| **Level 2** | **Compiler Front End over Textual LLVM IR** | `clang -S -emit-llvm` produces `.ll` text; the in-repo parser ([`src/codegen/parser.rs`](src/codegen/parser.rs)) reads functions, globals and SSA basic blocks, and the instruction selector ([`src/codegen/isel.rs`](src/codegen/isel.rs)) handles PHI elimination, `CMP.T`/`JMPP`/`JMP` lowering, `alloca` frame layout and `llvm.*` intrinsics. `setun-ld` links modules into a TFX image that `setun-run` executes on the 21-trit `Cpu`. This is an in-repo compiler that consumes LLVM IR text; it is not an LLVM target (no TableGen, no target triple, no LLVM code generation). | [`feat/level-2-llvm-target`](https://github.com/Tryquetra/setun-doom/tree/feat/level-2-llvm-target) | **Completed** |
 | **Level 3** | **Full-System Emulation (`Setun-DOS`)** | Autonomous 21-trit operating environment with Trichotomic Interrupt Vector Table (`TIVT`), window manager, graphical desktop environment with clickable icons, task scheduling, in-memory virtual filesystem, WAD lump mounting, TFX flat executable loader, and authentic Doom 1993 engine integration running inside Setun-DOS. | [`feat/level-3-full-system-dos`](https://github.com/Tryquetra/setun-doom/tree/feat/level-3-full-system-dos) | **Completed** |
 | **Unikernel** | **Bare-Metal RISC-V Unikernel on QEMU** | Autonomous `no_std` kernel booting bare-metal under RISC-V Supervisor Mode (SBI) on QEMU `virt` machine. Features Bochs VBE PCI display driver ($640 \times 400 \times 32$ bpp), VirtIO Tablet absolute mouse tracking, and real-time Setun-DOS desktop render loop. | [`feat/setun-dos-riscv-unikernel`](https://github.com/Tryquetra/setun-doom/tree/feat/setun-dos-riscv-unikernel) | **Completed** |
 | **Level 4** | **Physical Hardware Synthesis (FPGA / ASIC)** | Verilog and SystemVerilog implementation utilizing dual-rail encoding (2 bits per trit). Target synthesis for Lattice iCE40 and Xilinx Artix-7 FPGAs. Physical memory controller and hardware VGA DAC rasterization outputting live video to real displays. | `feat/level-4-fpga-synthesis` | Planned |

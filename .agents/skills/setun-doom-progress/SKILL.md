@@ -23,7 +23,7 @@ triggers:
 
 > Progresso salvo em **2026-10-28**; último commit de código `ae2ebe8` na `main` (a skill foi atualizada no commit seguinte).
 > Repositório: `/home/robson/coding/setun-doom`
-> 74 testes, `cargo clippy --all-targets` limpo, unikernel RISC-V compilando.
+> 76 testes, `cargo clippy --all-targets` limpo, unikernel RISC-V compilando.
 
 ---
 
@@ -167,7 +167,7 @@ comparáveis ao 33,24% do paper.
 ## 8. Pendências
 
 1. Caminho de acesso de 32 bits direto no DBT, para cortar o custo de memória por byte no modo rápido (estimativa de 20 a 30%).
-2. `#[non_exhaustive]` nos enums públicos que evoluem (`Rv32iInstr`, `DmaTranscodeMode`) e corrigir a deriva do README (36 opcodes citados, 45 reais).
+2. `#[non_exhaustive]` nos enums públicos que evoluem (`Rv32iInstr`, `DmaTranscodeMode`). A deriva do README foi corrigida: 45 opcodes, tabela alinhada ao decodificador por `tests/integration_isa_docs.rs`.
 3. Rodar Miri por módulo depois do refactor da arena.
 4. Levar o modo RPN do Setun-70 para o Setun-DOS ou para um parser infixa via Shunting-yard no testbench.
 5. Implementar `li2.t` (dois imediatos de 6 trits) e avaliar `round` por shift e `min`/`max` ternários, citados no paper.
