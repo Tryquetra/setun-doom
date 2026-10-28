@@ -109,8 +109,47 @@ fn run(trits: usize, iterations: usize) {
     report("NEG", trits, scalar, vector);
 }
 
+fn run_palette() {
+    const PIXELS: usize = 64_000;
+    let mut palette = [[0u8; 4]; 256];
+    for (i, entry) in palette.iter_mut().enumerate() {
+        *entry = [
+            i as u8,
+            (i as u8).wrapping_mul(3),
+            (i as u8).wrapping_mul(7),
+            255,
+        ];
+    }
+    let cells: Vec<i64> = (0..PIXELS).map(|i| ((i % 256) as i64) - 128).collect();
+    let mut out = vec![0u8; PIXELS * 4];
+
+    let scalar = measure(2_000, || {
+        for (i, &value) in cells.iter().enumerate() {
+            let index = if (-128..=127).contains(&value) {
+                (value + 128) as usize
+            } else {
+                value.rem_euclid(256) as usize
+            };
+            out[i * 4..i * 4 + 4].copy_from_slice(&palette[index]);
+        }
+        black_box(&out);
+    });
+    let vector = measure(2_000, || {
+        simd::palette_rgba(&mut out, &cells, &palette);
+        black_box(&out);
+    });
+    println!(
+        "\npalette RGBA: {PIXELS} pixels | scalar {:>8.3} us | avx2 {:>8.3} us | {:>6.2}x | {:>7.2} Mpixel/s",
+        scalar * 1e6,
+        vector * 1e6,
+        scalar / vector,
+        PIXELS as f64 / vector / 1e6
+    );
+}
+
 fn main() {
     println!("AVX2 available: {}", simd::avx2_available());
     run(1 << 20, 200);
     run(1 << 15, 20_000);
+    run_palette();
 }

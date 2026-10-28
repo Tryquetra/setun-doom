@@ -238,15 +238,22 @@ impl Memory {
     pub fn render_framebuffer_rgba(&self, out_rgba: &mut [u8]) {
         assert!(out_rgba.len() >= FB_SIZE * 4);
         let fb = self.framebuffer_slice();
-        for (i, &cell) in fb.iter().enumerate() {
-            let tryte = Tryte6::from_i64(cell);
-            let pal_idx = tryte.to_palette_index() as usize;
-            let rgba = self.palette_rgba[pal_idx];
-            let base = i * 4;
-            out_rgba[base] = rgba[0];
-            out_rgba[base + 1] = rgba[1];
-            out_rgba[base + 2] = rgba[2];
-            out_rgba[base + 3] = rgba[3];
+        #[cfg(all(feature = "std", target_arch = "x86_64"))]
+        {
+            crate::simd::palette_rgba(out_rgba, fb, &self.palette_rgba);
+        }
+        #[cfg(not(all(feature = "std", target_arch = "x86_64")))]
+        {
+            for (i, &cell) in fb.iter().enumerate() {
+                let tryte = Tryte6::from_i64(cell);
+                let pal_idx = tryte.to_palette_index() as usize;
+                let rgba = self.palette_rgba[pal_idx];
+                let base = i * 4;
+                out_rgba[base] = rgba[0];
+                out_rgba[base + 1] = rgba[1];
+                out_rgba[base + 2] = rgba[2];
+                out_rgba[base + 3] = rgba[3];
+            }
         }
     }
 

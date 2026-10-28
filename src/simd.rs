@@ -8,7 +8,9 @@
 //! across trit positions and is not a single vector instruction.
 
 use core::arch::x86_64::{
-    __m256i, _mm256_and_si256, _mm256_loadu_si256, _mm256_or_si256, _mm256_storeu_si256,
+    __m128i, __m256i, _mm256_add_epi64, _mm256_and_si256, _mm256_castsi256_pd, _mm256_cmpgt_epi64,
+    _mm256_i64gather_epi32, _mm256_loadu_si256, _mm256_movemask_pd, _mm256_or_si256,
+    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm_storeu_si128,
 };
 
 /// Returns true when the host supports AVX2.
@@ -54,6 +56,70 @@ pub fn xor(dst_p: &mut [u64], dst_n: &mut [u64], ap: &[u64], an: &[u64], bp: &[u
         unsafe { xor_avx2(dst_p, dst_n, ap, an, bp, bn) };
     } else {
         xor_scalar(dst_p, dst_n, ap, an, bp, bn);
+    }
+}
+
+/// Converts `Tryte6` framebuffer cells into packed RGBA pixels using the palette.
+///
+/// Returns true when the AVX2 path was used. Out-of-range cells fall back to the
+/// scalar `Tryte6::to_palette_index` rule.
+pub fn palette_rgba(dst: &mut [u8], cells: &[i64], palette: &[[u8; 4]; 256]) -> bool {
+    if avx2_available() {
+        // SAFETY: AVX2 was detected at runtime; bounds are checked inside the kernel.
+        unsafe { palette_rgba_avx2(dst, cells, palette) };
+        true
+    } else {
+        palette_rgba_scalar(dst, cells, palette);
+        false
+    }
+}
+
+fn palette_rgba_scalar(dst: &mut [u8], cells: &[i64], palette: &[[u8; 4]; 256]) {
+    let count = cells.len().min(dst.len() / 4);
+    for (i, &value) in cells.iter().take(count).enumerate() {
+        let index = palette_index(value);
+        dst[i * 4..i * 4 + 4].copy_from_slice(&palette[index]);
+    }
+}
+
+#[inline]
+fn palette_index(value: i64) -> usize {
+    if (-128..=127).contains(&value) {
+        (value + 128) as usize
+    } else {
+        value.rem_euclid(256) as usize
+    }
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn palette_rgba_avx2(dst: &mut [u8], cells: &[i64], palette: &[[u8; 4]; 256]) {
+    let count = cells.len().min(dst.len() / 4);
+    let base = palette.as_ptr().cast::<i32>();
+    let mut i = 0;
+    while i + 4 <= count {
+        // SAFETY: `i + 4 <= count`, so the 4 qword load and 16-byte store are in bounds.
+        let values = unsafe { _mm256_loadu_si256(cells.as_ptr().add(i).cast::<__m256i>()) };
+        let indices = _mm256_add_epi64(values, _mm256_set1_epi64x(128));
+        let high = _mm256_cmpgt_epi64(indices, _mm256_set1_epi64x(255));
+        let low = _mm256_cmpgt_epi64(_mm256_setzero_si256(), indices);
+        let bad = _mm256_or_si256(high, low);
+        if _mm256_movemask_pd(_mm256_castsi256_pd(bad)) == 0 {
+            // SAFETY: all indices are in `0..=255`; the palette has 256 entries.
+            let rgba = unsafe { _mm256_i64gather_epi32(base, indices, 4) };
+            unsafe {
+                _mm_storeu_si128(dst.as_mut_ptr().add(i * 4).cast::<__m128i>(), rgba);
+            }
+        } else {
+            for j in 0..4 {
+                let index = palette_index(cells[i + j]);
+                dst[(i + j) * 4..(i + j) * 4 + 4].copy_from_slice(&palette[index]);
+            }
+        }
+        i += 4;
+    }
+    for j in i..count {
+        let index = palette_index(cells[j]);
+        dst[j * 4..j * 4 + 4].copy_from_slice(&palette[index]);
     }
 }
 
@@ -334,5 +400,29 @@ mod tests {
         let mut vn = an.clone();
         negate(&mut vp, &mut vn);
         assert_eq!((sp, sn), (vp, vn), "negate");
+    }
+    #[test]
+    fn palette_rgba_matches_scalar() {
+        let mut palette = [[0u8; 4]; 256];
+        for (i, entry) in palette.iter_mut().enumerate() {
+            *entry = [
+                i as u8,
+                (i as u8).wrapping_mul(3),
+                (i as u8).wrapping_mul(7),
+                255,
+            ];
+        }
+        let cells: Vec<i64> = (0..4096)
+            .map(|i| match i % 17 {
+                0 => 200,
+                1 => -200,
+                _ => ((i % 256) as i64) - 128,
+            })
+            .collect();
+        let mut scalar = vec![0u8; cells.len() * 4];
+        let mut vector = vec![0u8; cells.len() * 4];
+        palette_rgba_scalar(&mut scalar, &cells, &palette);
+        palette_rgba(&mut vector, &cells, &palette);
+        assert_eq!(scalar, vector);
     }
 }
