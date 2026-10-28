@@ -43,6 +43,21 @@ name = "setun-doom-rv32"
 path = "src/bin/setun_doom_rv32.rs"
 required-features = ["std"]
 
+[[bin]]
+name = "rebel6_run"
+path = "src/bin/rebel6_run.rs"
+required-features = ["std"]
+
+[[bin]]
+name = "rebel6_asm"
+path = "src/bin/rebel6_asm.rs"
+required-features = ["std"]
+
+[[bin]]
+name = "rebel6_doom"
+path = "src/bin/rebel6_doom.rs"
+required-features = ["std"]
+
 [profile.test]
 opt-level = 2
 

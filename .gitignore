@@ -15,3 +15,7 @@
 /vendor/ternary-computing-terminology/
 /vendor/doomgeneric/riscv32/build/
 /vendor/doomgeneric/riscv32/doom_rv32.elf
+
+/__pycache__/
+/scripts/__pycache__/
+/rebel6_frame*.png

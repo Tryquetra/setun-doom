@@ -497,19 +497,18 @@ int __ltdf2(double a, double b)
 /* 64-bit integer helpers used by the 64-bit `FixedMul`/`FixedDiv` in `m_fixed.c`. */
 long long __muldi3(long long a, long long b)
 {
-    unsigned int a_lo = (unsigned int)a;
-    unsigned int a_hi = (unsigned int)((unsigned long long)a >> 32);
-    unsigned int b_lo = (unsigned int)b;
-    unsigned int b_hi = (unsigned int)((unsigned long long)b >> 32);
+    /* Shift-add: a 64-bit `*` would lower to a recursive call to this helper on rv32i. */
+    unsigned long long ua = (unsigned long long)a;
+    unsigned long long ub = (unsigned long long)b;
+    unsigned long long result = 0;
 
-    unsigned long long lo = (unsigned long long)a_lo * b_lo;
-    unsigned long long mid1 = (unsigned long long)a_hi * b_lo;
-    unsigned long long mid2 = (unsigned long long)a_lo * b_hi;
-    unsigned long long hi = (unsigned long long)a_hi * b_hi;
-
-    unsigned long long carry = (lo >> 32) + (mid1 & 0xFFFFFFFFull) + (mid2 & 0xFFFFFFFFull);
-    unsigned long long result = (lo & 0xFFFFFFFFull) | (carry << 32);
-    result += (mid1 >> 32) + (mid2 >> 32) + hi;
+    while (ub != 0) {
+        if (ub & 1ull) {
+            result += ua;
+        }
+        ua <<= 1;
+        ub >>= 1;
+    }
     return (long long)result;
 }
 

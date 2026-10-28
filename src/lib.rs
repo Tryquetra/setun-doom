@@ -53,6 +53,7 @@ pub mod gui;
 pub mod memory;
 #[cfg(feature = "std")]
 pub mod mmo;
+pub mod rebel6;
 pub mod render;
 pub mod stack_machine;
 pub mod trit;

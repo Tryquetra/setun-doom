@@ -95,6 +95,20 @@ Outputs:
   * `ALU CARRY GATES`: Yellow pulse train indicating adder carry activity.
   * **Toggle HUD Key**: Press **`F12`** to toggle the HUD overlay on/off.
 
+### E. REBEL-6 Doom pipeline
+
+The `feat/rebel6-pure` branch executes `doomgeneric` on a 32-trit REBEL-6 core:
+
+```bash
+./scripts/setup_r2r.sh                 # vendor, patch and build the R2R reference tool
+python3 scripts/build_rebel6_doom.py   # C -> RV32I assembly -> R2R -> doom_all.tas
+cargo build --release --bin rebel6_doom
+./target/release/rebel6_doom vendor/doomgeneric/riscv32/build/rebel6/doom_all.tas 2
+```
+
+The second frame is written to `rebel6_frame_2.ppm`. Conformance details and known limits are in
+[`docs/rebel6-pipeline.md`](file:///home/robson/coding/setun-doom/docs/rebel6-pipeline.md).
+
 ---
 
 ## 5. Key Source Code Map
@@ -108,6 +122,7 @@ Outputs:
 * [`src/dbt.rs`](file:///home/robson/coding/setun-doom/src/dbt.rs): Dynamic binary translator (RV32IM to Setun 21-trit), flat operation arena with a direct PC index, peephole fusions, and the `VERACITY` const-generic execution mode.
 * [`src/bsp.rs`](file:///home/robson/coding/setun-doom/src/bsp.rs) / [`src/render.rs`](file:///home/robson/coding/setun-doom/src/render.rs): Trichotomous BSP geometry clipper (`solidsegs`) and 3D column rasterizer.
 * [`src/mmo.rs`](file:///home/robson/coding/setun-doom/src/mmo.rs): FFI bridge and C ABI exports linking `doomgeneric` to `libsetun_ffi.a` (`crates/setun-ffi`).
+* [`src/rebel6/`](file:///home/robson/coding/setun-doom/src/rebel6/): 32-trit REBEL-6 core (`Word24`, instruction encoding, 729 registers, Harvard memories, `.tas` assembler) and the R2R Doom pipeline. See [`docs/rebel6-pipeline.md`](file:///home/robson/coding/setun-doom/docs/rebel6-pipeline.md).
 * [`src/stack_machine.rs`](file:///home/robson/coding/setun-doom/src/stack_machine.rs): Setun-70 two-stack RPN machine over ternary memory (operand and return stacks, tryte-stream decoder, textual assembler with labels and typed errors), independent of the accumulator CPU and the DBT.
 * [`src/dos/`](file:///home/robson/coding/setun-doom/src/dos/): Setun-DOS kernel, static memory mapping, TFX loader, trichotomic syscalls, and Doom runner.
 * [`vendor/doomgeneric/doomgeneric/doomgeneric_setun.c`](file:///home/robson/coding/setun-doom/vendor/doomgeneric/doomgeneric/doomgeneric_setun.c): SDL2 platform driver with interactive telemetry HUD.
