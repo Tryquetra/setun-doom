@@ -41,6 +41,7 @@ The primary mission is executing the original 1993 **Id Software Doom** engine (
 | :---: | :--- | :--- | :--- |
 | **Level 0** | **DDA Co-Processor & Gate-Level ALU**<br>C-engine FFI hooks in `r_draw.c`, `m_fixed.c`, `r_main.c`, and `p_maputl.c` routing fixed-point and BSP partitioning through `libsetun_ffi.a`. Completed. | [`main`](https://github.com/Tryquetra/setun-doom/tree/main) (Tag: `v0.1.0-level-0`) | `libsetun_ffi.a`<br>`doomgeneric_setun` |
 | **Level 1** | **Dynamic Binary Translation (DBT / JIT)**<br>Static RISC-V ELF32 parser, 37 official RV32I ISA tests + RV32M validation (100% pass), peephole fusions (`LI.T`, `AIPC.T`, `BCEG`, `STI.T`). Playable bare-metal Doom RV32IM guest (`vendor/doomgeneric/riscv32`, `setun-doom-rv32`) driven by host `ecall` services. Two execution modes: `SetunDbtEngine<true>` (default, gate-accurate, telemetry) and `SetunDbtEngine<false>` (opt-in fast mode, no telemetry, ~50 FPS). Completed. | [`feat/level-1-dbt-rv32i`](https://github.com/Tryquetra/setun-doom/tree/feat/level-1-dbt-rv32i) | `target/release/setun-doom`<br>`target/release/setun-doom-rv32`<br>`vendor/doomgeneric/riscv32/doom_rv32.elf`<br>`vendor/riscv_tests/elf/*.elf`<br>`vendor/riscv_tests/rv32m/*.elf` |
+| **Level 1.5** | **Pure REBEL-6 Core (`feat/rebel6-pure`)**<br>32-trit REBEL-6 core with 24-trit words, 729 registers, Harvard memories and a `.tas` assembler. Doom is compiled with clang for RV32I, translated by the R2R reference tool, assembled and executed by the core. 37/37 official RV32I tests, Dhrystone final state identical to R2R, E1M1 frame rendered. Experimental. | [`feat/rebel6-pure`](https://github.com/Tryquetra/setun-doom/tree/feat/rebel6-pure) | `target/release/rebel6_doom`<br>`target/release/rebel6_run`<br>`target/release/rebel6_asm`<br>`vendor/doomgeneric/riscv32/build/rebel6/doom_all.tas` |
 | **Level 2** | **Native LLVM Backend (`ternary21-setun`)**<br>Emits native 21-trit machine instructions from C/C++ without DBT layer. Planned. | `feat/level-2-llvm-target` | Clang/LLVM target |
 | **Level 3** | **Full-System DOS Emulation (`Setun-DOS`)**<br>Ternary operating environment with BIOS interrupts, TFX flat loader, and DMA WAD loading inspired by KolibriOS architecture. Completed. | [`feat/level-3-full-system-dos`](https://github.com/Tryquetra/setun-doom/tree/feat/level-3-full-system-dos) | `target/release/setun_dos`<br>`src/dos/` |
 | **Level 4** | **Physical FPGA Synthesis**<br>Lattice iCE40 and Xilinx Artix-7 dual-rail Verilog synthesis with physical VGA DAC. Planned. | `feat/level-4-fpga-synthesis` | Bitstreams |
@@ -97,17 +98,38 @@ Outputs:
 
 ### E. REBEL-6 Doom pipeline
 
-The `feat/rebel6-pure` branch executes `doomgeneric` on a 32-trit REBEL-6 core:
+The `feat/rebel6-pure` branch executes `doomgeneric` on a 32-trit REBEL-6 core with 24-trit
+words, 729 registers and Harvard memories. The 21-trit ISA and the DBT are not used on this path.
 
 ```bash
 ./scripts/setup_r2r.sh                 # vendor, patch and build the R2R reference tool
 python3 scripts/build_rebel6_doom.py   # C -> RV32I assembly -> R2R -> doom_all.tas
-cargo build --release --bin rebel6_doom
+cargo build --release --bin rebel6_doom --bin rebel6_run --bin rebel6_asm
 ./target/release/rebel6_doom vendor/doomgeneric/riscv32/build/rebel6/doom_all.tas 2
 ```
 
-The second frame is written to `rebel6_frame_2.ppm`. Conformance details and known limits are in
-[`docs/rebel6-pipeline.md`](file:///home/robson/coding/setun-doom/docs/rebel6-pipeline.md).
+Current results on the branch:
+
+| Check | Result |
+| :-- | :-- |
+| `cargo test` | 109/109 |
+| Official RV32I tests | 37/37 |
+| Doom image | 70,999 instructions, 3,555,004 data bytes |
+| Doom frame 2 | 63,847 non-zero pixels, E1M1 with HUD |
+| Frame 2 | 31,302,550 cycles, ~60 s, ~0.14 FPS steady |
+| Frame parity with the 21-trit reference | 97.5% |
+
+Carry telemetry classifies every ripple-adder carry as `+1`, `-1` or `0` and measures absorption
+and chain length. Measured absorption is 64.8% on Doom, 70.7% on BSP and 73.7% on the RV32I test
+suite. See [`docs/carry-telemetry.md`](file:///home/robson/coding/setun-doom/docs/carry-telemetry.md).
+
+AVX2 kernels cover bitsliced tritwise operations and the framebuffer palette conversion. The
+palette path is integrated; a vectorized `R_DrawSpan` measured 0.94x and was removed. See
+[`docs/simd.md`](file:///home/robson/coding/setun-doom/docs/simd.md).
+
+Known limits: the pipeline concatenates translation units instead of linking objects; the data
+space is a flat byte-addressed window; the guest uses `-march=rv32i` with soft multiply and
+divide; the player weapon sprite is not rendered; the R2R tool needs the compatibility patch.
 
 ---
 
@@ -123,6 +145,10 @@ The second frame is written to `rebel6_frame_2.ppm`. Conformance details and kno
 * [`src/bsp.rs`](file:///home/robson/coding/setun-doom/src/bsp.rs) / [`src/render.rs`](file:///home/robson/coding/setun-doom/src/render.rs): Trichotomous BSP geometry clipper (`solidsegs`) and 3D column rasterizer.
 * [`src/mmo.rs`](file:///home/robson/coding/setun-doom/src/mmo.rs): FFI bridge and C ABI exports linking `doomgeneric` to `libsetun_ffi.a` (`crates/setun-ffi`).
 * [`src/rebel6/`](file:///home/robson/coding/setun-doom/src/rebel6/): 32-trit REBEL-6 core (`Word24`, instruction encoding, 729 registers, Harvard memories, `.tas` assembler) and the R2R Doom pipeline. See [`docs/rebel6-pipeline.md`](file:///home/robson/coding/setun-doom/docs/rebel6-pipeline.md).
+* [`src/simd.rs`](file:///home/robson/coding/setun-doom/src/simd.rs): AVX2 bitsliced ternary kernels and the framebuffer palette conversion, with scalar fallback and runtime feature detection.
+* [`src/bin/rebel6_run.rs`](file:///home/robson/coding/setun-doom/src/bin/rebel6_run.rs) / [`src/bin/rebel6_asm.rs`](file:///home/robson/coding/setun-doom/src/bin/rebel6_asm.rs) / [`src/bin/rebel6_doom.rs`](file:///home/robson/coding/setun-doom/src/bin/rebel6_doom.rs): `.tas` runner, assembler CLI and Doom `ecall` host.
+* [`scripts/setup_r2r.sh`](file:///home/robson/coding/setun-doom/scripts/setup_r2r.sh) / [`scripts/build_rebel6_doom.py`](file:///home/robson/coding/setun-doom/scripts/build_rebel6_doom.py) / [`scripts/r2r.patch`](file:///home/robson/coding/setun-doom/scripts/r2r.patch): R2R setup, C-to-`.tas` pipeline and compatibility patch.
+* [`docs/carry-telemetry.md`](file:///home/robson/coding/setun-doom/docs/carry-telemetry.md) / [`docs/simd.md`](file:///home/robson/coding/setun-doom/docs/simd.md): signed carry measurements and SIMD results.
 * [`src/stack_machine.rs`](file:///home/robson/coding/setun-doom/src/stack_machine.rs): Setun-70 two-stack RPN machine over ternary memory (operand and return stacks, tryte-stream decoder, textual assembler with labels and typed errors), independent of the accumulator CPU and the DBT.
 * [`src/dos/`](file:///home/robson/coding/setun-doom/src/dos/): Setun-DOS kernel, static memory mapping, TFX loader, trichotomic syscalls, and Doom runner.
 * [`vendor/doomgeneric/doomgeneric/doomgeneric_setun.c`](file:///home/robson/coding/setun-doom/vendor/doomgeneric/doomgeneric/doomgeneric_setun.c): SDL2 platform driver with interactive telemetry HUD.
@@ -140,3 +166,9 @@ The second frame is written to `rebel6_frame_2.ppm`. Conformance details and kno
    Never replace balanced ternary gate calculations with native binary host math shortcuts. All arithmetic additions must pass through `gate_ripple_carry_add`.
 3. **Documentation & Formatting Standards**:
    Maintain docstrings, preserve file links in markdown using `file:///` format, and adhere strictly to repository language guidelines.
+4. **SIMD Is Measured, Not Assumed**:
+   AVX2 code lives behind `cfg(all(feature = "std", target_arch = "x86_64"))` with a scalar fallback. A kernel enters a hot path only after an A/B benchmark. The vectorized `R_DrawSpan` measured 0.94x and was removed; the palette conversion measured 1.5x to 2.0x and stayed.
+5. **REBEL-6 Core Stays `no_std`**:
+   `src/rebel6/{word,encoding,mem,cpu}.rs` compile without `std`. The assembler and binaries require `std`. `cargo build --no-default-features --lib` must pass.
+6. **R2R Is External and Patched**:
+   `vendor/RV32IToREBEL` is gitignored. `scripts/setup_r2r.sh` copies it from the main worktree, applies `scripts/r2r.patch` and builds it. A fresh worktree has no translator until the script runs.

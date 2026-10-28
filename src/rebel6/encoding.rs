@@ -523,8 +523,8 @@ pub fn put_field(word: &mut u64, offset: usize, width: usize, value: i64) {
 #[must_use]
 pub fn get_field(word: u64, offset: usize, width: usize) -> i64 {
     let mut value = 0i64;
-    for i in 0..width {
-        value += i64::from(get_trit(word, offset + i)) * POW3[i];
+    for (i, &power) in POW3.iter().take(width).enumerate() {
+        value += i64::from(get_trit(word, offset + i)) * power;
     }
     value
 }

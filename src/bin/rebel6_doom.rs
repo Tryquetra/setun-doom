@@ -201,7 +201,7 @@ impl Host {
 fn save_ppm(path: &str, rgba: &[u8]) -> std::io::Result<()> {
     let mut file = File::create(path)?;
     write!(file, "P6\n{WIDTH} {HEIGHT}\n255\n")?;
-    for pixel in rgba.chunks_exact(4) {
+    for pixel in rgba.chunks(4) {
         file.write_all(&pixel[..3])?;
     }
     Ok(())
@@ -287,10 +287,8 @@ fn main() -> ExitCode {
                 );
                 let mut nearest: Option<(&str, i64)> = None;
                 for (name, &addr) in &image.symbols {
-                    if addr <= pc && addr >= 0 {
-                        if nearest.map_or(true, |(_, best)| addr > best) {
-                            nearest = Some((name, addr));
-                        }
+                    if addr <= pc && addr >= 0 && nearest.is_none_or(|(_, best)| addr > best) {
+                        nearest = Some((name, addr));
                     }
                 }
                 eprintln!("nearest symbol: {:?}", nearest);
@@ -306,13 +304,13 @@ fn main() -> ExitCode {
             }
         }
         steps += 1;
-        if std::env::var("REBEL6_TRACE").is_ok() && steps % 1_000_000 == 0 {
+        if std::env::var("REBEL6_TRACE").is_ok() && steps.is_multiple_of(1_000_000) {
             eprintln!(
                 "step={} pc={} sp={} ra={}",
                 steps, cpu.pc, cpu.regs[2], cpu.regs[1]
             );
         }
-        if steps % 100_000_000 == 0 {
+        if steps.is_multiple_of(100_000_000) {
             println!("steps={steps} pc={} frames={}", cpu.pc, host.frames);
         }
         if start.elapsed().as_secs() > 120 {

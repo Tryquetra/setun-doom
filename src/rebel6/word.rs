@@ -159,26 +159,29 @@ impl Word24 {
     pub fn low(self, width: usize) -> i64 {
         assert!(width <= TRITS);
         let mut value = 0i64;
-        for i in 0..width {
-            value += i64::from(self.trit(i)) * POW3[i];
+        for (i, &power) in POW3.iter().take(width).enumerate() {
+            value += i64::from(self.trit(i)) * power;
         }
         value
     }
 
     /// Ternary addition modulo `3^24`.
     #[must_use]
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, other: Self) -> Self {
         Self::new(self.0 + other.0)
     }
 
     /// Ternary subtraction modulo `3^24`.
     #[must_use]
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(self, other: Self) -> Self {
         Self::new(self.0 - other.0)
     }
 
     /// Ternary negation (`STI.T`), total on the balanced range.
     #[must_use]
+    #[allow(clippy::should_implement_trait)]
     pub fn neg(self) -> Self {
         Self::new(-self.0)
     }
@@ -263,10 +266,10 @@ impl Word24 {
     #[must_use]
     pub fn majority(self, b: Self, c: Self) -> Self {
         let mut out = [0i8; TRITS];
-        for i in 0..TRITS {
+        for (i, slot) in out.iter_mut().enumerate() {
             let mut lane = [self.trit(i), b.trit(i), c.trit(i)];
             lane.sort_unstable();
-            out[i] = lane[1];
+            *slot = lane[1];
         }
         Self::from_trits(&out)
     }
@@ -318,8 +321,8 @@ impl Word24 {
 
     fn zip_trits(a: Self, b: Self, f: impl Fn(i8, i8) -> i8) -> Self {
         let mut out = [0i8; TRITS];
-        for i in 0..TRITS {
-            out[i] = f(a.trit(i), b.trit(i));
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = f(a.trit(i), b.trit(i));
         }
         Self::from_trits(&out)
     }

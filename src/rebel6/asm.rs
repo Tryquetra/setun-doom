@@ -83,6 +83,9 @@ enum Section {
     Data,
 }
 
+/// `(offset, base register, optional symbol addend)`.
+type MemoryOperand = (i64, i64, Option<(String, i64)>);
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum RelocKind {
     Pcrel24,
@@ -152,10 +155,7 @@ impl Assembler {
         if rest.is_empty() {
             return Ok(());
         }
-        loop {
-            let Some(colon) = rest.find(':') else {
-                break;
-            };
+        while let Some(colon) = rest.find(':') {
             let label = rest[..colon].trim();
             if label.is_empty() || label.contains(char::is_whitespace) {
                 break;
@@ -201,7 +201,7 @@ impl Assembler {
                 if self.section == Section::Data {
                     let n = parse_number(args).unwrap_or(0).clamp(0, 16) as u32;
                     let align = 1usize << n;
-                    while self.data.len() % align != 0 {
+                    while !self.data.len().is_multiple_of(align) {
                         self.data.push(0);
                     }
                 }
@@ -474,10 +474,7 @@ impl Assembler {
         parse_register(name).ok_or_else(|| self.err(format!("invalid register `{name}`")))
     }
 
-    fn memory_operand(
-        &self,
-        operand: Option<&str>,
-    ) -> Result<(i64, i64, Option<(String, i64)>), AsmError> {
+    fn memory_operand(&self, operand: Option<&str>) -> Result<MemoryOperand, AsmError> {
         let text = operand.unwrap_or("").trim();
         if let Some(open) = text.find('(') {
             if !text.ends_with(')') {
@@ -521,8 +518,7 @@ impl Assembler {
         let data_base = if self.instrs.is_empty() {
             DATA_BASE
         } else {
-            let aligned = instruction_trytes + 4 - (instruction_trytes % 4);
-            aligned
+            instruction_trytes + 4 - (instruction_trytes % 4)
         };
         for (section, location) in self.labels.values_mut() {
             if *section == Section::Data {
