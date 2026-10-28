@@ -21,7 +21,7 @@ triggers:
 
 # Setun-Doom — Skill de Continuidade
 
-> Progresso salvo em **2026-10-28**, HEAD `ae2ebe8` na `main` (sincronizada com `origin`).
+> Progresso salvo em **2026-10-28**; último commit de código `ae2ebe8` na `main` (a skill foi atualizada no commit seguinte).
 > Repositório: `/home/robson/coding/setun-doom`
 > 74 testes, `cargo clippy --all-targets` limpo, unikernel RISC-V compilando.
 
