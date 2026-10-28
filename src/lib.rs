@@ -54,6 +54,7 @@ pub mod memory;
 #[cfg(feature = "std")]
 pub mod mmo;
 pub mod render;
+pub mod stack_machine;
 pub mod trit;
 pub mod word;
 
@@ -87,5 +88,6 @@ pub use mmo::{
     global_machine, lock_machine, setun_GetHookCounters,
 };
 pub use render::{ColumnDrawParams, TernaryRenderer};
+pub use stack_machine::{StackError, StackMachine, StackOp, StackProgram};
 pub use trit::Trit;
 pub use word::{Tryte6, Word21, Word27};
