@@ -1,6 +1,6 @@
 ---
 name: setun-doom-progress
-description: "Retomar o desenvolvimento do Setun-Doom em /home/robson/coding/setun-doom: emulador ternário balanceado de 21 trits que executa Doom, com níveis 0 (FFI no engine C), 1 (DBT RV32IM com guest bare-metal jogável), 2 (codegen/LLVM IR) e 3 (Setun-DOS e unikernel RISC-V). Use quando o pedido envolver setun-doom, DBT, RV32IM, Doom ternário, modo veracidade, modo rápido, RPN Setun-70, ou os binários doomgeneric_setun, setun-doom-rv32 e setun_dos. Triggers: setun-doom, setun doom, DBT ternário, RV32IM no Setun, doom ternário, modo veracidade, modo rápido, setun-doom-rv32, doom_rv32.elf, stack_machine, Setun-70 RPN."
+description: "Retomar o desenvolvimento do Setun-Doom em /home/robson/coding/setun-doom: emulador ternário balanceado de 21 trits que executa Doom, com níveis 0 (FFI no engine C), 1 (DBT RV32IM com guest bare-metal jogável), 2 (codegen/LLVM IR) e 3 (Setun-DOS e unikernel RISC-V), mais a máquina Setun-70 de duas pilhas e a documentação do REBEL-6. Use quando o pedido envolver setun-doom, DBT, RV32IM, Doom ternário, modo veracidade, modo rápido, RPN Setun-70, REBEL-6 ou os binários doomgeneric_setun, setun-doom-rv32 e setun_dos. Triggers: setun-doom, setun doom, DBT ternário, RV32IM no Setun, doom ternário, modo veracidade, modo rápido, setun-doom-rv32, doom_rv32.elf, stack_machine, Setun-70 RPN, REBEL-6, REBEL-2, paper REBEL, docs/rebel6."
 triggers:
   - setun-doom
   - setun doom
@@ -13,11 +13,15 @@ triggers:
   - doom_rv32.elf
   - stack_machine
   - Setun-70 RPN
+  - REBEL-6
+  - REBEL-2
+  - paper REBEL
+  - docs/rebel6
 ---
 
 # Setun-Doom — Skill de Continuidade
 
-> Progresso salvo em **2026-10-27**, HEAD `d0d3627` na `main` (sincronizada com `origin`).
+> Progresso salvo em **2026-10-28**, HEAD `ae2ebe8` na `main` (sincronizada com `origin`).
 > Repositório: `/home/robson/coding/setun-doom`
 > 74 testes, `cargo clippy --all-targets` limpo, unikernel RISC-V compilando.
 
@@ -97,7 +101,32 @@ Perfil do caminho quente medido: `gate_ripple_carry_add` 217 ns, `gate_add_i32` 
 
 ---
 
-## 4. Invariantes e regras
+## 4. REBEL-6 e a adaptação para 21 trits
+
+Fonte: Steven Bos, Vetle Bodahl, Ole Christian Moholth e Henning Gundersen, *"REBEL-6: A 32-trit
+balanced ternary instruction set architecture with R2R compiler pipeline for C"*, IEEE ISMVL 2025,
+pp. 98-103, DOI `10.1109/ISMVL64713.2025.00028`. O accepted manuscript está em
+`docs/papers/rebel-6-ismvl-2025.pdf` sob **CC BY 4.0**. O código de referência é
+`vendor/RV32IToREBEL`, MIT. O documento de mapeamento completo é `docs/rebel6.md`.
+
+| Item | REBEL-2 | REBEL-6 | Setun-Doom |
+| :-- | :-- | :-- | :-- |
+| Instrução | 10 trits | 32 trits | 21 trits |
+| Palavra de dados | trytes de 6 trits | 4 trytes, 24 trits | `Word21` |
+| Registradores | 9 de 2 trits | 729 de 24 trits | 9 de índice, campo de 2 trits |
+| Instruções | 19 | 263 na Tabela I | 45 implementadas |
+| Endereço | curto | 24 trits | 14 trits |
+
+Mapeamento: `cmp.t` → `Opcode::CmpT`, `majv.t` → `MajvT`, `minv.t` → `MinvT`, `sti.t` → `Neg`,
+`lw.t`/`sw.t` → `Load`/`Store`, `BCEG` (REBEL-2) → `Bceg`. `li2.t` não tem equivalente. O paper cita
+21 trits como alternativa viável para cobrir `u32`, o que sustenta a escolha do projeto.
+
+Cuidado com telemetria: o paper conta cada digit flip com peso igual e ignora RAM e barramento,
+reportando 33,24% de redução no Dhrystone. O projeto mantém essa métrica e adiciona uma métrica
+ponderada de energia (half swing com peso 0,25). Os percentuais de energia do projeto não são
+comparáveis ao 33,24% do paper.
+
+## 5. Invariantes e regras
 
 1. **Veracidade é o padrão.** Qualquer caminho rápido novo precisa de opt-in explícito e teste que prove equivalência arquitetural e telemetria zerada. Ver `tests/integration_execution_modes.rs`.
 2. **Sem falhas silenciosas.** Proibido `let _ =` em operação falível. Lints `let_underscore_drop` e `clippy::let_underscore_must_use` ligados em `src/lib.rs` e no kernel.
@@ -109,7 +138,7 @@ Perfil do caminho quente medido: `gate_ripple_carry_add` 217 ns, `gate_add_i32` 
 
 ---
 
-## 5. Armadilhas já encontradas
+## 6. Armadilhas já encontradas
 
 | Sintoma | Causa | Correção |
 | :-- | :-- | :-- |
@@ -121,7 +150,7 @@ Perfil do caminho quente medido: `gate_ripple_carry_add` 217 ns, `gate_add_i32` 
 
 ---
 
-## 6. Mapa de arquivos
+## 7. Mapa de arquivos
 
 - `src/dbt.rs`: tradução RV32IM, arena plana de operações, índice direto por PC, modos `VERACITY`.
 - `src/mmo.rs`: FFI, contadores de hooks, lock com recuperação de envenenamento, ROMs de fixed-point e BSP.
@@ -135,18 +164,19 @@ Perfil do caminho quente medido: `gate_ripple_carry_add` 217 ns, `gate_add_i32` 
 
 ---
 
-## 7. Pendências
+## 8. Pendências
 
 1. Caminho de acesso de 32 bits direto no DBT, para cortar o custo de memória por byte no modo rápido (estimativa de 20 a 30%).
 2. `#[non_exhaustive]` nos enums públicos que evoluem (`Rv32iInstr`, `DmaTranscodeMode`) e corrigir a deriva do README (36 opcodes citados, 45 reais).
 3. Rodar Miri por módulo depois do refactor da arena.
 4. Levar o modo RPN do Setun-70 para o Setun-DOS ou para um parser infixa via Shunting-yard no testbench.
-5. Decidir o destino de `src/dos/playpal.bin` (untracked, sem uso) e de `o que é aarch64?.md` (rascunho untracked).
+5. Implementar `li2.t` (dois imediatos de 6 trits) e avaliar `round` por shift e `min`/`max` ternários, citados no paper.
+6. Decidir o destino de `src/dos/playpal.bin` (untracked, sem uso) e de `o que é aarch64?.md` (rascunho untracked).
 
 ---
 
-## 8. Git
+## 9. Git
 
 - Branch de trabalho: `main`, sincronizada com `origin` (`git@github.com:Tryquetra/setun-doom.git`).
-- Últimos commits: `d0d3627` assembler RPN, `ff54549` máquina de duas pilhas, `745d45f` telemetria do driver, `49eecb7` nível 1 jogável e modo rápido, `e50add9` gitignore do guest.
+- Últimos commits: `ae2ebe8` documentação e paper do REBEL-6, `a4b1fbf` skill do projeto, `d0d3627` assembler RPN, `ff54549` máquina de duas pilhas, `745d45f` telemetria do driver, `49eecb7` nível 1 jogável e modo rápido.
 - Antes de commitar: `cargo test --release`, `cargo clippy --all-targets`, e confirmar que o unikernel ainda compila.
