@@ -359,6 +359,26 @@ fn run_guest<const VERACITY: bool>(elf: &[u8], gui: Option<BenchGui>) {
                 report.branch_fusions_executed,
                 report.neg_fusions_executed
             );
+            if VERACITY {
+                let telemetry = report.telemetry;
+                let energy = match telemetry.weighted_energy_reduction_opt() {
+                    Some(value) => format!("{value:.2}%"),
+                    None => String::from("N/A"),
+                };
+                println!(
+                    "telemetry: trit flips = {} (half {}, full {}) | bit flips = {} | \
+                     carry gates = {} | digit reduction = {:.2}% | energy = {}",
+                    telemetry.ternary_trit_flips,
+                    telemetry.ternary_half_swings,
+                    telemetry.ternary_full_swings,
+                    telemetry.binary32_bit_flips,
+                    telemetry.adder_carry_propagations,
+                    telemetry.digit_flip_reduction_pct(),
+                    energy
+                );
+            } else {
+                println!("telemetry: disabled in fast mode (no gate simulation)");
+            }
         }
         Err(error) => {
             eprintln!(
