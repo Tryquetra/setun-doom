@@ -59,9 +59,9 @@ impl SetunDos {
         for i in 0..256 {
             let addr = TIVT_BASE + i;
             let handler_pc = KERNEL_CODE_BASE + i * 4;
-            self.mem.write_word(addr, Word21::new(handler_pc)).map_err(|e| {
-                format!("Failed to write TIVT vector {}: {:?}", i, e)
-            })?;
+            self.mem
+                .write_word(addr, Word21::new(handler_pc))
+                .map_err(|e| format!("Failed to write TIVT vector {}: {:?}", i, e))?;
         }
 
         // 2. Clear VGA Framebuffer to palette index 0 (black)
@@ -105,19 +105,20 @@ impl SetunDos {
     }
 
     /// Loads and spawns a flat executable (`TFX`) into Setun-DOS user memory.
-    pub fn load_executable(&mut self, tfx: &TfxExecutable, task_name: &str) -> Result<usize, String> {
+    pub fn load_executable(
+        &mut self,
+        tfx: &TfxExecutable,
+        task_name: &str,
+    ) -> Result<usize, String> {
         if !self.is_booted {
             return Err("Cannot load executable: Setun-DOS is not booted".to_string());
         }
 
         tfx.load_into_memory(&mut self.mem, tfx.entry_pc)?;
 
-        let pid = self.scheduler.spawn(
-            task_name,
-            tfx.entry_pc,
-            tfx.stack_top,
-            self.heap_brk,
-        );
+        let pid = self
+            .scheduler
+            .spawn(task_name, tfx.entry_pc, tfx.stack_top, self.heap_brk);
 
         if self.scheduler.tasks.len() == 1 {
             // First task becomes active immediately
@@ -151,14 +152,16 @@ impl SetunDos {
             }
             SyscallResult::Yield => {
                 self.cpu.resume_from_syscall(Word21::ZERO);
-                self.scheduler.switch_next(&mut self.cpu, &mut self.heap_brk);
+                self.scheduler
+                    .switch_next(&mut self.cpu, &mut self.heap_brk);
                 SyscallResult::Yield
             }
             SyscallResult::Exit(code) => {
                 if let Some(task) = self.scheduler.current_mut() {
                     task.state = TaskState::Exited(code);
                 }
-                self.scheduler.switch_next(&mut self.cpu, &mut self.heap_brk);
+                self.scheduler
+                    .switch_next(&mut self.cpu, &mut self.heap_brk);
                 SyscallResult::Exit(code)
             }
             SyscallResult::InvalidSyscall(num) => {

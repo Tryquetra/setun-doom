@@ -20,7 +20,7 @@
 use crate::fixed::TernaryFixed;
 use crate::memory::FB_WIDTH;
 use crate::trit::Trit;
-use crate::word::{Word21, Tryte6};
+use crate::word::{Tryte6, Word21};
 
 /// Identifier of a child in the BSP tree: points to either an internal splitter node or a leaf (Subsector).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

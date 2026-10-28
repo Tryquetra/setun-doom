@@ -89,7 +89,13 @@ impl SyscallDispatcher {
                 let h = cpu.index_regs[3].as_i64();
                 let color_idx = cpu.index_regs[4].as_i64();
 
-                if x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > (FRAMEBUFFER_WIDTH as i64) || y + h > (FRAMEBUFFER_HEIGHT as i64) {
+                if x < 0
+                    || y < 0
+                    || w <= 0
+                    || h <= 0
+                    || x + w > (FRAMEBUFFER_WIDTH as i64)
+                    || y + h > (FRAMEBUFFER_HEIGHT as i64)
+                {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
@@ -97,14 +103,16 @@ impl SyscallDispatcher {
                 // Draw top and bottom borders
                 for col in x..(x + w) {
                     let top_addr = FRAMEBUFFER_BASE + y * (FRAMEBUFFER_WIDTH as i64) + col;
-                    let bot_addr = FRAMEBUFFER_BASE + (y + h - 1) * (FRAMEBUFFER_WIDTH as i64) + col;
+                    let bot_addr =
+                        FRAMEBUFFER_BASE + (y + h - 1) * (FRAMEBUFFER_WIDTH as i64) + col;
                     let _ = mem.write_word(top_addr, color.to_word21());
                     let _ = mem.write_word(bot_addr, color.to_word21());
                 }
                 // Draw left and right borders
                 for row in y..(y + h) {
                     let left_addr = FRAMEBUFFER_BASE + row * (FRAMEBUFFER_WIDTH as i64) + x;
-                    let right_addr = FRAMEBUFFER_BASE + row * (FRAMEBUFFER_WIDTH as i64) + (x + w - 1);
+                    let right_addr =
+                        FRAMEBUFFER_BASE + row * (FRAMEBUFFER_WIDTH as i64) + (x + w - 1);
                     let _ = mem.write_word(left_addr, color.to_word21());
                     let _ = mem.write_word(right_addr, color.to_word21());
                 }
@@ -117,7 +125,11 @@ impl SyscallDispatcher {
                 let y = cpu.index_regs[1].as_i64();
                 let color_idx = cpu.index_regs[2].as_i64();
 
-                if x < 0 || x >= (FRAMEBUFFER_WIDTH as i64) || y < 0 || y >= (FRAMEBUFFER_HEIGHT as i64) {
+                if x < 0
+                    || x >= (FRAMEBUFFER_WIDTH as i64)
+                    || y < 0
+                    || y >= (FRAMEBUFFER_HEIGHT as i64)
+                {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
@@ -131,7 +143,11 @@ impl SyscallDispatcher {
                 let x = cpu.index_regs[0].as_i64();
                 let y = cpu.index_regs[1].as_i64();
 
-                if x < 0 || x >= (FRAMEBUFFER_WIDTH as i64) || y < 0 || y >= (FRAMEBUFFER_HEIGHT as i64) {
+                if x < 0
+                    || x >= (FRAMEBUFFER_WIDTH as i64)
+                    || y < 0
+                    || y >= (FRAMEBUFFER_HEIGHT as i64)
+                {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
@@ -154,9 +170,7 @@ impl SyscallDispatcher {
                 }
             }
 
-            SYS_YIELD => {
-                SyscallResult::Yield
-            }
+            SYS_YIELD => SyscallResult::Yield,
 
             SYS_FILE_READ => {
                 let handle = cpu.index_regs[0].as_i64() as usize;
@@ -203,15 +217,22 @@ impl SyscallDispatcher {
                 let width = cpu.index_regs[3].as_i64();
                 let height = cpu.index_regs[4].as_i64();
 
-                if dst_x < 0 || dst_y < 0 || width <= 0 || height <= 0 ||
-                   dst_x + width > (FRAMEBUFFER_WIDTH as i64) || dst_y + height > (FRAMEBUFFER_HEIGHT as i64) {
+                if dst_x < 0
+                    || dst_y < 0
+                    || width <= 0
+                    || height <= 0
+                    || dst_x + width > (FRAMEBUFFER_WIDTH as i64)
+                    || dst_y + height > (FRAMEBUFFER_HEIGHT as i64)
+                {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
                 for row in 0..height {
                     for col in 0..width {
                         let src_idx = src_addr + row * width + col;
-                        let dst_idx = FRAMEBUFFER_BASE + (dst_y + row) * (FRAMEBUFFER_WIDTH as i64) + (dst_x + col);
+                        let dst_idx = FRAMEBUFFER_BASE
+                            + (dst_y + row) * (FRAMEBUFFER_WIDTH as i64)
+                            + (dst_x + col);
                         if let Ok(pixel) = mem.read_word(src_idx) {
                             let _ = mem.write_word(dst_idx, pixel);
                         }
@@ -221,9 +242,7 @@ impl SyscallDispatcher {
                 SyscallResult::Continue(Word21::ZERO)
             }
 
-            SYS_GET_TICKS => {
-                SyscallResult::Continue(Word21::new(timer_ticks as i64))
-            }
+            SYS_GET_TICKS => SyscallResult::Continue(Word21::new(timer_ticks as i64)),
 
             SYS_PRINT_STR => {
                 let str_ptr = cpu.index_regs[0].as_i64();
@@ -236,13 +255,17 @@ impl SyscallDispatcher {
                 let mut curr = str_ptr;
                 while let Ok(val) = mem.read_word(curr) {
                     let ch = val.as_i64();
-                    if ch == 0 || x + 4 >= (FRAMEBUFFER_WIDTH as i64) || y + 6 >= (FRAMEBUFFER_HEIGHT as i64) {
+                    if ch == 0
+                        || x + 4 >= (FRAMEBUFFER_WIDTH as i64)
+                        || y + 6 >= (FRAMEBUFFER_HEIGHT as i64)
+                    {
                         break;
                     }
                     // Simple 3x5 block character representation
                     for dy in 0..5 {
                         for dx in 0..3 {
-                            let addr = FRAMEBUFFER_BASE + (y + dy) * (FRAMEBUFFER_WIDTH as i64) + (x + dx);
+                            let addr =
+                                FRAMEBUFFER_BASE + (y + dy) * (FRAMEBUFFER_WIDTH as i64) + (x + dx);
                             let _ = mem.write_word(addr, color.to_word21());
                         }
                     }
@@ -261,7 +284,13 @@ impl SyscallDispatcher {
                 let w = cpu.index_regs[3].as_i64();
                 let h = cpu.index_regs[4].as_i64();
 
-                if w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > (FRAMEBUFFER_WIDTH as i64) || y + h > (FRAMEBUFFER_HEIGHT as i64) {
+                if w <= 0
+                    || h <= 0
+                    || x < 0
+                    || y < 0
+                    || x + w > (FRAMEBUFFER_WIDTH as i64)
+                    || y + h > (FRAMEBUFFER_HEIGHT as i64)
+                {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
@@ -296,7 +325,13 @@ impl SyscallDispatcher {
                 let w = cpu.index_regs[3].as_i64();
                 let h = cpu.index_regs[4].as_i64();
 
-                if w <= 0 || h <= 0 || x < 0 || y < 0 || x + w > (FRAMEBUFFER_WIDTH as i64) || y + h > (FRAMEBUFFER_HEIGHT as i64) {
+                if w <= 0
+                    || h <= 0
+                    || x < 0
+                    || y < 0
+                    || x + w > (FRAMEBUFFER_WIDTH as i64)
+                    || y + h > (FRAMEBUFFER_HEIGHT as i64)
+                {
                     return SyscallResult::Continue(Word21::new(-1));
                 }
 
@@ -308,7 +343,8 @@ impl SyscallDispatcher {
                             Err(_) => 0,
                         };
 
-                        let fb_addr = FRAMEBUFFER_BASE + (y + row) * (FRAMEBUFFER_WIDTH as i64) + (x + col);
+                        let fb_addr =
+                            FRAMEBUFFER_BASE + (y + row) * (FRAMEBUFFER_WIDTH as i64) + (x + col);
                         if val > 0 {
                             // Opaque pixel (+1 logic)
                             let color = Tryte6::from_palette_index(val as u8);
@@ -317,7 +353,8 @@ impl SyscallDispatcher {
                             // Shadow pixel (-1 logic): darkens background by decrementing palette index
                             if let Ok(curr) = mem.read_word(fb_addr) {
                                 let curr_idx = Tryte6::from_i64(curr.as_i64()).to_palette_index();
-                                let darkened = Tryte6::from_palette_index(curr_idx.saturating_sub(24));
+                                let darkened =
+                                    Tryte6::from_palette_index(curr_idx.saturating_sub(24));
                                 let _ = mem.write_word(fb_addr, darkened.to_word21());
                             }
                         }
@@ -340,7 +377,11 @@ impl SyscallDispatcher {
                 if mdown {
                     // Check button collisions from top to bottom (reverse order)
                     for btn in gui_state.buttons.iter().rev() {
-                        if btn.x <= mx && mx < btn.x + btn.width && btn.y <= my && my < btn.y + btn.height {
+                        if btn.x <= mx
+                            && mx < btn.x + btn.width
+                            && btn.y <= my
+                            && my < btn.y + btn.height
+                        {
                             gui_state.last_clicked_button = Some(btn.id);
                             break;
                         }
