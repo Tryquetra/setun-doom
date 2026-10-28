@@ -74,18 +74,21 @@ pub use dbt::{
 };
 #[cfg(feature = "std")]
 pub use dos::doom_runner::DoomDosRunner;
-pub use dos::{tfx::TfxExecutable, ActiveWindow, SetunDesktop, SetunDos};
+pub use dos::tfx::TfxExecutable;
+pub use dos::{ActiveWindow, SetunDesktop, SetunDos};
 #[cfg(feature = "std")]
 pub use elf::{Elf32Image, ElfError, ElfSection, ElfSegment, LoadedElfLayout};
 pub use fixed::{TernaryFixed, FRAC_SCALE, FRAC_TRITS, INT_TRITS};
 #[cfg(feature = "std")]
 pub use gui::BenchGui;
-pub use memory::{Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE};
+pub use memory::{
+    Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
+};
 #[cfg(feature = "std")]
 pub use mmo::{
-    DG_DrawFrame, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init, DG_SleepMs,
-    DmaTranscodeMode, KeyEvent, SetunDoomMachine, SetunHookCounters, WadDmaLoader, WadLumpInfo,
-    global_machine, lock_machine, setun_GetHookCounters,
+    global_machine, lock_machine, setun_GetHookCounters, DG_DrawFrame, DG_DrawFrameToBuffer,
+    DG_GetKey, DG_GetTicksMs, DG_Init, DG_SleepMs, DmaTranscodeMode, KeyEvent, SetunDoomMachine,
+    SetunHookCounters, WadDmaLoader, WadLumpInfo,
 };
 pub use render::{ColumnDrawParams, TernaryRenderer};
 pub use stack_machine::{

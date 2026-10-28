@@ -1,9 +1,7 @@
 //! External black-box integration tests for the Setun-Doom library.
 
-use setun_doom::{
-    dbt::{run_all_riscv_isa_tests, SetunDbtEngine},
-    Cpu, Instruction, Memory, Opcode, TernaryFixed, Trit, Word21,
-};
+use setun_doom::dbt::{run_all_riscv_isa_tests, SetunDbtEngine};
+use setun_doom::{Cpu, Instruction, Memory, Opcode, TernaryFixed, Trit, Word21};
 
 #[test]
 fn test_integration_public_api_ternary_math() {

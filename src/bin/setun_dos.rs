@@ -3,9 +3,8 @@
 //! Inspired by KolibriOS architecture: monolithic assembly kernel,
 //! trichotomic system calls, static linear memory mapping, and native Doom execution.
 
-use std::env;
-use std::fs;
 use std::path::Path;
+use std::{env, fs};
 
 use setun_doom::dos::memmap::{
     FRAMEBUFFER_BASE, FRAMEBUFFER_HEIGHT, FRAMEBUFFER_WIDTH, TIVT_BASE, USER_SPACE_LIMIT,
@@ -63,8 +62,14 @@ fn main() {
     }
 
     println!("   [OK] TIVT Table initialized at address {}", TIVT_BASE);
-    println!("   [OK] VGA Framebuffer cleared at address {} ({}x{} pixels)", FRAMEBUFFER_BASE, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT);
-    println!("   [OK] User execution space allocated (0..{})", USER_SPACE_LIMIT);
+    println!(
+        "   [OK] VGA Framebuffer cleared at address {} ({}x{} pixels)",
+        FRAMEBUFFER_BASE, FRAMEBUFFER_WIDTH, FRAMEBUFFER_HEIGHT
+    );
+    println!(
+        "   [OK] User execution space allocated (0..{})",
+        USER_SPACE_LIMIT
+    );
 
     // Mount DOOM1.WAD if present
     if Path::new(&wad_path).exists() {
@@ -145,7 +150,9 @@ fn main() {
             println!("-> Loading user TFX executable: '{}'...", path);
             let bytes = fs::read(&path).expect("Failed to read TFX executable");
             let tfx = TfxExecutable::from_bytes(&bytes).expect("Invalid TFX file format");
-            let pid = dos.load_executable(&tfx, &path).expect("Failed to load TFX into kernel");
+            let pid = dos
+                .load_executable(&tfx, &path)
+                .expect("Failed to load TFX into kernel");
             println!("   [OK] Task PID {} loaded at PC = {}", pid, tfx.entry_pc);
             println!("-> Executing task...");
             let steps = dos.run_ticks(100_000);
@@ -173,13 +180,24 @@ fn main() {
             println!("        [2] T-SHELL   -> Ternary diagnostic console");
             println!("        [3] TELEMETRY -> Real-time 21-trit neon accumulator & flips");
             println!("        [4] ABOUT     -> System heritage & Brusentsov tribute");
-            println!("   [OK] Controls: Left Click to open apps, click [X] or ESC/Q to close window.");
+            println!(
+                "   [OK] Controls: Left Click to open apps, click [X] or ESC/Q to close window."
+            );
         } else if !headless {
-            println!("   [INFO] No graphical display detected. Falling back to terminal headless mode.");
+            println!(
+                "   [INFO] No graphical display detected. Falling back to terminal headless mode."
+            );
         }
 
         let max_frames = target_frames.unwrap_or(if gui.is_some() { usize::MAX } else { 35 });
-        println!("-> Running desktop frame loop (target: {})...", if max_frames == usize::MAX { "interactive".to_string() } else { max_frames.to_string() });
+        println!(
+            "-> Running desktop frame loop (target: {})...",
+            if max_frames == usize::MAX {
+                "interactive".to_string()
+            } else {
+                max_frames.to_string()
+            }
+        );
 
         let mut rgba_buf = vec![0u8; 320 * 200 * 4];
         let mut frame = 0;

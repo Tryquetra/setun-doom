@@ -10,7 +10,7 @@ pub fn init_heap() -> (usize, usize) {
     extern "C" {
         static _ekernel: u8;
     }
-    let heap_start = unsafe { ((&_ekernel as *const u8 as usize) + 0xFFF) & !0xFFF };
+    let heap_start = unsafe { ((&_ekernel as *const u8 as usize) + 0xfff) & !0xfff };
     unsafe {
         HEAP_ALLOCATOR.lock().init(heap_start, HEAP_SIZE);
     }

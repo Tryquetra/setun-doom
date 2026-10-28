@@ -48,7 +48,11 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
 
     // 1. Initialize Heap
     let (heap_start, heap_end) = allocator::init_heap();
-    kprintln!(" * Dynamic Heap Pool   : 0x{:08x} - 0x{:08x} (128 MB)", heap_start, heap_end);
+    kprintln!(
+        " * Dynamic Heap Pool   : 0x{:08x} - 0x{:08x} (128 MB)",
+        heap_start,
+        heap_end
+    );
 
     // 2. Boot Setun-DOS Kernel
     kprintln!("-> Initializing Setun-DOS 21-trit kernel...");
@@ -59,8 +63,14 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
     }
 
     kprintln!("   [OK] TIVT Table initialized at address {}", TIVT_BASE);
-    kprintln!("   [OK] VGA Framebuffer cleared at address {}", FRAMEBUFFER_BASE);
-    kprintln!("   [OK] Linear user space bounded at 0..{}", USER_SPACE_LIMIT);
+    kprintln!(
+        "   [OK] VGA Framebuffer cleared at address {}",
+        FRAMEBUFFER_BASE
+    );
+    kprintln!(
+        "   [OK] Linear user space bounded at 0..{}",
+        USER_SPACE_LIMIT
+    );
 
     // 3. Initialize Retro Desktop Environment
     kprintln!("-> Initializing Setun-DOS Desktop Environment & Icon Manager...");
@@ -71,10 +81,26 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
     // 4. Create and load a flat ternary executable (TFX)
     kprintln!("-> Assembling and spawning demonstration TFX executable...");
     let test_instructions = alloc::vec![
-        Instruction { opcode: Opcode::Load, reg_idx: 0, operand: 100 },
-        Instruction { opcode: Opcode::Add, reg_idx: 0, operand: 101 },
-        Instruction { opcode: Opcode::Store, reg_idx: 0, operand: 102 },
-        Instruction { opcode: Opcode::Nop, reg_idx: 0, operand: 0 },
+        Instruction {
+            opcode: Opcode::Load,
+            reg_idx: 0,
+            operand: 100
+        },
+        Instruction {
+            opcode: Opcode::Add,
+            reg_idx: 0,
+            operand: 101
+        },
+        Instruction {
+            opcode: Opcode::Store,
+            reg_idx: 0,
+            operand: 102
+        },
+        Instruction {
+            opcode: Opcode::Nop,
+            reg_idx: 0,
+            operand: 0
+        },
     ];
     let tfx = TfxExecutable::from_instructions(1000, &test_instructions, 50_000);
 
@@ -94,14 +120,20 @@ pub extern "C" fn kmain(hart_id: usize, dtb_addr: usize) -> ! {
             kprintln!("   [OK] Executed {} ternary cycles.", steps);
 
             let result_word = dos.mem.read_word(102).unwrap_or(Word21::ZERO);
-            kprintln!("   [OK] Arithmetic verification: 42 + 13 = {} (Word21)", result_word.as_i64());
+            kprintln!(
+                "   [OK] Arithmetic verification: 42 + 13 = {} (Word21)",
+                result_word.as_i64()
+            );
 
             let tel = dos.cpu.telemetry;
             kprintln!("-> Switching Telemetry Report:");
             kprintln!("   * Trit Flips          : {}", tel.ternary_trit_flips);
             kprintln!("   * Half Swings (0<->1) : {}", tel.ternary_half_swings);
             kprintln!("   * Full Swings (-1<->1): {}", tel.ternary_full_swings);
-            kprintln!("   * Carry Propagations  : {}", tel.adder_carry_propagations);
+            kprintln!(
+                "   * Carry Propagations  : {}",
+                tel.adder_carry_propagations
+            );
         }
         Err(e) => {
             kprintln!("   [FAIL] Could not load TFX: {}", e);

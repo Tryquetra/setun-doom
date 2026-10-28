@@ -114,23 +114,23 @@ pub enum Rv32iInstr {
 impl Rv32iInstr {
     /// Decodes a 32-bit Little-Endian binary word into an [`Rv32iInstr`].
     pub fn decode(raw: u32) -> Result<Self, DbtError> {
-        let opcode = raw & 0x7F;
-        let rd = ((raw >> 7) & 0x1F) as u8;
+        let opcode = raw & 0x7f;
+        let rd = ((raw >> 7) & 0x1f) as u8;
         let funct3 = (raw >> 12) & 0x07;
-        let rs1 = ((raw >> 15) & 0x1F) as u8;
-        let rs2 = ((raw >> 20) & 0x1F) as u8;
-        let funct7 = (raw >> 25) & 0x7F;
+        let rs1 = ((raw >> 15) & 0x1f) as u8;
+        let rs2 = ((raw >> 20) & 0x1f) as u8;
+        let funct7 = (raw >> 25) & 0x7f;
 
         match opcode {
             0x37 => {
-                let imm = (raw & 0xFFFF_F000) as i32;
+                let imm = (raw & 0xffff_f000) as i32;
                 Ok(Self::Lui { rd, imm })
             }
             0x17 => {
-                let imm = (raw & 0xFFFF_F000) as i32;
+                let imm = (raw & 0xffff_f000) as i32;
                 Ok(Self::Auipc { rd, imm })
             }
-            0x6F => {
+            0x6f => {
                 let offset = decode_j_imm(raw);
                 Ok(Self::Jal { rd, offset })
             }
@@ -175,7 +175,7 @@ impl Rv32iInstr {
             }
             0x13 => {
                 let imm = (raw as i32) >> 20;
-                let shamt = ((raw >> 20) & 0x1F) as u8;
+                let shamt = ((raw >> 20) & 0x1f) as u8;
                 match funct3 {
                     0 => Ok(Self::Addi { rd, rs1, imm }),
                     2 => Ok(Self::Slti { rd, rs1, imm }),
@@ -219,7 +219,7 @@ impl Rv32iInstr {
                 (7, 0x01) => Ok(Self::Remu { rd, rs1, rs2 }),
                 _ => Err(DbtError::IllegalInstruction { raw, pc: 0 }),
             },
-            0x0F => Ok(Self::Fence),
+            0x0f => Ok(Self::Fence),
             0x73 => {
                 if funct3 == 0 {
                     match raw >> 20 {
@@ -427,7 +427,7 @@ impl DbtExecutionReport {
 
 /// Sentinel value placed in `ra` (`x1`) at `main` start to detect clean return
 /// (same technique as the `REBEL-6` simulator, where only a single trit is set: $-3^{16} = -43,046,721$).
-pub const SENTINEL_RETURN_PC: u32 = 0xFFFFFFFE;
+pub const SENTINEL_RETURN_PC: u32 = 0xfffffffe;
 
 /// Host services for guests that need more than the `riscv-tests` exit convention.
 ///
@@ -637,7 +637,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
     /// Reads register `x0..x31` as [`Word21`] (`x0` always returns `Word21::ZERO`).
     #[inline(always)]
     pub fn read_reg(&self, reg: u8) -> Word21 {
-        let idx = (reg & 0x1F) as usize;
+        let idx = (reg & 0x1f) as usize;
         if idx == 0 {
             Word21::ZERO
         } else {
@@ -649,7 +649,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
     /// in Setun memory (`DBT_REGISTER_FILE_BASE + rd`), and records *Trit Flips* vs *Bit Flips*.
     #[inline]
     pub fn write_reg(&mut self, rd: u8, new_val: Word21) -> Result<(), MemoryError> {
-        let idx = (rd & 0x1F) as usize;
+        let idx = (rd & 0x1f) as usize;
         if idx == 0 {
             return Ok(());
         }
@@ -1421,19 +1421,17 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             }
             Rv32iInstr::Slli { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let res =
-                    self.gate_alvarez_bin_to_ter(((a_bin as u32) << (shamt & 0x1F)) as i32);
+                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) << (shamt & 0x1f)) as i32);
                 self.write_reg(rd, res)?;
             }
             Rv32iInstr::Srli { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let res =
-                    self.gate_alvarez_bin_to_ter(((a_bin as u32) >> (shamt & 0x1F)) as i32);
+                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) >> (shamt & 0x1f)) as i32);
                 self.write_reg(rd, res)?;
             }
             Rv32iInstr::Srai { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let res = self.gate_alvarez_bin_to_ter(a_bin >> (shamt & 0x1F));
+                let res = self.gate_alvarez_bin_to_ter(a_bin >> (shamt & 0x1f));
                 self.write_reg(rd, res)?;
             }
             Rv32iInstr::Add { rd, rs1, rs2 } => {
@@ -1446,7 +1444,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             }
             Rv32iInstr::Sll { rd, rs1, rs2 } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32 & 0x1F;
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32 & 0x1f;
                 let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) << b_bin) as i32);
                 self.write_reg(rd, res)?;
             }
@@ -1478,13 +1476,13 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             }
             Rv32iInstr::Srl { rd, rs1, rs2 } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32 & 0x1F;
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32 & 0x1f;
                 let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) >> b_bin) as i32);
                 self.write_reg(rd, res)?;
             }
             Rv32iInstr::Sra { rd, rs1, rs2 } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32 & 0x1F;
+                let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32 & 0x1f;
                 let res = self.gate_alvarez_bin_to_ter(a_bin >> b_bin);
                 self.write_reg(rd, res)?;
             }
@@ -1568,11 +1566,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             Rv32iInstr::Remu { rd, rs1, rs2 } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1)) as u32;
                 let b_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs2)) as u32;
-                let r = if b_bin == 0 {
-                    a_bin
-                } else {
-                    a_bin % b_bin
-                };
+                let r = if b_bin == 0 { a_bin } else { a_bin % b_bin };
                 let res = self.gate_alvarez_bin_to_ter(r as i32);
                 self.write_reg(rd, res)?;
             }
@@ -1690,8 +1684,8 @@ fn scan_static_branch_targets(
 
 #[inline]
 fn decode_s_imm(raw: u32) -> i32 {
-    let imm4_0 = (raw >> 7) & 0x1F;
-    let imm11_5 = (raw >> 25) & 0x7F;
+    let imm4_0 = (raw >> 7) & 0x1f;
+    let imm11_5 = (raw >> 25) & 0x7f;
     let imm12 = (imm11_5 << 5) | imm4_0;
     ((imm12 << 20) as i32) >> 20
 }
@@ -1699,8 +1693,8 @@ fn decode_s_imm(raw: u32) -> i32 {
 #[inline]
 fn decode_b_imm(raw: u32) -> i32 {
     let bit11 = (raw >> 7) & 0x01;
-    let bits4_1 = (raw >> 8) & 0x0F;
-    let bits10_5 = (raw >> 25) & 0x3F;
+    let bits4_1 = (raw >> 8) & 0x0f;
+    let bits10_5 = (raw >> 25) & 0x3f;
     let bit12 = (raw >> 31) & 0x01;
     let imm13 = (bit12 << 12) | (bit11 << 11) | (bits10_5 << 5) | (bits4_1 << 1);
     ((imm13 << 19) as i32) >> 19
@@ -1708,9 +1702,9 @@ fn decode_b_imm(raw: u32) -> i32 {
 
 #[inline]
 fn decode_j_imm(raw: u32) -> i32 {
-    let bits19_12 = (raw >> 12) & 0xFF;
+    let bits19_12 = (raw >> 12) & 0xff;
     let bit11 = (raw >> 20) & 0x01;
-    let bits10_1 = (raw >> 21) & 0x3FF;
+    let bits10_1 = (raw >> 21) & 0x3ff;
     let bit20 = (raw >> 31) & 0x01;
     let imm21 = (bit20 << 20) | (bits19_12 << 12) | (bit11 << 11) | (bits10_1 << 1);
     ((imm21 << 11) as i32) >> 11
@@ -1753,7 +1747,10 @@ pub const RISCV_ISA_ELF_TESTS: [(&str, &[u8]); 37] = [
     ("addi", include_bytes!("../vendor/riscv_tests/elf/addi.elf")),
     ("and", include_bytes!("../vendor/riscv_tests/elf/and.elf")),
     ("andi", include_bytes!("../vendor/riscv_tests/elf/andi.elf")),
-    ("auipc", include_bytes!("../vendor/riscv_tests/elf/auipc.elf")),
+    (
+        "auipc",
+        include_bytes!("../vendor/riscv_tests/elf/auipc.elf"),
+    ),
     ("beq", include_bytes!("../vendor/riscv_tests/elf/beq.elf")),
     ("bge", include_bytes!("../vendor/riscv_tests/elf/bge.elf")),
     ("bgeu", include_bytes!("../vendor/riscv_tests/elf/bgeu.elf")),
@@ -1776,7 +1773,10 @@ pub const RISCV_ISA_ELF_TESTS: [(&str, &[u8]); 37] = [
     ("slli", include_bytes!("../vendor/riscv_tests/elf/slli.elf")),
     ("slt", include_bytes!("../vendor/riscv_tests/elf/slt.elf")),
     ("slti", include_bytes!("../vendor/riscv_tests/elf/slti.elf")),
-    ("sltiu", include_bytes!("../vendor/riscv_tests/elf/sltiu.elf")),
+    (
+        "sltiu",
+        include_bytes!("../vendor/riscv_tests/elf/sltiu.elf"),
+    ),
     ("sltu", include_bytes!("../vendor/riscv_tests/elf/sltu.elf")),
     ("sra", include_bytes!("../vendor/riscv_tests/elf/sra.elf")),
     ("srai", include_bytes!("../vendor/riscv_tests/elf/srai.elf")),
@@ -1833,8 +1833,7 @@ mod tests {
 
     #[test]
     fn test_all_37_riscv_rv32i_official_isa_tests_on_setun_dbt() {
-        let summary =
-            run_all_riscv_isa_tests().expect("Failed to execute 37-test RV32I suite");
+        let summary = run_all_riscv_isa_tests().expect("Failed to execute 37-test RV32I suite");
 
         assert_eq!(summary.tests.len(), 37);
 
@@ -1865,11 +1864,9 @@ mod tests {
     #[test]
     fn test_rv32m_extension_execution_on_setun_dbt() {
         let elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/rv32m_test.elf");
-        let mut engine = SetunDbtEngine::from_elf_bytes(elf_bytes)
-            .expect("Failed to load RV32M test ELF");
-        let report = engine
-            .run(50_000)
-            .expect("Execution error in RV32M test");
+        let mut engine =
+            SetunDbtEngine::from_elf_bytes(elf_bytes).expect("Failed to load RV32M test ELF");
+        let report = engine.run(50_000).expect("Execution error in RV32M test");
         assert!(
             report.is_riscv_test_pass(),
             "RV32M extension test failed with exit: {:?}",

@@ -30,11 +30,11 @@ impl BochsVga {
         for dev in 0..32 {
             let dev_addr = PCI_ECAM_BASE | (dev << 15);
             let id = unsafe { (dev_addr as *const u32).read_volatile() };
-            if id == 0xFFFF_FFFF || id == 0 {
+            if id == 0xffff_ffff || id == 0 {
                 continue;
             }
-            let vendor_id = (id & 0xFFFF) as u16;
-            let device_id = ((id >> 16) & 0xFFFF) as u16;
+            let vendor_id = (id & 0xffff) as u16;
+            let device_id = ((id >> 16) & 0xffff) as u16;
 
             // QEMU/Bochs standard VGA is 0x1234:0x1111
             if vendor_id == 0x1234 && device_id == 0x1111 {
@@ -44,7 +44,7 @@ impl BochsVga {
 
             // Check class code (0x03 = display controller)
             let class_rev = unsafe { ((dev_addr + 0x08) as *const u32).read_volatile() };
-            let base_class = ((class_rev >> 24) & 0xFF) as u8;
+            let base_class = ((class_rev >> 24) & 0xff) as u8;
             if base_class == 0x03 {
                 found_dev = Some((dev_addr, vendor_id, device_id));
                 break;
@@ -78,15 +78,26 @@ impl BochsVga {
         let bochs_mmio = (MMIO_PHYS_ADDR + PCI_VGA_BOCHS_OFFSET) as *mut u16;
 
         let vbe_id_initial = unsafe { bochs_mmio.add(VBE_DISPI_INDEX_ID).read_volatile() };
-        crate::kprintln!("   [OK] Bochs VBE initial hardware ID: 0x{:04x}", vbe_id_initial);
+        crate::kprintln!(
+            "   [OK] Bochs VBE initial hardware ID: 0x{:04x}",
+            vbe_id_initial
+        );
 
         // Configure resolution and color depth
         unsafe {
-            bochs_mmio.add(VBE_DISPI_INDEX_ENABLE).write_volatile(VBE_DISPI_DISABLED);
-            bochs_mmio.add(VBE_DISPI_INDEX_XRES).write_volatile(width as u16);
-            bochs_mmio.add(VBE_DISPI_INDEX_YRES).write_volatile(height as u16);
+            bochs_mmio
+                .add(VBE_DISPI_INDEX_ENABLE)
+                .write_volatile(VBE_DISPI_DISABLED);
+            bochs_mmio
+                .add(VBE_DISPI_INDEX_XRES)
+                .write_volatile(width as u16);
+            bochs_mmio
+                .add(VBE_DISPI_INDEX_YRES)
+                .write_volatile(height as u16);
             bochs_mmio.add(VBE_DISPI_INDEX_BPP).write_volatile(32);
-            bochs_mmio.add(VBE_DISPI_INDEX_ENABLE).write_volatile(VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
+            bochs_mmio
+                .add(VBE_DISPI_INDEX_ENABLE)
+                .write_volatile(VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
         }
 
         // Unblank again to ensure Attribute Controller remains unblanked after VBE mode switch
@@ -112,7 +123,7 @@ impl BochsVga {
         unsafe {
             let vga_io = (MMIO_PHYS_ADDR + PCI_VGA_IOPORT_OFFSET) as *mut u8;
             // 1. Reset attribute controller flip-flop by reading input status register 1 (0x3DA -> offset 0x1A)
-            let _ = vga_io.add(0x1A).read_volatile();
+            let _ = vga_io.add(0x1a).read_volatile();
             // 2. Write 0x20 to Attribute Controller Address Register (0x3C0 -> offset 0x00)
             // Bit 5 (0x20) unblanks the display and enables palette address sourcing
             vga_io.add(0x00).write_volatile(0x20);

@@ -13,11 +13,10 @@
 //! archives the dependency.
 
 pub use setun_doom::mmo::{
-    DG_DrawFrame, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init, DG_SetWindowTitle,
-    DG_SleepMs, SetunHookCounters, get_active_palette, global_machine, lock_machine,
-    setun_AproxDistance,
-    setun_BlitVideoBuffer, setun_DrawColumn, setun_DrawFuzzColumn, setun_DrawSpan,
-    setun_DrawTranslatedColumn, setun_FixedDiv, setun_FixedMul, setun_GetLiveTelemetrySnapshot,
-    setun_GetHookCounters, setun_PointOnSide, setun_PrintTelemetry, setun_PushKeyEvent,
-    setun_SyncPalette,
+    get_active_palette, global_machine, lock_machine, setun_AproxDistance, setun_BlitVideoBuffer,
+    setun_DrawColumn, setun_DrawFuzzColumn, setun_DrawSpan, setun_DrawTranslatedColumn,
+    setun_FixedDiv, setun_FixedMul, setun_GetHookCounters, setun_GetLiveTelemetrySnapshot,
+    setun_PointOnSide, setun_PrintTelemetry, setun_PushKeyEvent, setun_SyncPalette, DG_DrawFrame,
+    DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init, DG_SetWindowTitle, DG_SleepMs,
+    SetunHookCounters,
 };

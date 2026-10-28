@@ -33,7 +33,7 @@ const SYS_SLEEP_MS: i32 = 9;
 const SYS_PALETTE: i32 = 10;
 
 /// Guest stack top: above the 3.7 MB heap, below the framebuffer at guest `0x0044_AA20`.
-const GUEST_STACK_TOP: u32 = 0x0044_A000;
+const GUEST_STACK_TOP: u32 = 0x0044_a000;
 
 const KEY_RIGHTARROW: u8 = 0xae;
 const KEY_LEFTARROW: u8 = 0xac;
@@ -119,10 +119,8 @@ impl HostPlatform {
         let mut events = Vec::new();
         let mut keep_running = true;
         if let Some(gui) = self.gui.as_mut() {
-            keep_running = gui.poll_events_desktop(
-                |sym, pressed| events.push((sym, pressed)),
-                |_, _| {},
-            );
+            keep_running =
+                gui.poll_events_desktop(|sym, pressed| events.push((sym, pressed)), |_, _| {});
         }
         for (sym, pressed) in events {
             if let Some(key) = map_key(sym) {
@@ -323,14 +321,13 @@ fn main() {
 
 /// Loads the guest in the requested execution mode and runs it until it exits.
 fn run_guest<const VERACITY: bool>(elf: &[u8], gui: Option<BenchGui>) {
-    let mut engine =
-        match SetunDbtEngine::<VERACITY>::load_elf_with_stack(elf, GUEST_STACK_TOP) {
-            Ok(engine) => engine,
-            Err(error) => {
-                eprintln!("setun-doom rv32: cannot load guest ELF: {error}");
-                std::process::exit(1);
-            }
-        };
+    let mut engine = match SetunDbtEngine::<VERACITY>::load_elf_with_stack(elf, GUEST_STACK_TOP) {
+        Ok(engine) => engine,
+        Err(error) => {
+            eprintln!("setun-doom rv32: cannot load guest ELF: {error}");
+            std::process::exit(1);
+        }
+    };
     engine.set_platform(Box::new(HostPlatform::new(gui)));
 
     println!(

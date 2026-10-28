@@ -1,7 +1,6 @@
 //! CLI tool to execute a native .setun binary directly on the Setun-Doom 21-trit CPU.
 
-use std::env;
-use std::fs;
+use std::{env, fs};
 
 use setun_doom::codegen::LinkedImage;
 use setun_doom::cpu::Cpu;
@@ -51,7 +50,14 @@ fn main() {
     println!("================================================================");
     println!(" SETUN NATIVE EXECUTION COMPLETED");
     println!("================================================================");
-    println!(" * Exit Status       : {}", if cpu.halted { "HALT (Clean Exit)" } else { "Active/Timeout" });
+    println!(
+        " * Exit Status       : {}",
+        if cpu.halted {
+            "HALT (Clean Exit)"
+        } else {
+            "Active/Timeout"
+        }
+    );
     println!(" * Steps / Cycles    : {}", steps);
     println!(" * Return ACC (21t)  : {}", cpu.acc.as_i64());
     println!(
