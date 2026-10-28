@@ -13,3 +13,5 @@
 /vendor/setun-online-simulator/
 /vendor/setun-papers-articles-translations/
 /vendor/ternary-computing-terminology/
+/vendor/doomgeneric/riscv32/build/
+/vendor/doomgeneric/riscv32/doom_rv32.elf
