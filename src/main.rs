@@ -288,6 +288,22 @@ fn main() {
         );
     }
     println!("==============================================================================================================");
+    for b in &suite.isa_benchmarks {
+        if b.name.contains("BSP R_PointOnSide") {
+            let c = b.telemetry.carry_stats;
+            println!(
+                " * Signed Carry (BSP R_PointOnSide)    : +{} / -{} / zero {} | absorbed {} ({:.1}%) | chains {} | avg {:.2} | max {}",
+                c.positive,
+                c.negative,
+                c.zero,
+                c.absorbed,
+                c.absorption_pct(),
+                c.chains,
+                c.average_chain(),
+                c.chain_max
+            );
+        }
+    }
     println!(
         " * Fixed-Point Precision ({} samples) : TernaryFixed 11.10 RMSE = {:.4} (Symmetry Error = {:.4}) vs Doom 16.16 RMSE = {:.4} (Sign Bias = {:.4})",
         suite.fixed_precision.iterations,
@@ -337,6 +353,18 @@ fn main() {
         dbt_summary.total_telemetry.digit_flip_reduction_pct(),
         dbt_summary.total_telemetry.adder_carry_propagations
     );
+    let dbt_carry = dbt_summary.total_telemetry.carry_stats;
+    println!(
+        " * Signed Carry (DBT suite)            : +{} / -{} / zero {} | absorbed {} ({:.1}%) | chains {} | avg {:.2} | max {}",
+        dbt_carry.positive,
+        dbt_carry.negative,
+        dbt_carry.zero,
+        dbt_carry.absorbed,
+        dbt_carry.absorption_pct(),
+        dbt_carry.chains,
+        dbt_carry.average_chain(),
+        dbt_carry.chain_max
+    );
 
     let doom_elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");
     let mut doom_engine = setun_doom::dbt::SetunDbtEngine::<true>::from_elf_bytes(doom_elf_bytes)
@@ -358,6 +386,18 @@ fn main() {
         doom_report.telemetry.ternary_trit_flips,
         doom_report.telemetry.binary32_bit_flips,
         doom_report.telemetry.digit_flip_reduction_pct()
+    );
+    let doom_carry = doom_report.telemetry.carry_stats;
+    println!(
+        " * Signed Carry Doom                  : +{} / -{} / zero {} | absorbed {} ({:.1}%) | chains {} | avg {:.2} | max {}",
+        doom_carry.positive,
+        doom_carry.negative,
+        doom_carry.zero,
+        doom_carry.absorbed,
+        doom_carry.absorption_pct(),
+        doom_carry.chains,
+        doom_carry.average_chain(),
+        doom_carry.chain_max
     );
     println!(
         " * Bare-Metal Console Output (Syscall): {}",

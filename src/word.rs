@@ -288,6 +288,64 @@ impl Tryte6 {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Word21(i64);
 
+/// Signed carry telemetry collected across a ripple-carry addition.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct CarryStats {
+    /// Stages whose carry-out is `+1`.
+    pub positive: u64,
+    /// Stages whose carry-out is `-1`.
+    pub negative: u64,
+    /// Stages whose carry-out is `0`.
+    pub zero: u64,
+    /// Stages where a non-zero carry-in was absorbed (`carry_out = 0`).
+    pub absorbed: u64,
+    /// Number of maximal non-zero carry chains.
+    pub chains: u64,
+    /// Total stages covered by non-zero carry chains.
+    pub chain_sum: u64,
+    /// Longest non-zero carry chain.
+    pub chain_max: u32,
+}
+
+impl CarryStats {
+    /// Merges another sample into this one.
+    pub fn merge(&mut self, other: Self) {
+        self.positive += other.positive;
+        self.negative += other.negative;
+        self.zero += other.zero;
+        self.absorbed += other.absorbed;
+        self.chains += other.chains;
+        self.chain_sum += other.chain_sum;
+        self.chain_max = self.chain_max.max(other.chain_max);
+    }
+
+    /// Number of stages with a non-zero carry.
+    #[must_use]
+    pub fn nonzero(&self) -> u64 {
+        self.positive + self.negative
+    }
+
+    /// Average non-zero carry chain length.
+    #[must_use]
+    pub fn average_chain(&self) -> f64 {
+        if self.chains == 0 {
+            0.0
+        } else {
+            self.chain_sum as f64 / self.chains as f64
+        }
+    }
+
+    /// Fraction of non-zero carries that terminate on the next stage.
+    #[must_use]
+    pub fn absorption_pct(&self) -> f64 {
+        if self.nonzero() == 0 {
+            0.0
+        } else {
+            self.absorbed as f64 / self.nonzero() as f64 * 100.0
+        }
+    }
+}
+
 impl Word21 {
     pub const TRIT_COUNT: usize = 21;
     pub const MODULUS: i64 = POW3[21];
@@ -388,6 +446,58 @@ impl Word21 {
         let expected = wrap_balanced::<21>(self.0 + rhs.0 + carry_in.as_i64());
         assert_eq!(res.0, expected, "Divergence in 21-trit ripple-carry adder");
         (res, carry, carry_props)
+    }
+
+    /// Same 21-stage ripple-carry adder as [`Self::gate_ripple_carry_add`], additionally
+    /// classifying each carry by sign and measuring chain length and absorption.
+    ///
+    /// Returns `(sum_word, carry_out, carry_propagation_count, carry_stats)`.
+    #[inline]
+    pub fn gate_ripple_carry_add_stats(
+        self,
+        rhs: Self,
+        carry_in: Trit,
+    ) -> (Self, Trit, u32, CarryStats) {
+        let a = self.to_trits();
+        let b = rhs.to_trits();
+        let mut out = [Trit::Zero; 21];
+        let mut carry = carry_in;
+        let mut carry_props = 0u32;
+        let mut stats = CarryStats::default();
+        let mut chain = 0u32;
+        for i in 0..21 {
+            let (s, c_next) = a[i].full_add(b[i], carry);
+            out[i] = s;
+            match c_next {
+                Trit::Positive => stats.positive += 1,
+                Trit::Negative => stats.negative += 1,
+                Trit::Zero => stats.zero += 1,
+            }
+            if c_next != Trit::Zero {
+                carry_props += 1;
+                chain += 1;
+            } else {
+                if carry != Trit::Zero {
+                    stats.absorbed += 1;
+                }
+                if chain > 0 {
+                    stats.chains += 1;
+                    stats.chain_sum += u64::from(chain);
+                    stats.chain_max = stats.chain_max.max(chain);
+                    chain = 0;
+                }
+            }
+            carry = c_next;
+        }
+        if chain > 0 {
+            stats.chains += 1;
+            stats.chain_sum += u64::from(chain);
+            stats.chain_max = stats.chain_max.max(chain);
+        }
+        let res = Self::from_trits(&out);
+        let expected = wrap_balanced::<21>(self.0 + rhs.0 + carry_in.as_i64());
+        assert_eq!(res.0, expected, "Divergence in 21-trit ripple-carry adder");
+        (res, carry, carry_props, stats)
     }
 
     /// Physical balanced ternary Shift-and-Add/Subtract multiplier of `21 x 21 -> 42` trits,
@@ -1023,5 +1133,86 @@ mod tests {
         let min = Word21::new(Word21::MIN_VAL);
         let wrapped_back = min - Word21::ONE;
         assert_eq!(wrapped_back.as_i64(), Word21::MAX_VAL);
+    }
+    #[test]
+    fn test_carry_stats_sign_and_absorption() {
+        let (sum, carry, props, stats) =
+            Word21::ONE.gate_ripple_carry_add_stats(Word21::ONE, Trit::Zero);
+        assert_eq!(sum, Word21::new(2));
+        assert_eq!(carry, Trit::Zero);
+        assert_eq!(props, 1);
+        assert_eq!(stats.positive, 1);
+        assert_eq!(stats.negative, 0);
+        assert_eq!(stats.absorbed, 1);
+        assert_eq!(stats.chains, 1);
+        assert_eq!(stats.chain_max, 1);
+        assert_eq!(stats.average_chain(), 1.0);
+        assert_eq!(stats.absorption_pct(), 100.0);
+
+        let (sum, carry, props, stats) =
+            Word21::NEG_ONE.gate_ripple_carry_add_stats(Word21::NEG_ONE, Trit::Zero);
+        assert_eq!(sum, Word21::new(-2));
+        assert_eq!(carry, Trit::Zero);
+        assert_eq!(props, 1);
+        assert_eq!(stats.negative, 1);
+        assert_eq!(stats.absorbed, 1);
+    }
+
+    #[test]
+    fn test_carry_stats_long_chain() {
+        let max = Word21::new(Word21::MAX_VAL);
+        let (sum, carry, props, stats) = max.gate_ripple_carry_add_stats(Word21::ONE, Trit::Zero);
+        assert_eq!(sum.as_i64(), Word21::MIN_VAL);
+        assert_eq!(carry, Trit::Positive);
+        assert_eq!(props, 21);
+        assert_eq!(stats.positive, 21);
+        assert_eq!(stats.zero, 0);
+        assert_eq!(stats.chains, 1);
+        assert_eq!(stats.chain_max, 21);
+        assert_eq!(stats.absorbed, 0);
+    }
+
+    #[test]
+    fn test_carry_stats_matches_plain_adder() {
+        for a in [-1000, -1, 0, 1, 1000, 123_456] {
+            for b in [-777, -1, 0, 1, 777] {
+                let (s1, c1, p1) = Word21::new(a).gate_ripple_carry_add(Word21::new(b), Trit::Zero);
+                let (s2, c2, p2, stats) =
+                    Word21::new(a).gate_ripple_carry_add_stats(Word21::new(b), Trit::Zero);
+                assert_eq!((s1, c1, p1), (s2, c2, p2));
+                assert_eq!(u64::from(p2), stats.nonzero());
+            }
+        }
+    }
+
+    #[test]
+    fn test_carry_stats_merge() {
+        let mut a = CarryStats {
+            positive: 1,
+            negative: 2,
+            zero: 3,
+            absorbed: 1,
+            chains: 2,
+            chain_sum: 3,
+            chain_max: 2,
+        };
+        let b = CarryStats {
+            positive: 4,
+            negative: 5,
+            zero: 6,
+            absorbed: 2,
+            chains: 1,
+            chain_sum: 1,
+            chain_max: 5,
+        };
+        a.merge(b);
+        assert_eq!(a.positive, 5);
+        assert_eq!(a.negative, 7);
+        assert_eq!(a.zero, 9);
+        assert_eq!(a.absorbed, 3);
+        assert_eq!(a.chains, 3);
+        assert_eq!(a.chain_sum, 4);
+        assert_eq!(a.chain_max, 5);
+        assert_eq!(a.nonzero(), 12);
     }
 }

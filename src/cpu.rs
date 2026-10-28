@@ -18,7 +18,7 @@
 use crate::fixed::TernaryFixed;
 use crate::memory::{Memory, INITIAL_STACK_POINTER, MEMORY_SIZE};
 use crate::trit::Trit;
-use crate::word::{extract_trit_field, Word21, POW3};
+use crate::word::{extract_trit_field, CarryStats, Word21, POW3};
 
 /// Number of index registers in the Setun-Doom architecture ($3^2 = 9$).
 pub const INDEX_REGISTER_COUNT: usize = 9;
@@ -350,6 +350,8 @@ pub struct PowerTelemetry {
     pub binary32_bit_flips: u64,
     /// Active carry propagations measured across `Trit::full_add` stages in ternary ALU.
     pub adder_carry_propagations: u64,
+    /// Signed carry classification, chain lengths and absorption.
+    pub carry_stats: CarryStats,
 }
 
 impl PowerTelemetry {
@@ -477,6 +479,15 @@ impl Cpu {
         self.telemetry = PowerTelemetry::default();
     }
 
+    /// Adds through the physical ripple-carry adder and accumulates signed carry telemetry.
+    #[inline]
+    fn add_with_carry_stats(&mut self, a: Word21, b: Word21) -> (Word21, Trit) {
+        let (sum, carry, props, stats) = a.gate_ripple_carry_add_stats(b, Trit::Zero);
+        self.telemetry.adder_carry_propagations += u64::from(props);
+        self.telemetry.carry_stats.merge(stats);
+        (sum, carry)
+    }
+
     #[inline(always)]
     fn set_acc(&mut self, next: Word21) {
         self.telemetry.record_transition(self.acc, next);
@@ -566,18 +577,16 @@ impl Cpu {
                 Opcode::Add => {
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
-                    let (sum, _cout, carries) = self.acc.gate_ripple_carry_add(val, Trit::Zero);
-                    self.telemetry.adder_carry_propagations += carries as u64;
-                    self.set_acc(sum);
+                    let acc = self.acc;
+                    let (sum, _cout) = self.add_with_carry_stats(acc, val);                    self.set_acc(sum);
                 }
 
                 Opcode::Sub => {
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
                     let neg_val = val.gate_invert_trits();
-                    let (diff, _cout, carries) =
-                        self.acc.gate_ripple_carry_add(neg_val, Trit::Zero);
-                    self.telemetry.adder_carry_propagations += carries as u64;
+                    let acc = self.acc;
+                    let (diff, _cout) = self.add_with_carry_stats(acc, neg_val);
                     self.set_acc(diff);
                 }
 
@@ -748,10 +757,8 @@ impl Cpu {
                 }
 
                 Opcode::AddImm => {
-                    let (sum, _cout, carries) = self
-                        .acc
-                        .gate_ripple_carry_add(Word21::new(instr.operand), Trit::Zero);
-                    self.telemetry.adder_carry_propagations += carries as u64;
+                    let acc = self.acc;
+                    let (sum, _cout) = self.add_with_carry_stats(acc, Word21::new(instr.operand));
                     self.set_acc(sum);
                 }
 
@@ -760,9 +767,9 @@ impl Cpu {
                 }
 
                 Opcode::AddIxImm => {
-                    let (next, _cout, carries) = self.index_regs[instr.reg_idx]
-                        .gate_ripple_carry_add(Word21::new(instr.operand), Trit::Zero);
-                    self.telemetry.adder_carry_propagations += carries as u64;
+                    let current = self.index_regs[instr.reg_idx];
+                    let (next, _cout) =
+                        self.add_with_carry_stats(current, Word21::new(instr.operand));
                     self.set_ix(instr.reg_idx, next);
                 }
 
@@ -837,16 +844,14 @@ impl Cpu {
                 Opcode::AddIx => {
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
-                    let (next, _cout, carries) =
-                        self.index_regs[instr.reg_idx].gate_ripple_carry_add(val, Trit::Zero);
-                    self.telemetry.adder_carry_propagations += carries as u64;
+                    let current = self.index_regs[instr.reg_idx];
+                    let (next, _cout) = self.add_with_carry_stats(current, val);
                     self.set_ix(instr.reg_idx, next);
                 }
 
                 Opcode::DecIxJmpGe => {
-                    let (next, _cout, carries) = self.index_regs[instr.reg_idx]
-                        .gate_ripple_carry_add(Word21::NEG_ONE, Trit::Zero);
-                    self.telemetry.adder_carry_propagations += carries as u64;
+                    let current = self.index_regs[instr.reg_idx];
+                    let (next, _cout) = self.add_with_carry_stats(current, Word21::NEG_ONE);
                     self.set_ix(instr.reg_idx, next);
                     if next.sign_trit() != Trit::Negative {
                         self.pc = instr.operand_as_address();
@@ -867,10 +872,9 @@ impl Cpu {
                     let r = TernaryFixed::from_raw(self.r);
                     let (_prod42, mul_carries) = val.gate_shift_and_add_mul42(self.r);
                     let (prod, _rem) = m.fixed_mul_with_rem(r);
-                    let (sum, _cout, add_carries) =
-                        self.acc.gate_ripple_carry_add(prod.raw_word(), Trit::Zero);
-                    self.telemetry.adder_carry_propagations += (mul_carries + add_carries) as u64;
-
+                    let acc = self.acc;
+                    let (sum, _cout) = self.add_with_carry_stats(acc, prod.raw_word());
+                    self.telemetry.adder_carry_propagations += mul_carries as u64;
                     let acc16 = TernaryFixed::from_raw(self.acc).to_doom_fixed16();
                     let m16 = m.to_doom_fixed16();
                     let r16 = r.to_doom_fixed16();
@@ -892,10 +896,9 @@ impl Cpu {
                     let (_prod42, mul_carries) = val.gate_shift_and_add_mul42(self.r);
                     let (prod, _rem) = m.fixed_mul_with_rem(r);
                     let neg_prod = prod.raw_word().gate_invert_trits();
-                    let (diff, _cout, add_carries) =
-                        self.acc.gate_ripple_carry_add(neg_prod, Trit::Zero);
-                    self.telemetry.adder_carry_propagations += (mul_carries + add_carries) as u64;
-
+                    let acc = self.acc;
+                    let (diff, _cout) = self.add_with_carry_stats(acc, neg_prod);
+                    self.telemetry.adder_carry_propagations += mul_carries as u64;
                     let acc16 = TernaryFixed::from_raw(self.acc).to_doom_fixed16();
                     let m16 = m.to_doom_fixed16();
                     let r16 = r.to_doom_fixed16();

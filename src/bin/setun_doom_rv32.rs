@@ -373,6 +373,18 @@ fn run_guest<const VERACITY: bool>(elf: &[u8], gui: Option<BenchGui>) {
                     telemetry.digit_flip_reduction_pct(),
                     energy
                 );
+                let carry = telemetry.carry_stats;
+                println!(
+                    "signed carry: +{} / -{} / zero {} | absorbed {} ({:.1}%) | chains {} | avg {:.2} | max {}",
+                    carry.positive,
+                    carry.negative,
+                    carry.zero,
+                    carry.absorbed,
+                    carry.absorption_pct(),
+                    carry.chains,
+                    carry.average_chain(),
+                    carry.chain_max
+                );
             } else {
                 println!("telemetry: disabled in fast mode (no gate simulation)");
             }

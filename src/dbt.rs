@@ -690,17 +690,22 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             self.cpu.cycles += 1;
             return Word21::from_i32(a.to_i32_saturating().wrapping_add(b.to_i32_saturating()));
         }
-        let (sum, _cout, carries) = a.gate_ripple_carry_add(b, Trit::Zero);
-        self.cpu.telemetry.adder_carry_propagations += carries as u64;
+        let (sum, _cout, carries, stats) = a.gate_ripple_carry_add_stats(b, Trit::Zero);
+        self.cpu.telemetry.adder_carry_propagations += u64::from(carries);
+        self.cpu.telemetry.carry_stats.merge(stats);
         self.cpu.cycles += 1;
 
         if sum.gate_cmp_t(MAX_I32_WORD21) == Trit::Positive {
-            let (wrapped, _c2, carries2) = sum.gate_ripple_carry_add(NEG_MOD32_WORD21, Trit::Zero);
-            self.cpu.telemetry.adder_carry_propagations += carries2 as u64;
+            let (wrapped, _c2, carries2, stats2) =
+                sum.gate_ripple_carry_add_stats(NEG_MOD32_WORD21, Trit::Zero);
+            self.cpu.telemetry.adder_carry_propagations += u64::from(carries2);
+            self.cpu.telemetry.carry_stats.merge(stats2);
             wrapped
         } else if sum.gate_cmp_t(MIN_I32_WORD21) == Trit::Negative {
-            let (wrapped, _c2, carries2) = sum.gate_ripple_carry_add(POS_MOD32_WORD21, Trit::Zero);
-            self.cpu.telemetry.adder_carry_propagations += carries2 as u64;
+            let (wrapped, _c2, carries2, stats2) =
+                sum.gate_ripple_carry_add_stats(POS_MOD32_WORD21, Trit::Zero);
+            self.cpu.telemetry.adder_carry_propagations += u64::from(carries2);
+            self.cpu.telemetry.carry_stats.merge(stats2);
             wrapped
         } else {
             sum
@@ -732,8 +737,10 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             };
         }
         if w.sign_trit() == Trit::Negative {
-            let (pos, _c, carries) = w.gate_ripple_carry_add(POS_MOD32_WORD21, Trit::Zero);
-            self.cpu.telemetry.adder_carry_propagations += carries as u64;
+            let (pos, _c, carries, stats) =
+                w.gate_ripple_carry_add_stats(POS_MOD32_WORD21, Trit::Zero);
+            self.cpu.telemetry.adder_carry_propagations += u64::from(carries);
+            self.cpu.telemetry.carry_stats.merge(stats);
             pos
         } else {
             w
@@ -1421,13 +1428,11 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             }
             Rv32iInstr::Slli { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) << (shamt & 0x1f)) as i32);
-                self.write_reg(rd, res)?;
+                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) << (shamt & 0x1f)) as i32);                self.write_reg(rd, res)?;
             }
             Rv32iInstr::Srli { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
-                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) >> (shamt & 0x1f)) as i32);
-                self.write_reg(rd, res)?;
+                let res = self.gate_alvarez_bin_to_ter(((a_bin as u32) >> (shamt & 0x1f)) as i32);                self.write_reg(rd, res)?;
             }
             Rv32iInstr::Srai { rd, rs1, shamt } => {
                 let a_bin = self.gate_alvarez_ter_to_bin(self.read_reg(rs1));
@@ -1812,6 +1817,9 @@ pub fn run_all_riscv_isa_tests() -> Result<RiscvIsaSuiteSummary, DbtError> {
         total_telemetry.ternary_full_swings += report.telemetry.ternary_full_swings;
         total_telemetry.binary32_bit_flips += report.telemetry.binary32_bit_flips;
         total_telemetry.adder_carry_propagations += report.telemetry.adder_carry_propagations;
+        total_telemetry
+            .carry_stats
+            .merge(report.telemetry.carry_stats);
 
         results.push((name, report));
     }
