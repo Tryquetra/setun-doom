@@ -35,11 +35,7 @@ impl SetunAssembler {
         // 1st Pass: Collect labels and count instruction addresses (PC)
         for (idx, raw_line) in source.lines().enumerate() {
             let line_num = idx + 1;
-            let without_comment = raw_line
-                .split([';', '#'])
-                .next()
-                .unwrap_or("")
-                .trim();
+            let without_comment = raw_line.split([';', '#']).next().unwrap_or("").trim();
 
             if without_comment.is_empty() {
                 continue;
@@ -234,7 +230,10 @@ impl SetunAssembler {
         if let Some(&addr) = labels.get(token) {
             return Ok(addr);
         }
-        if let Some(trit_lit) = token.strip_prefix("0t").or_else(|| token.strip_prefix("0T")) {
+        if let Some(trit_lit) = token
+            .strip_prefix("0t")
+            .or_else(|| token.strip_prefix("0T"))
+        {
             let w = Word21::from_balanced_str(trit_lit).map_err(|e| AsmError {
                 line: line_num,
                 message: e.to_string(),
@@ -336,12 +335,9 @@ impl SetunAssembler {
         };
 
         match instr.opcode {
-            Opcode::Nop
-            | Opcode::Neg
-            | Opcode::Push
-            | Opcode::Pop
-            | Opcode::Ret
-            | Opcode::Halt => mnem.to_string(),
+            Opcode::Nop | Opcode::Neg | Opcode::Push | Opcode::Pop | Opcode::Ret | Opcode::Halt => {
+                mnem.to_string()
+            }
             Opcode::NormT => format!("{} IX{}", mnem, instr.reg_idx),
             Opcode::LoadIndex
             | Opcode::StoreIndex
@@ -351,7 +347,12 @@ impl SetunAssembler {
             | Opcode::DecIxJmpGe
             | Opcode::MajvT
             | Opcode::MinvT => {
-                format!("{} IX{}, {}", mnem, instr.reg_idx, instr.operand_as_address())
+                format!(
+                    "{} IX{}, {}",
+                    mnem,
+                    instr.reg_idx,
+                    instr.operand_as_address()
+                )
             }
             Opcode::Shift if instr.reg_idx > 0 => {
                 format!("{} IX{}, {}", mnem, instr.reg_idx, instr.operand)

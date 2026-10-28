@@ -546,7 +546,7 @@ impl BenchmarkRunner {
             let s2 = (-s1).wrapping_sub(rv.regs[3]);
             rv.write_reg(4, -s1); // neg x4, x4
             rv.write_reg(4, s2); // sub x4, x4, x3
-            // CMP.T (x4 <=> x2) in RV32I: slt + slt + sub
+                                 // CMP.T (x4 <=> x2) in RV32I: slt + slt + sub
             let gt = if s2 > rv.regs[2] { 1 } else { 0 };
             let lt = if s2 < rv.regs[2] { 1 } else { 0 };
             rv.write_reg(5, gt);

@@ -55,7 +55,10 @@ fn test_minilibc_memory_and_string_operations() {
         ])
         .status()
         .unwrap();
-    assert!(status.success(), "Failed to compile test_runtime.c with clang");
+    assert!(
+        status.success(),
+        "Failed to compile test_runtime.c with clang"
+    );
 
     let status_libc = Command::new("clang")
         .args([
@@ -70,7 +73,10 @@ fn test_minilibc_memory_and_string_operations() {
         ])
         .status()
         .unwrap();
-    assert!(status_libc.success(), "Failed to compile minilibc.c with clang");
+    assert!(
+        status_libc.success(),
+        "Failed to compile minilibc.c with clang"
+    );
 
     let parsed_test = LlvmParser::parse(&fs::read_to_string(&test_ll).unwrap()).unwrap();
     let parsed_libc = LlvmParser::parse(&fs::read_to_string(&libc_ll).unwrap()).unwrap();
@@ -79,7 +85,9 @@ fn test_minilibc_memory_and_string_operations() {
     linker.add_module(parsed_test);
     linker.add_module(parsed_libc);
 
-    let image = linker.link("run_test").expect("Linking minilibc test failed");
+    let image = linker
+        .link("run_test")
+        .expect("Linking minilibc test failed");
 
     let mut mem = Memory::new();
     let mut cpu = Cpu::new();
@@ -91,6 +99,10 @@ fn test_minilibc_memory_and_string_operations() {
 
     let steps = cpu.run_ticks(&mut mem, 3000);
 
-    assert!(cpu.halted, "CPU should have halted cleanly within {} steps", steps);
+    assert!(
+        cpu.halted,
+        "CPU should have halted cleanly within {} steps",
+        steps
+    );
     assert_eq!(cpu.acc.as_i64(), 114, "run_test produced unexpected result");
 }

@@ -10,9 +10,9 @@
 //! - Space / Enter: reset scene or inject ALU cycles
 //! - ESC / Q: close window
 
+use crate::memory::{FB_HEIGHT, FB_SIZE, FB_WIDTH};
 use std::ffi::{c_char, c_void, CString};
 use std::ptr;
-use crate::memory::{FB_HEIGHT, FB_WIDTH, FB_SIZE};
 
 const SDL_INIT_VIDEO: u32 = 0x00000020;
 const SDL_WINDOW_SHOWN: u32 = 0x00000004;
@@ -123,8 +123,8 @@ impl BenchGui {
             let c_title = CString::new(title).unwrap_or_default();
             let window = SDL_CreateWindow(
                 c_title.as_ptr(),
-                0x1FFF0000, // SDL_WINDOWPOS_CENTERED
-                0x1FFF0000,
+                0x1fff0000, // SDL_WINDOWPOS_CENTERED
+                0x1fff0000,
                 (FB_WIDTH * 2) as i32,
                 (FB_HEIGHT * 2) as i32,
                 SDL_WINDOW_SHOWN,

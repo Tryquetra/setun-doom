@@ -372,7 +372,7 @@ mod tests {
     fn test_property_algebraic_symmetry_and_identities() {
         // Deterministic sequence of samples across varied ranges
         let samples: [f64; 10] = [
-            0.0, 1.0, -1.0, 0.5, -0.5, 17.125, -42.875, 1023.0, -512.25, 0.0001
+            0.0, 1.0, -1.0, 0.5, -0.5, 17.125, -42.875, 1023.0, -512.25, 0.0001,
         ];
 
         for &val_a in &samples {

@@ -42,7 +42,9 @@ fn main() {
     DG_Init();
 
     {
-        let mut machine = global_machine().lock().expect("Failed to lock global machine");
+        let mut machine = global_machine()
+            .lock()
+            .expect("Failed to lock global machine");
 
         // 1. Render a 3D BSP scene with frontal portal and back wall
         let front_sub = Subsector {
@@ -287,26 +289,33 @@ fn main() {
     );
     println!(
         " * Bare-Metal Console Output (Syscall): {}",
-        String::from_utf8_lossy(&doom_report.stdout_buffer).trim().replace('\n', " | ")
+        String::from_utf8_lossy(&doom_report.stdout_buffer)
+            .trim()
+            .replace('\n', " | ")
     );
     println!("==============================================================================================================");
 
     // If --no-gui argument is not provided and DISPLAY is set, open interactive graphical interface
-    let enable_gui = !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
+    let enable_gui =
+        !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
     if enable_gui {
         println!("\n[GUI] Initializing testbench graphical window (SDL2 640x400)...");
         println!("[GUI] Interactive controls: W/S (camera forward/backward) | A/D (lateral) | Space (reset) | ESC/Q (quit)");
 
-        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench - 21-Trit BSP & ALU Visualizer") {
+        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench - 21-Trit BSP & ALU Visualizer")
+        {
             let mut last_cam_x = gui.cam_x;
             let mut last_cam_y = gui.cam_y;
 
             while gui.poll_events() {
-                if (gui.cam_x - last_cam_x).abs() > 0.001 || (gui.cam_y - last_cam_y).abs() > 0.001 {
+                if (gui.cam_x - last_cam_x).abs() > 0.001 || (gui.cam_y - last_cam_y).abs() > 0.001
+                {
                     last_cam_x = gui.cam_x;
                     last_cam_y = gui.cam_y;
 
-                    let mut machine = global_machine().lock().expect("Failed to lock global machine");
+                    let mut machine = global_machine()
+                        .lock()
+                        .expect("Failed to lock global machine");
                     let front_sub = Subsector {
                         id: 0,
                         segs: vec![

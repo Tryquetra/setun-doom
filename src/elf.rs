@@ -19,7 +19,7 @@ use crate::memory::{Memory, MemoryError, MEMORY_SIZE};
 use crate::word::{Tryte6, Word21};
 
 /// Magic constant `\x7FELF` at the start of the ELF header.
-pub const ELF_MAGIC: [u8; 4] = [0x7F, b'E', b'L', b'F'];
+pub const ELF_MAGIC: [u8; 4] = [0x7f, b'E', b'L', b'F'];
 
 /// 32-bit ELF class (`ELFCLASS32`).
 pub const ELFCLASS32: u8 = 1;

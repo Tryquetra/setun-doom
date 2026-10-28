@@ -85,7 +85,9 @@ impl LinkedImage {
     /// Deserializes a `.setun` binary file from disk into a [`LinkedImage`].
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < 32 {
-            return Err("Invalid Setun binary: file smaller than header size (32 bytes)".to_string());
+            return Err(
+                "Invalid Setun binary: file smaller than header size (32 bytes)".to_string(),
+            );
         }
         if &bytes[0..8] != b"SETUN21\0" {
             return Err("Invalid Setun binary: missing magic header 'SETUN21'".to_string());
@@ -224,7 +226,11 @@ impl SetunLinker {
             }
 
             for mut instr in func_instructions {
-                if matches!(instr.opcode, Opcode::Jmp | Opcode::JmpP | Opcode::JmpN | Opcode::JmpZ) && instr.operand >= 0 {
+                if matches!(
+                    instr.opcode,
+                    Opcode::Jmp | Opcode::JmpP | Opcode::JmpN | Opcode::JmpZ
+                ) && instr.operand >= 0
+                {
                     // Rebase intra-function relative branch offset with func_start_pc
                     instr.operand += func_start_pc as i64;
                 }
@@ -281,7 +287,10 @@ impl SetunLinker {
                                     queue.push(callee.clone());
                                 }
                             }
-                            LlvmInst::Copy { src: LlvmValue::Variable(var), .. } => {
+                            LlvmInst::Copy {
+                                src: LlvmValue::Variable(var),
+                                ..
+                            } => {
                                 if functions.contains_key(var) && !visited.contains(var) {
                                     visited.insert(var.clone());
                                     queue.push(var.clone());

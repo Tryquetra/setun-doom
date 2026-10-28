@@ -56,18 +56,28 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("[setun-ld] Linking {} module(s) targeting entry symbol '{}'...", input_files.len(), entry_symbol);
+    println!(
+        "[setun-ld] Linking {} module(s) targeting entry symbol '{}'...",
+        input_files.len(),
+        entry_symbol
+    );
 
     let mut linker = SetunLinker::new();
     let tmp_dir = env::temp_dir();
 
     for input in &input_files {
         let p = Path::new(input);
-        let ll_path = if p.extension().map_or(false, |ext| ext == "c" || ext == "cpp") {
+        let ll_path = if p
+            .extension()
+            .map_or(false, |ext| ext == "c" || ext == "cpp")
+        {
             let file_stem = p.file_stem().unwrap().to_str().unwrap();
             let out_ll = tmp_dir.join(format!("{}.ll", file_stem));
 
-            println!("  -> Compiling '{}' via host Clang (-O1 -emit-llvm)...", input);
+            println!(
+                "  -> Compiling '{}' via host Clang (-O1 -emit-llvm)...",
+                input
+            );
             let mut clang_cmd = Command::new("clang");
             clang_cmd.args(["-O1", "-S", "-emit-llvm", "-fno-builtin"]);
             clang_cmd.arg("-Isrc/runtime");
@@ -75,7 +85,9 @@ fn main() {
                 clang_cmd.arg(format!("-I{}", inc));
             }
             clang_cmd.args([input, "-o", out_ll.to_str().unwrap()]);
-            let status = clang_cmd.status().expect("Failed to execute host clang command");
+            let status = clang_cmd
+                .status()
+                .expect("Failed to execute host clang command");
 
             if !status.success() {
                 eprintln!("Error: Clang compilation failed for '{}'", input);
