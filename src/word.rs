@@ -386,10 +386,7 @@ impl Word21 {
         }
         let res = Self::from_trits(&out);
         let expected = wrap_balanced::<21>(self.0 + rhs.0 + carry_in.as_i64());
-        assert_eq!(
-            res.0, expected,
-            "Divergence in 21-trit ripple-carry adder"
-        );
+        assert_eq!(res.0, expected, "Divergence in 21-trit ripple-carry adder");
         (res, carry, carry_props)
     }
 

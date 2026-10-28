@@ -18,14 +18,14 @@ const FRACUNIT: i64 = 65_536;
 /// Faithful transcription of the vendored `FixedMul` split algorithm.
 fn c_fixed_mul(a: i32, b: i32) -> i32 {
     let ahi = a >> 16;
-    let alo = a & 0xFFFF;
+    let alo = a & 0xffff;
     ahi.wrapping_mul(b).wrapping_add(alo.wrapping_mul(b) >> 16)
 }
 
 /// Returns true when the C split `FixedMul` stays inside `i32` at every step.
 fn c_fixed_mul_is_defined(a: i32, b: i32) -> bool {
     let ahi = (a >> 16) as i64;
-    let alo = (a & 0xFFFF) as i64;
+    let alo = (a & 0xffff) as i64;
     let high = ahi * (b as i64);
     let low = alo * (b as i64);
     let shifted = low >> 16;
@@ -103,7 +103,7 @@ impl Rng {
         x ^= x << 25;
         x ^= x >> 27;
         self.0 = x;
-        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        x.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
 
     fn next_in(&mut self, lo: i64, hi: i64) -> i32 {
@@ -114,7 +114,7 @@ impl Rng {
 
 #[test]
 fn test_point_on_side_against_c_oracle() {
-    let mut rng = Rng(0x5E70_D00D_0000_0003);
+    let mut rng = Rng(0x5e70_d00d_0000_0003);
     let mut compared = 0u64;
     let mut mismatches = 0u64;
     let mut exact_ties = 0u64;
@@ -211,7 +211,7 @@ fn test_point_on_side_against_c_oracle() {
 
 #[test]
 fn test_aprox_distance_against_c_oracle() {
-    let mut rng = Rng(0x5E70_D00D_0000_0004);
+    let mut rng = Rng(0x5e70_d00d_0000_0004);
     let mut compared = 0u64;
     let mut max_diff = 0i64;
     let mut exact = 0u64;

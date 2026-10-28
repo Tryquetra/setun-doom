@@ -76,7 +76,7 @@ impl DataMem {
     /// Loads one cell as an unsigned byte.
     pub fn load_u8(&self, addr: i64) -> Result<u8, MemError> {
         let i = self.index(addr, 1)?;
-        Ok((self.cells[i] & 0xFF) as u8)
+        Ok((self.cells[i] & 0xff) as u8)
     }
 
     /// Loads one cell as a signed byte.
@@ -87,7 +87,7 @@ impl DataMem {
     /// Loads two cells as an unsigned little-endian halfword.
     pub fn load_u16(&self, addr: i64) -> Result<u16, MemError> {
         let i = self.index(addr, 2)?;
-        Ok(((self.cells[i] & 0xFF) as u16) | (((self.cells[i + 1] & 0xFF) as u16) << 8))
+        Ok(((self.cells[i] & 0xff) as u16) | (((self.cells[i + 1] & 0xff) as u16) << 8))
     }
 
     /// Loads two cells as a signed little-endian halfword.
@@ -98,10 +98,10 @@ impl DataMem {
     /// Loads four cells as an unsigned little-endian word.
     pub fn load_u32(&self, addr: i64) -> Result<u32, MemError> {
         let i = self.index(addr, 4)?;
-        Ok(((self.cells[i] & 0xFF) as u32)
-            | (((self.cells[i + 1] & 0xFF) as u32) << 8)
-            | (((self.cells[i + 2] & 0xFF) as u32) << 16)
-            | (((self.cells[i + 3] & 0xFF) as u32) << 24))
+        Ok(((self.cells[i] & 0xff) as u32)
+            | (((self.cells[i + 1] & 0xff) as u32) << 8)
+            | (((self.cells[i + 2] & 0xff) as u32) << 16)
+            | (((self.cells[i + 3] & 0xff) as u32) << 24))
     }
 
     /// Loads four cells as a signed little-endian word.
@@ -125,18 +125,18 @@ impl DataMem {
     /// Stores the low halfword of `value` little-endian.
     pub fn store_u16(&mut self, addr: i64, value: u16) -> Result<(), MemError> {
         let i = self.index(addr, 2)?;
-        self.cells[i] = (value & 0xFF) as i16;
-        self.cells[i + 1] = ((value >> 8) & 0xFF) as i16;
+        self.cells[i] = (value & 0xff) as i16;
+        self.cells[i + 1] = ((value >> 8) & 0xff) as i16;
         Ok(())
     }
 
     /// Stores `value` little-endian in four cells.
     pub fn store_u32(&mut self, addr: i64, value: u32) -> Result<(), MemError> {
         let i = self.index(addr, 4)?;
-        self.cells[i] = (value & 0xFF) as i16;
-        self.cells[i + 1] = ((value >> 8) & 0xFF) as i16;
-        self.cells[i + 2] = ((value >> 16) & 0xFF) as i16;
-        self.cells[i + 3] = ((value >> 24) & 0xFF) as i16;
+        self.cells[i] = (value & 0xff) as i16;
+        self.cells[i + 1] = ((value >> 8) & 0xff) as i16;
+        self.cells[i + 2] = ((value >> 16) & 0xff) as i16;
+        self.cells[i + 3] = ((value >> 24) & 0xff) as i16;
         Ok(())
     }
 
@@ -161,7 +161,7 @@ impl DataMem {
         let start = self.index(addr, len)?;
         Ok(self.cells[start..start + len]
             .iter()
-            .map(|&c| (c & 0xFF) as u8)
+            .map(|&c| (c & 0xff) as u8)
             .collect())
     }
 }
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn signed_loads_match_binary_semantics() {
         let mut mem = DataMem::new(8);
-        mem.store_u8(0, 0xC8).unwrap();
+        mem.store_u8(0, 0xc8).unwrap();
         assert_eq!(mem.load_u8(0).unwrap(), 200);
         assert_eq!(mem.load_i8(0).unwrap(), -56);
         mem.store_u16(2, 0x8001).unwrap();

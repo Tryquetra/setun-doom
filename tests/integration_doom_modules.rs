@@ -97,7 +97,9 @@ fn test_doom_fixed_point_and_bounding_box() {
     linker.add_module(parsed_random);
     linker.add_module(parsed_libc);
 
-    let image = linker.link("test_doom_core").expect("Failed to link Doom core modules");
+    let image = linker
+        .link("test_doom_core")
+        .expect("Failed to link Doom core modules");
 
     let mut mem = Memory::new();
     let mut cpu = Cpu::new();
@@ -109,6 +111,14 @@ fn test_doom_fixed_point_and_bounding_box() {
 
     let steps = cpu.run_ticks(&mut mem, 4000);
 
-    assert!(cpu.halted, "CPU should have halted cleanly within {} steps", steps);
-    assert_eq!(cpu.acc.as_i64(), 296, "Doom core test produced unexpected result");
+    assert!(
+        cpu.halted,
+        "CPU should have halted cleanly within {} steps",
+        steps
+    );
+    assert_eq!(
+        cpu.acc.as_i64(),
+        296,
+        "Doom core test produced unexpected result"
+    );
 }

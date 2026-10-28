@@ -44,7 +44,9 @@ impl SetunFileSystem {
 
     /// Searches for a file by name, returning its handle if found.
     pub fn find(&self, name: &str) -> Option<usize> {
-        self.files.iter().position(|f| f.name.eq_ignore_ascii_case(name))
+        self.files
+            .iter()
+            .position(|f| f.name.eq_ignore_ascii_case(name))
     }
 
     /// Mounts an authentic Doom IWAD/PWAD byte buffer, indexing lumps into virtual file descriptors.
@@ -107,6 +109,9 @@ impl SetunFileSystem {
 
     /// Exposes file storage as a slice of tuples for the syscall dispatcher.
     pub fn as_storage_slice(&self) -> Vec<(String, Vec<Word21>)> {
-        self.files.iter().map(|f| (f.name.clone(), f.words.clone())).collect()
+        self.files
+            .iter()
+            .map(|f| (f.name.clone(), f.words.clone()))
+            .collect()
     }
 }

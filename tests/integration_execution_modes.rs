@@ -20,8 +20,8 @@ fn test_fast_mode_matches_veracity_mode() {
         .expect("load benchmark in veracity mode");
     let veracity_report = veracity.run(STEP_LIMIT).expect("veracity run");
 
-    let mut fast =
-        SetunDbtEngine::<false>::from_elf_bytes_fast(DOOM_BENCHMARK_ELF).expect("load benchmark in fast mode");
+    let mut fast = SetunDbtEngine::<false>::from_elf_bytes_fast(DOOM_BENCHMARK_ELF)
+        .expect("load benchmark in fast mode");
     let fast_report = fast.run(STEP_LIMIT).expect("fast run");
 
     assert_eq!(veracity_report.exit, fast_report.exit);
@@ -41,8 +41,8 @@ fn test_fast_mode_matches_veracity_mode() {
 
 #[test]
 fn test_fast_mode_records_no_switching_telemetry() {
-    let mut fast =
-        SetunDbtEngine::<false>::from_elf_bytes_fast(DOOM_BENCHMARK_ELF).expect("load benchmark in fast mode");
+    let mut fast = SetunDbtEngine::<false>::from_elf_bytes_fast(DOOM_BENCHMARK_ELF)
+        .expect("load benchmark in fast mode");
     let report = fast.run(STEP_LIMIT).expect("fast run");
 
     assert_eq!(report.telemetry.ternary_trit_flips, 0);

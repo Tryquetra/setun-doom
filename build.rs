@@ -31,7 +31,10 @@ fn main() {
                 .args(&o_files)
                 .status();
             if let Err(e) = status {
-                eprintln!("cargo:warning=Failed to archive libdoomgeneric_core.a: {}", e);
+                eprintln!(
+                    "cargo:warning=Failed to archive libdoomgeneric_core.a: {}",
+                    e
+                );
             }
         }
     }

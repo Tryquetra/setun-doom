@@ -27,7 +27,7 @@ const TERNARY_MAX_16_16: f64 = 88_573.0;
 /// Faithful transcription of the vendored C `FixedMul` (split 32-bit algorithm).
 fn c_fixed_mul(a: i32, b: i32) -> i32 {
     let ahi = a >> 16;
-    let alo = a & 0xFFFF;
+    let alo = a & 0xffff;
     ahi.wrapping_mul(b).wrapping_add(alo.wrapping_mul(b) >> 16)
 }
 
@@ -47,7 +47,7 @@ fn c_fixed_div(a: i32, b: i32) -> i32 {
 /// those inputs are undefined behavior in the C engine itself and are excluded from comparison.
 fn c_fixed_mul_is_defined(a: i32, b: i32) -> bool {
     let ahi = (a >> 16) as i64;
-    let alo = (a & 0xFFFF) as i64;
+    let alo = (a & 0xffff) as i64;
     let high = ahi * (b as i64);
     let low = alo * (b as i64);
     let shifted = low >> 16;
@@ -76,7 +76,7 @@ impl Rng {
         x ^= x << 25;
         x ^= x >> 27;
         self.0 = x;
-        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        x.wrapping_mul(0x2545_f491_4f6c_dd1d)
     }
 
     fn next_i32(&mut self) -> i32 {
@@ -116,7 +116,7 @@ const EDGES: [i32; 16] = [
 
 #[test]
 fn test_fixed_mul_against_exact_oracle() {
-    let mut rng = Rng(0x5E70_D00D_0000_0001);
+    let mut rng = Rng(0x5e70_d00d_0000_0001);
     let mut samples = 0u64;
     let mut skipped = 0u64;
     let mut max_abs_error = 0.0f64;
@@ -194,7 +194,7 @@ fn test_fixed_mul_against_exact_oracle() {
 
 #[test]
 fn test_fixed_div_against_exact_oracle() {
-    let mut rng = Rng(0x5E70_D00D_0000_0002);
+    let mut rng = Rng(0x5e70_d00d_0000_0002);
     let mut samples = 0u64;
     let mut skipped = 0u64;
     let mut max_abs_ratio = 0.0f64;

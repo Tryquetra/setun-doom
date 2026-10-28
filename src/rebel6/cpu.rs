@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn binary_arithmetic_wraps_modulo_2_pow_32() {
         let instrs = image(&[
-            Instr::g(Op::LiT, 1, 0x7FFF_FFFF),
+            Instr::g(Op::LiT, 1, 0x7fff_ffff),
             Instr::i(Op::Addi, 2, 1, 1),
             Instr::new(Op::EcallT),
         ]);

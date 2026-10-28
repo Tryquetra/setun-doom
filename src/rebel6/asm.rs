@@ -219,15 +219,15 @@ impl Assembler {
                 for part in split_operands(args) {
                     let value = parse_number(part.trim())
                         .ok_or_else(|| self.err(format!("invalid .byte value `{part}`")))?;
-                    self.data.push((value & 0xFF) as i16);
+                    self.data.push((value & 0xff) as i16);
                 }
             }
             ".half" | ".2byte" => {
                 for part in split_operands(args) {
                     let value = parse_number(part.trim())
                         .ok_or_else(|| self.err(format!("invalid .half value `{part}`")))?;
-                    self.data.push((value & 0xFF) as i16);
-                    self.data.push(((value >> 8) & 0xFF) as i16);
+                    self.data.push((value & 0xff) as i16);
+                    self.data.push(((value >> 8) & 0xff) as i16);
                 }
             }
             ".word" | ".4byte" => {
@@ -235,7 +235,7 @@ impl Assembler {
                     let part = part.trim();
                     if let Some(value) = parse_number(part) {
                         for shift in [0, 8, 16, 24] {
-                            self.data.push(((value >> shift) & 0xFF) as i16);
+                            self.data.push(((value >> shift) & 0xff) as i16);
                         }
                     } else {
                         let (symbol, addend) = parse_symbol(part)?;
@@ -588,7 +588,7 @@ impl Assembler {
                 })?;
             let value = target + reloc.addend;
             for shift in 0..4 {
-                self.data[reloc.offset + shift] = ((value >> (shift * 8)) & 0xFF) as i16;
+                self.data[reloc.offset + shift] = ((value >> (shift * 8)) & 0xff) as i16;
             }
         }
 
@@ -1030,6 +1030,6 @@ mod tests {
         let image = assemble(source).unwrap();
         let mut cpu = image.machine();
         assert_eq!(cpu.run(16), Ok(RunResult::Ecall(0)));
-        assert_eq!(cpu.regs[2].to_i32() as u32, 0xDEAD_BEEF);
+        assert_eq!(cpu.regs[2].to_i32() as u32, 0xdead_beef);
     }
 }
