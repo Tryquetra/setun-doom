@@ -20,7 +20,7 @@
 use crate::fixed::TernaryFixed;
 use crate::memory::FB_WIDTH;
 use crate::trit::Trit;
-use crate::word::{Word21, Tryte6};
+use crate::word::{Tryte6, Word21};
 
 /// Identificador de um filho na árvore BSP: pode apontar para outro nó divisor ou para uma folha (Subsector).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

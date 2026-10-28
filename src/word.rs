@@ -345,7 +345,10 @@ impl Word21 {
             out[i] = trits[i].invert();
         }
         let res = Self::from_trits(&out);
-        assert_eq!(res.0, -self.0, "Divergencia no inversor de portas ternarias");
+        assert_eq!(
+            res.0, -self.0,
+            "Divergencia no inversor de portas ternarias"
+        );
         res
     }
 

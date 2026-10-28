@@ -93,10 +93,7 @@ impl WadDmaLoader {
                     let mut buf = [0u8; 4];
                     buf[..chunk.len()].copy_from_slice(chunk);
                     let val_i32 = i32::from_le_bytes(buf);
-                    mem.write_word_fast(
-                        (base_addr + chunk_idx) as i64,
-                        Word21::from_i32(val_i32),
-                    );
+                    mem.write_word_fast((base_addr + chunk_idx) as i64, Word21::from_i32(val_i32));
                 }
                 mem.write_word_fast(MMIO_WAD_SIZE as i64, Word21::new(word_count as i64));
                 Ok(word_count)
@@ -105,7 +102,11 @@ impl WadDmaLoader {
     }
 
     /// Reconstrói bytes binários a partir de palavras ternárias carregadas em `TrytePerByte`.
-    pub fn read_bytes_tryte(mem: &Memory, base_addr: usize, len: usize) -> Result<Vec<u8>, MemoryError> {
+    pub fn read_bytes_tryte(
+        mem: &Memory,
+        base_addr: usize,
+        len: usize,
+    ) -> Result<Vec<u8>, MemoryError> {
         if base_addr + len > mem.raw_cells().len() {
             return Err(MemoryError::OutOfBounds((base_addr + len) as i64));
         }
@@ -446,7 +447,8 @@ impl SetunDoomMachine {
 
     /// Carrega um programa de instruções na memória ternária e posiciona `PC` em `base_addr`.
     pub fn load_program(&mut self, base_addr: i64, instructions: &[crate::cpu::Instruction]) {
-        self.cpu.load_program(&mut self.memory, base_addr, instructions);
+        self.cpu
+            .load_program(&mut self.memory, base_addr, instructions);
     }
 
     /// Executa um único passo da CPU (`step()`).
@@ -612,14 +614,7 @@ pub extern "C" fn setun_FixedDiv(a: i32, b: i32) -> i32 {
 /// mantendo todos os valores intermediários (`dx`, `dy`, `left`, `right`) em `TernaryFixed` (`11.10`)
 /// sem dupla quantização `16.16 <-> 11.10` no meio do determinante.
 #[no_mangle]
-pub extern "C" fn setun_PointOnSide(
-    x: i32,
-    y: i32,
-    lx: i32,
-    ly: i32,
-    ldx: i32,
-    ldy: i32,
-) -> i32 {
+pub extern "C" fn setun_PointOnSide(x: i32, y: i32, lx: i32, ly: i32, ldx: i32, ldy: i32) -> i32 {
     let tx = crate::fixed::TernaryFixed::from_doom_fixed16(x).raw_word();
     let ty = crate::fixed::TernaryFixed::from_doom_fixed16(y).raw_word();
     let tlx = crate::fixed::TernaryFixed::from_doom_fixed16(lx).raw_word();
@@ -685,7 +680,10 @@ pub unsafe extern "C" fn setun_DrawColumn(
         "Ponteiro nulo em setun_DrawColumn"
     );
     assert!(
-        dc_x >= 0 && (dc_x as usize) < crate::memory::FB_WIDTH && dc_yl >= 0 && (dc_yh as usize) < crate::memory::FB_HEIGHT,
+        dc_x >= 0
+            && (dc_x as usize) < crate::memory::FB_WIDTH
+            && dc_yl >= 0
+            && (dc_yh as usize) < crate::memory::FB_HEIGHT,
         "Coordenadas fora de faixa em setun_DrawColumn: x={}, yl={}, yh={}",
         dc_x,
         dc_yl,
@@ -726,10 +724,12 @@ pub unsafe extern "C" fn setun_DrawColumn(
         let next_b_frac16 = b_frac16.wrapping_add(b_step16);
 
         machine.cpu.telemetry.adder_carry_propagations += carries as u64;
-        machine
-            .cpu
-            .telemetry
-            .record_fixed16_transition(t_frac, next_t_frac, b_frac16, next_b_frac16);
+        machine.cpu.telemetry.record_fixed16_transition(
+            t_frac,
+            next_t_frac,
+            b_frac16,
+            next_b_frac16,
+        );
         machine.cpu.cycles += 1;
 
         t_frac = next_t_frac;
@@ -804,10 +804,12 @@ pub unsafe extern "C" fn setun_DrawTranslatedColumn(
         let next_b_frac16 = b_frac16.wrapping_add(b_step16);
 
         machine.cpu.telemetry.adder_carry_propagations += carries as u64;
-        machine
-            .cpu
-            .telemetry
-            .record_fixed16_transition(t_frac, next_t_frac, b_frac16, next_b_frac16);
+        machine.cpu.telemetry.record_fixed16_transition(
+            t_frac,
+            next_t_frac,
+            b_frac16,
+            next_b_frac16,
+        );
         machine.cpu.cycles += 1;
 
         t_frac = next_t_frac;
@@ -886,10 +888,12 @@ pub unsafe extern "C" fn setun_DrawFuzzColumn(
         let next_b_frac16 = b_frac16.wrapping_add(b_step16);
 
         machine.cpu.telemetry.adder_carry_propagations += carries as u64;
-        machine
-            .cpu
-            .telemetry
-            .record_fixed16_transition(t_frac, next_t_frac, b_frac16, next_b_frac16);
+        machine.cpu.telemetry.record_fixed16_transition(
+            t_frac,
+            next_t_frac,
+            b_frac16,
+            next_b_frac16,
+        );
         machine.cpu.cycles += 1;
 
         t_frac = next_t_frac;
@@ -1183,7 +1187,7 @@ mod tests {
                 .memory
                 .write_word(FRAMEBUFFER_BASE as i64, Word21::new(tryte.as_i64()))
                 .unwrap();
-            machine.push_key_event(true, 0xAD); // KEY_UPARROW
+            machine.push_key_event(true, 0xad); // KEY_UPARROW
         }
 
         let mut out_rgba = vec![0u8; FB_SIZE * 4];
@@ -1197,7 +1201,7 @@ mod tests {
         let has_key = unsafe { DG_GetKey(&mut pressed, &mut key) };
         assert_eq!(has_key, 1);
         assert_eq!(pressed, 1);
-        assert_eq!(key, 0xAD);
+        assert_eq!(key, 0xad);
 
         let empty_key = unsafe { DG_GetKey(&mut pressed, &mut key) };
         assert_eq!(empty_key, 0);

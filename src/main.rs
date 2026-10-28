@@ -8,9 +8,9 @@
 //! 4. Ciclo de plataforma `doomgeneric` (`DG_Init`, `DG_DrawFrameToBuffer`, `DG_GetTicksMs`, `DG_GetKey`).
 
 use setun_doom::{
-    BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs,
-    DG_Init, SetunAssembler, Subsector, TernaryFixed, TernaryRenderer, Tryte6, WallSeg, Word21,
-    FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE, global_machine,
+    global_machine, BenchGui, BenchmarkRunner, BspChild, BspNode, BspTree, DG_DrawFrameToBuffer,
+    DG_GetKey, DG_GetTicksMs, DG_Init, SetunAssembler, Subsector, TernaryFixed, TernaryRenderer,
+    Tryte6, WallSeg, Word21, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
 };
 
 fn main() {
@@ -284,22 +284,27 @@ fn main() {
     );
     println!(
         " * Saída Console Bare-Metal (Syscall)  : {}",
-        String::from_utf8_lossy(&doom_report.stdout_buffer).trim().replace('\n', " | ")
+        String::from_utf8_lossy(&doom_report.stdout_buffer)
+            .trim()
+            .replace('\n', " | ")
     );
     println!("==============================================================================================================");
 
     // Se o argumento --no-gui não for fornecido e DISPLAY estiver configurado, abre a interface gráfica interativa
-    let enable_gui = !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
+    let enable_gui =
+        !std::env::args().any(|arg| arg == "--no-gui") && std::env::var("DISPLAY").is_ok();
     if enable_gui {
         println!("\n[GUI] Inicializando janela gráfica da banca de testes (SDL2 640x400)...");
         println!("[GUI] Controles interativos: W/S (câmera frontal/traseira) | A/D (lateral) | Espaço (reset) | ESC/Q (sair)");
 
-        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench — 21-Trit BSP & ALU Visualizer") {
+        if let Some(mut gui) = BenchGui::new("Setun-Doom Testbench — 21-Trit BSP & ALU Visualizer")
+        {
             let mut last_cam_x = gui.cam_x;
             let mut last_cam_y = gui.cam_y;
 
             while gui.poll_events() {
-                if (gui.cam_x - last_cam_x).abs() > 0.001 || (gui.cam_y - last_cam_y).abs() > 0.001 {
+                if (gui.cam_x - last_cam_x).abs() > 0.001 || (gui.cam_y - last_cam_y).abs() > 0.001
+                {
                     last_cam_x = gui.cam_x;
                     last_cam_y = gui.cam_y;
 

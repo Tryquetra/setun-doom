@@ -208,7 +208,7 @@ impl Instruction {
     pub const fn encode(self) -> Word21 {
         let reg_balanced = (self.reg_idx as i64) - 4; // 0..8 -> -4..+4 (2 trits)
         let op_balanced = self.opcode as i64; // 5 trits
-        // Garante que o operando esteja na faixa balanceada de 14 trits [-2_391_484, +2_391_484]
+                                              // Garante que o operando esteja na faixa balanceada de 14 trits [-2_391_484, +2_391_484]
         let operand_balanced = crate::word::wrap_balanced::<14>(self.operand);
         let raw = operand_balanced + reg_balanced * POW3[14] + op_balanced * POW3[16];
         Word21::new(raw)
@@ -509,8 +509,7 @@ impl Cpu {
                 Opcode::Add => {
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
-                    let (sum, _cout, carries) =
-                        self.acc.gate_ripple_carry_add(val, Trit::Zero);
+                    let (sum, _cout, carries) = self.acc.gate_ripple_carry_add(val, Trit::Zero);
                     self.telemetry.adder_carry_propagations += carries as u64;
                     self.set_acc(sum);
                 }
@@ -542,7 +541,8 @@ impl Cpu {
                     let a16 = a.to_doom_fixed16();
                     let b16 = b.to_doom_fixed16();
                     let bin_prod16 = (((a16 as i64) * (b16 as i64)) >> 16)
-                        .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+                        .clamp(i32::MIN as i64, i32::MAX as i64)
+                        as i32;
                     self.telemetry.record_fixed16_transition(
                         prev_acc,
                         prod.raw_word(),
@@ -745,7 +745,8 @@ impl Cpu {
                 Opcode::DivInt => {
                     let addr = instr.operand_as_address();
                     let val = read_mem(mem, addr)?;
-                    let Some((quot, rem, carries)) = self.acc.gate_non_restoring_div_rem(val) else {
+                    let Some((quot, rem, carries)) = self.acc.gate_non_restoring_div_rem(val)
+                    else {
                         return Err(CpuTrap::DivisionByZero {
                             pc: instr_pc,
                             opcode: Opcode::DivInt,
@@ -811,14 +812,14 @@ impl Cpu {
                     let (prod, _rem) = m.fixed_mul_with_rem(r);
                     let (sum, _cout, add_carries) =
                         self.acc.gate_ripple_carry_add(prod.raw_word(), Trit::Zero);
-                    self.telemetry.adder_carry_propagations +=
-                        (mul_carries + add_carries) as u64;
+                    self.telemetry.adder_carry_propagations += (mul_carries + add_carries) as u64;
 
                     let acc16 = TernaryFixed::from_raw(self.acc).to_doom_fixed16();
                     let m16 = m.to_doom_fixed16();
                     let r16 = r.to_doom_fixed16();
                     let bin_prod16 = (((m16 as i64) * (r16 as i64)) >> 16)
-                        .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+                        .clamp(i32::MIN as i64, i32::MAX as i64)
+                        as i32;
                     let bin_mac16 = acc16.wrapping_add(bin_prod16);
                     self.telemetry
                         .record_fixed16_transition(self.acc, sum, acc16, bin_mac16);
@@ -836,14 +837,14 @@ impl Cpu {
                     let neg_prod = prod.raw_word().gate_invert_trits();
                     let (diff, _cout, add_carries) =
                         self.acc.gate_ripple_carry_add(neg_prod, Trit::Zero);
-                    self.telemetry.adder_carry_propagations +=
-                        (mul_carries + add_carries) as u64;
+                    self.telemetry.adder_carry_propagations += (mul_carries + add_carries) as u64;
 
                     let acc16 = TernaryFixed::from_raw(self.acc).to_doom_fixed16();
                     let m16 = m.to_doom_fixed16();
                     let r16 = r.to_doom_fixed16();
                     let bin_prod16 = (((m16 as i64) * (r16 as i64)) >> 16)
-                        .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+                        .clamp(i32::MIN as i64, i32::MAX as i64)
+                        as i32;
                     let bin_mac16 = acc16.wrapping_sub(bin_prod16);
                     self.telemetry
                         .record_fixed16_transition(self.acc, diff, acc16, bin_mac16);
@@ -1195,10 +1196,14 @@ mod tests {
         // 2. Verifica MUL_ZERO (++0), MAC_POS (+++ / LBT) e MAC_NEG (++-):
         // Produto vetorial 2D estilo BSP: dx * ldy - dy * ldx
         // Seja dx = 4.0, ldy = 3.0, dy = 2.0, ldx = 5.0 -> 4*3 - 2*5 = 12 - 10 = 2.0
-        mem.write_word(600, TernaryFixed::from_int(4).raw_word()).unwrap(); // dx = 4.0
-        mem.write_word(601, TernaryFixed::from_int(3).raw_word()).unwrap(); // ldy = 3.0
-        mem.write_word(602, TernaryFixed::from_int(2).raw_word()).unwrap(); // dy = 2.0
-        mem.write_word(603, TernaryFixed::from_int(5).raw_word()).unwrap(); // ldx = 5.0
+        mem.write_word(600, TernaryFixed::from_int(4).raw_word())
+            .unwrap(); // dx = 4.0
+        mem.write_word(601, TernaryFixed::from_int(3).raw_word())
+            .unwrap(); // ldy = 3.0
+        mem.write_word(602, TernaryFixed::from_int(2).raw_word())
+            .unwrap(); // dy = 2.0
+        mem.write_word(603, TernaryFixed::from_int(5).raw_word())
+            .unwrap(); // ldx = 5.0
 
         // 3. Verifica SMT (B19), SAT (B21) e SIT (B20) da Setun-70:
         // Seja A = 0t+-0 e B = 0t+--
@@ -1276,25 +1281,22 @@ mod tests {
         let prog = [
             // Teste 1: NORM.T no zero
             Instruction::new(Opcode::LoadImm, 0, 0),
-            Instruction::new(Opcode::NormT, 1, 0), // IX1 = lz
+            Instruction::new(Opcode::NormT, 1, 0),   // IX1 = lz
             Instruction::new(Opcode::Store, 0, 710), // grava ACC
             Instruction::new(Opcode::MovIxToAcc, 1, 0),
             Instruction::new(Opcode::Store, 0, 711), // grava IX1
-
             // Teste 2: NORM.T com 5 zeros a esquerda
             Instruction::new(Opcode::Load, 0, 700),
-            Instruction::new(Opcode::NormT, 2, 0), // IX2 = 5
+            Instruction::new(Opcode::NormT, 2, 0),   // IX2 = 5
             Instruction::new(Opcode::Store, 0, 712), // grava ACC normalizado
             Instruction::new(Opcode::MovIxToAcc, 2, 0),
             Instruction::new(Opcode::Store, 0, 713), // grava IX2 (5)
-
             // Teste 3: NORM.T com 5 zeros a esquerda negativo (simetria perfeita)
             Instruction::new(Opcode::Load, 0, 701),
-            Instruction::new(Opcode::NormT, 3, 0), // IX3 = 5
+            Instruction::new(Opcode::NormT, 3, 0),   // IX3 = 5
             Instruction::new(Opcode::Store, 0, 714), // grava ACC normalizado
             Instruction::new(Opcode::MovIxToAcc, 3, 0),
             Instruction::new(Opcode::Store, 0, 715), // grava IX3 (5)
-
             Instruction::new(Opcode::Halt, 0, 0),
         ];
 

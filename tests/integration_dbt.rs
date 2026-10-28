@@ -1,8 +1,8 @@
 //! Testes de integração externos (black-box) para a biblioteca Setun-Doom.
 
 use setun_doom::{
-    dbt::{SetunDbtEngine, run_all_riscv_isa_tests},
-    TernaryFixed, Word21, Trit, Memory, Cpu, Opcode, Instruction,
+    dbt::{run_all_riscv_isa_tests, SetunDbtEngine},
+    Cpu, Instruction, Memory, Opcode, TernaryFixed, Trit, Word21,
 };
 
 #[test]

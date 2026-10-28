@@ -155,7 +155,12 @@ impl Memory {
 
     /// Escreve um pixel na posição `(x, y)` do framebuffer (`320x200`) usando um `Tryte6`.
     #[inline(always)]
-    pub fn write_pixel_tryte(&mut self, x: usize, y: usize, color: Tryte6) -> Result<(), MemoryError> {
+    pub fn write_pixel_tryte(
+        &mut self,
+        x: usize,
+        y: usize,
+        color: Tryte6,
+    ) -> Result<(), MemoryError> {
         if x >= FB_WIDTH || y >= FB_HEIGHT {
             return Err(MemoryError::OutOfBounds((y * FB_WIDTH + x) as i64));
         }
