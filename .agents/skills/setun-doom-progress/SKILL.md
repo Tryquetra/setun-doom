@@ -128,6 +128,7 @@ Perfil do caminho quente medido: `gate_ripple_carry_add` 217 ns, `gate_add_i32` 
 - `src/stack_machine.rs`: Setun-70 de duas pilhas, assembler textual, testes e benchmark.
 - `vendor/doomgeneric/riscv32/`: guest freestanding (headers, libc, soft-float, ABI `ecall`, linker, Makefile).
 - `src/bin/setun_doom_rv32.rs`: driver host do nível 1 (SDL, paleta, teclado, relógio, WAD).
+- `docs/rebel6.md` e `docs/papers/rebel-6-ismvl-2025.pdf`: referência do REBEL-6, mapeamento para os opcodes de 21 trits e o paper aceito em CC BY 4.0.
 - `tests/integration_fixed_oracle.rs`, `tests/integration_bsp_oracle.rs`: oráculos contra o C vendorizado.
 - `tests/integration_execution_modes.rs`: equivalência veracidade/rápido e telemetria zerada.
 - `crates/setun-ffi/`: artefatos C (`libsetun_ffi.a`, `.so`).

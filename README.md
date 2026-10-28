@@ -18,7 +18,7 @@
 * **36-Opcode Orthogonal Ternary ISA**:
   * **Instruction Format (`Word21`)**: `trits[0..13]` (14-trit operand/address, $3^{14} = 4,782,969$ words), `trits[14..15]` (2-trit register/mode selector, $3^2 = 9$ states), `trits[16..20]` (5-trit opcode).
   * **Setun-1958 & Setun-70 Instructions**: `MUL` (`++0` `MULTIPLICATION_ZERO` / `L*T` `B26`), `MAC_POS` (`+++` / `LBT` `B25`), `MAC_NEG` (`++-`), `LOAD_R` (`+-+` / `YRT`), `SMT` (`+-0` / `B19` tritwise multiply), `SAT` (`B21` threshold addition), `SIT` (`B20` $S + T(1 - |S|)$), `BIX` (index loop branch).
-  * **REBEL-6 & REBEL-2 Instructions**: `CMP.T` (`<=>` 21-trit magnitude comparator), `MAJV.T` (majority vote), `MINV.T` (minority vote), `STI.T` (21-trit wire inverter), `BCEG` (single-cycle 3-way branch compare equal or greater with two 7-trit relative offsets).
+  * **REBEL-6 & REBEL-2 Instructions** (adapted from the 32-trit REBEL-6 ISA to this 21-trit word, see [`docs/rebel6.md`](docs/rebel6.md)): `CMP.T` (`<=>` comparator), `MAJV.T` (majority vote), `MINV.T` (minority vote), `STI.T` (wire inverter), `BCEG` (single-cycle 3-way branch compare equal or greater with two 7-trit relative offsets, from REBEL-2).
   * **Zero Silent Failures**: Hardware `CpuTrap` exceptions (`InvalidInstruction`, `DivisionByZero`, `MemoryFault`) enforce strict 14-trit memory bounds and trap invalid opcodes or division by zero.
 * **Resident Ternary Firmware ROM (`SetunMemory`)**:
   * `ROM_FIXED_MUL_ENTRY` (`PC = 100`), `ROM_FIXED_DIV_ENTRY` (`PC = 120`), `ROM_POINT_ON_SIDE_ENTRY` (`PC = 140`, using Setun-58 `MUL` + `LOAD_R` + `MAC_NEG`), and `ROM_APROX_DIST_ENTRY` (`PC = 220`, using `STI.T` + `CMP.T`) execute Doom's BSP traversal, geometry, and fixed-point math directly through `Cpu::step_checked`.
@@ -45,7 +45,7 @@ The Setun-Doom CPU implements 36 authentic opcodes utilizing a 21-trit instructi
 | `-7` | **JMPN** / **JMP_GE** | `00+0-` | Trichotomous branch: jump if `ACC < 0` (or `ACC >= 0` if `reg == 1`) | Setun-58 (`+-0`) |
 | `+7` | **JMPZ** / **JMP_NE** | `00-0+` | Trichotomous branch: jump if `ACC == 0` (or `ACC != 0` if `reg == 1`) | Setun-58 (`0-0`) |
 | `+8` | **JMPP** / **JMP_LE** | `00-+0` | Trichotomous branch: jump if `ACC > 0` (or `ACC <= 0` if `reg == 1`) | Setun-58 (`++0`) |
-| `+19` | **BCEG** | `0+-++` | Single-cycle 3-way branch compare equal or greater via relative offsets | REBEL-2 / REBEL-6 |
+| `+19` | **BCEG** | `0+-++` | Single-cycle 3-way branch compare equal or greater via relative offsets | REBEL-2 |
 | `+9` | **PUSH** | `00-++` | `MEM[SP] = ACC; SP -= 1` | Setun-70 |
 | `-9` | **POP** | `00+--` | `SP += 1; ACC = MEM[SP]` | Setun-70 |
 | `+10` | **CALL** | `00+0+` | Subroutine call: push `PC+1` to return stack and jump to `addr` | Setun-70 |
@@ -213,7 +213,7 @@ lumps are read from the host by offset.
   * Copyright (C) 1993-1996 **Id Software, Inc.** Distributed unmodified at no charge under the DOOM Shareware Distribution License.
 * **Academic & Historical Credits**:
   * **Setun (1958) & Setun-70 (1970)**: **Nikolai Petrovich Brusentsov**, **E. A. Zhogolev**, **S. P. Maslov**, and **José Ramil Alvarez** (Computing Center of Moscow State University / MGU); **Stanislav Maslovski** (Setun-70 ISA documentation); archival translations in [`Tryquetra/setun-papers-articles-translations`](https://github.com/Tryquetra/setun-papers-articles-translations) and [`Tryquetra/setun-emulator-original-isa`](https://github.com/Tryquetra/setun-emulator-original-isa).
-  * **REBEL-6 & REBEL-2 Extensions**: *"REBEL-6: Instruction Set Extensions on RV32I for Balanced Ternary Computing"* (IEEE ISMVL 2025, [`Soppe/RV32IToREBEL`](https://github.com/Soppe/RV32IToREBEL)) and *"REBEL-2"* (`BCEG` 3-way branch).
+  * **REBEL-6 & REBEL-2 Extensions**: Steven Bos, Vetle Bodahl, Ole Christian Moholth and Henning Gundersen, *"REBEL-6: A 32-trit balanced ternary instruction set architecture with R2R compiler pipeline for C"*, 2025 IEEE 55th International Symposium on Multiple-Valued Logic (ISMVL), pp. 98-103, DOI [10.1109/ISMVL64713.2025.00028](https://doi.org/10.1109/ISMVL64713.2025.00028). Accepted manuscript under CC BY 4.0 in [`docs/papers/rebel-6-ismvl-2025.pdf`](docs/papers/rebel-6-ismvl-2025.pdf); reference implementation [`Soppe/RV32IToREBEL`](https://github.com/Soppe/RV32IToREBEL). `BCEG` comes from REBEL-2, the predecessor ISA.
 
 See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full compliance record.
 

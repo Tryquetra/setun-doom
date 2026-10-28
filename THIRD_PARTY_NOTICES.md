@@ -65,6 +65,9 @@ This document records the copyright notices, license terms, and academic attribu
     * [`Tryquetra/ternary-computing-terminology`](https://github.com/Tryquetra/ternary-computing-terminology)
 
 ### B. REBEL-6 & REBEL-2 Balanced Ternary RISC Extensions
-* **Papers & Reference Implementation**:
-  * *"REBEL-6: Instruction Set Extensions on RV32I for Balanced Ternary Computing"*, IEEE International Symposium on Multiple-Valued Logic (ISMVL), 2025, and reference repository [`Soppe/RV32IToREBEL`](https://github.com/Soppe/RV32IToREBEL) (instructions `CMP.T`, `MAJV.T`, `MINV.T`, `STI.T`, and the Digit Flips dynamic switching telemetry methodology).
-  * *"REBEL-2"* balanced ternary branch extension (`BCEG` single-cycle 3-way branch compare equal or greater).
+* **Paper**:
+  * Steven Bos, Vetle Bodahl, Ole Christian Moholth and Henning Gundersen, *"REBEL-6: A 32-trit balanced ternary instruction set architecture with R2R compiler pipeline for C"*, 2025 IEEE 55th International Symposium on Multiple-Valued Logic (ISMVL), pp. 98-103, DOI [10.1109/ISMVL64713.2025.00028](https://doi.org/10.1109/ISMVL64713.2025.00028).
+  * The accepted manuscript is distributed by the Norwegian Research Information Repository (NVA/Sikt) under the **Creative Commons Attribution 4.0 International (CC BY 4.0)** license and is included unmodified at [`docs/papers/rebel-6-ismvl-2025.pdf`](docs/papers/rebel-6-ismvl-2025.pdf), with attribution to the authors above. The version of record is available at IEEE.
+  * Instructions `CMP.T`, `MAJV.T`, `MINV.T`, `STI.T` and the Digit Flips telemetry methodology come from this paper, adapted here to a 21-trit word as documented in [`docs/rebel6.md`](docs/rebel6.md).
+* **Reference Implementation**:
+  * [`Soppe/RV32IToREBEL`](https://github.com/Soppe/RV32IToREBEL) by Vetle Bodahl, MIT license, vendored at `vendor/RV32IToREBEL`. The REBEL-2 predecessor ISA defines the `BCEG` single-cycle 3-way branch compare equal or greater.
