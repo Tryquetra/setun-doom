@@ -65,8 +65,11 @@ cargo build --release -p setun-ffi
 # Cross-compile the Level 1 RV32IM Doom guest (clang + rust-lld)
 make -C vendor/doomgeneric/riscv32
 
-# Run unit tests and integration tests (74 tests, ~2.8s execution)
+# Run unit tests and integration tests (76 tests, ~3s execution)
 cargo test
+
+# Formatting, clippy and tests in one gate before committing
+./scripts/precommit.sh
 ```
 
 ### C. Running the Benchmarks & Telemetry Testbench

@@ -131,6 +131,9 @@ The codebase conforms to the Google Rust Style Guide and advanced system enginee
 ```bash
 cargo test
 cargo run --release
+
+# Formatting, lint and test gate (run before committing)
+./scripts/precommit.sh
 ```
 
 ### 2. Run Setun-DOS Graphical Desktop & Native Doom (Level 3)

@@ -49,9 +49,8 @@ O driver `setun-doom-rv32` usa o modo rápido por padrão e aceita `SETUN_RV32_V
 ## 2. Comandos
 
 ```bash
-# Verificação padrão
-cargo test --release
-cargo clippy --all-targets
+# Verificação padrão (fmt + clippy + testes)
+./scripts/precommit.sh
 
 # Nível 0: engine C nativo com HUD ternário
 make -C vendor/doomgeneric/doomgeneric -f Makefile.setun
