@@ -44,8 +44,13 @@ impl MouseDriver {
             let header = NonNull::new(addr as *mut VirtIOHeader).unwrap();
             if let Ok(transport) = unsafe { MmioTransport::new(header, 0x1000) } {
                 if transport.device_type() == DeviceType::Input {
-                    if let Ok(input) = VirtIOInput::<KernelHal, MmioTransport<'static>>::new(transport) {
-                        crate::kprintln!("   [OK] VirtIO Input Device initialized at MMIO 0x{:08x}", addr);
+                    if let Ok(input) =
+                        VirtIOInput::<KernelHal, MmioTransport<'static>>::new(transport)
+                    {
+                        crate::kprintln!(
+                            "   [OK] VirtIO Input Device initialized at MMIO 0x{:08x}",
+                            addr
+                        );
                         return Self { input: Some(input) };
                     }
                 }
@@ -55,7 +60,11 @@ impl MouseDriver {
         Self { input: None }
     }
 
-    pub fn poll_events(&mut self, desktop: &mut setun_doom::SetunDesktop, dos: &mut setun_doom::SetunDos) {
+    pub fn poll_events(
+        &mut self,
+        desktop: &mut setun_doom::SetunDesktop,
+        dos: &mut setun_doom::SetunDos,
+    ) {
         if let Some(ref mut input) = self.input {
             let _ = input.ack_interrupt();
             while let Some(event) = input.pop_pending_event() {
@@ -81,7 +90,11 @@ impl MouseDriver {
                         // EV_KEY: BTN_LEFT (0x110 = 272) or BTN_TOUCH (0x14a = 330)
                         if event.code == 0x110 || event.code == 0x14a {
                             if event.value == 1 {
-                                crate::kprintln!(" * Mouse/Tablet Click at ({}, {})", desktop.mouse_x, desktop.mouse_y);
+                                crate::kprintln!(
+                                    " * Mouse/Tablet Click at ({}, {})",
+                                    desktop.mouse_x,
+                                    desktop.mouse_y
+                                );
                                 desktop.handle_mouse_click(dos, desktop.mouse_x, desktop.mouse_y);
                             } else {
                                 desktop.mouse_down = false;

@@ -20,7 +20,7 @@
 use crate::fixed::TernaryFixed;
 use crate::memory::FB_WIDTH;
 use crate::trit::Trit;
-use crate::word::{Word21, Tryte6};
+use crate::word::{Tryte6, Word21};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;

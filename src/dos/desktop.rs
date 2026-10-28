@@ -74,7 +74,9 @@ impl SetunDesktop {
 
     /// Ensures the native Doom engine runner is initialized.
     #[cfg(feature = "std")]
-    pub fn ensure_doom_runner(&mut self) -> Result<&mut crate::dos::doom_runner::DoomDosRunner, String> {
+    pub fn ensure_doom_runner(
+        &mut self,
+    ) -> Result<&mut crate::dos::doom_runner::DoomDosRunner, String> {
         if self.doom_runner.is_none() {
             let mut runner = crate::dos::doom_runner::DoomDosRunner::new(None)?;
             runner.init_native_engine(&self.wad_path)?;
@@ -329,9 +331,9 @@ impl SetunDesktop {
 
     /// Renders the bottom taskbar with 3D raised border, Start button, and system clock.
     fn render_taskbar(&self, dos: &mut SetunDos) {
-        let bar_bg = Tryte6::from_palette_index(64).to_word21();   // Neutral Gray
-        let bar_hi = Tryte6::from_palette_index(4).to_word21();    // White highlight
-        let bar_lo = Tryte6::from_palette_index(16).to_word21();   // Dark shadow
+        let bar_bg = Tryte6::from_palette_index(64).to_word21(); // Neutral Gray
+        let bar_hi = Tryte6::from_palette_index(4).to_word21(); // White highlight
+        let bar_lo = Tryte6::from_palette_index(16).to_word21(); // Dark shadow
 
         // Fill taskbar background
         for y in 184..200 {
@@ -421,7 +423,10 @@ impl SetunDesktop {
                     for cx in 0..240 {
                         let x_doom = ((cx * 4) / 3) as usize;
                         let idx = frame[row_ofs + x_doom];
-                        dos.mem.write_word_fast(fb_row_addr + cx, Tryte6::from_palette_index(idx).to_word21());
+                        dos.mem.write_word_fast(
+                            fb_row_addr + cx,
+                            Tryte6::from_palette_index(idx).to_word21(),
+                        );
                     }
                 }
             }
@@ -437,14 +442,23 @@ impl SetunDesktop {
                 for cx in 0..240 {
                     let x_doom = ((cx * 4) / 3) as usize;
                     let idx = frame[row_ofs + x_doom];
-                    dos.mem.write_word_fast(fb_row_addr + cx, Tryte6::from_palette_index(idx).to_word21());
+                    dos.mem.write_word_fast(
+                        fb_row_addr + cx,
+                        Tryte6::from_palette_index(idx).to_word21(),
+                    );
                 }
             }
         }
 
         // Mini Doom Status Hint below client area
         self.draw_raised_rect(dos, wx + 2, wy + wh - 14, ww - 4, 12, 32);
-        self.draw_string(dos, wx + 4, wy + wh - 12, "WASD:MOVE | CTRL/SPACE:FIRE | F11:FULL", 112);
+        self.draw_string(
+            dos,
+            wx + 4,
+            wy + wh - 12,
+            "WASD:MOVE | CTRL/SPACE:FIRE | F11:FULL",
+            112,
+        );
     }
 
     /// Renders the T-Shell diagnostic terminal window.
@@ -466,11 +480,23 @@ impl SetunDesktop {
         }
 
         // Green terminal text
-        self.draw_string(dos, wx + 6, wy + 20, "SETUN-DOS KERNEL V0.3.0 (RADIX-3)", 112);
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 20,
+            "SETUN-DOS KERNEL V0.3.0 (RADIX-3)",
+            112,
+        );
         self.draw_string(dos, wx + 6, wy + 32, "MEMORY: 3^14 = 4782969 WORDS OK", 112);
         self.draw_string(dos, wx + 6, wy + 44, "VGA FB: 320X200 @ TRYTE6 CELLS", 112);
         self.draw_string(dos, wx + 6, wy + 56, "TIVT TABLE: 256 VECTORS ACTIVE", 112);
-        self.draw_string(dos, wx + 6, wy + 68, "WAD CONTAINER: 1245 LUMPS LOADED", 112);
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 68,
+            "WAD CONTAINER: 1245 LUMPS LOADED",
+            112,
+        );
         self.draw_string(dos, wx + 6, wy + 84, ">_ SETUN-OS IS READY.", 215);
         self.draw_string(dos, wx + 6, wy + 98, ">_ TYPE 'RUN DOOM' TO PLAY.", 4);
     }
@@ -539,17 +565,62 @@ impl SetunDesktop {
         }
 
         self.draw_string(dos, wx + 6, wy + 22, "SETUN-DOS OPERATING ENVIRONMENT", 4);
-        self.draw_string(dos, wx + 6, wy + 36, "LEVEL 3 FULL-SYSTEM IMPLEMENTATION", 215);
-        self.draw_string(dos, wx + 6, wy + 52, "TRIBUTE TO NIKOLAI BRUSENTSOV (1958)", 4);
-        self.draw_string(dos, wx + 6, wy + 66, "ARCHITECTURAL INSPIRATION: KOLIBRIOS", 4);
-        self.draw_string(dos, wx + 6, wy + 80, "RADIX-3 BALANCED TERNARY COMPUTING", 112);
-        self.draw_string(dos, wx + 6, wy + 94, "NO SIGN ASYMMETRY | EXACT ZERO BIAS", 112);
-        self.draw_string(dos, wx + 6, wy + 110, "TRYQUETRA / ROBSON CASSIANO (C) 2026", 4);
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 36,
+            "LEVEL 3 FULL-SYSTEM IMPLEMENTATION",
+            215,
+        );
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 52,
+            "TRIBUTE TO NIKOLAI BRUSENTSOV (1958)",
+            4,
+        );
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 66,
+            "ARCHITECTURAL INSPIRATION: KOLIBRIOS",
+            4,
+        );
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 80,
+            "RADIX-3 BALANCED TERNARY COMPUTING",
+            112,
+        );
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 94,
+            "NO SIGN ASYMMETRY | EXACT ZERO BIAS",
+            112,
+        );
+        self.draw_string(
+            dos,
+            wx + 6,
+            wy + 110,
+            "TRYQUETRA / ROBSON CASSIANO (C) 2026",
+            4,
+        );
     }
 
     /// Draws a complete window frame with title bar, close button [X], and borders.
     #[allow(clippy::too_many_arguments)]
-    fn draw_window_frame(&self, dos: &mut SetunDos, x: i64, y: i64, w: i64, h: i64, title: &str, title_color: u8) {
+    fn draw_window_frame(
+        &self,
+        dos: &mut SetunDos,
+        x: i64,
+        y: i64,
+        w: i64,
+        h: i64,
+        title: &str,
+        title_color: u8,
+    ) {
         let border_hi = Tryte6::from_palette_index(4).to_word21();
         let border_lo = Tryte6::from_palette_index(16).to_word21();
         let frame_bg = Tryte6::from_palette_index(56).to_word21();
@@ -586,7 +657,16 @@ impl SetunDesktop {
 
     /// Re-draws borders and title bar around client area without clearing interior.
     #[allow(dead_code, clippy::too_many_arguments)]
-    fn draw_window_frame_overlay(&self, dos: &mut SetunDos, x: i64, y: i64, w: i64, h: i64, title: &str, title_color: u8) {
+    fn draw_window_frame_overlay(
+        &self,
+        dos: &mut SetunDos,
+        x: i64,
+        y: i64,
+        w: i64,
+        h: i64,
+        title: &str,
+        title_color: u8,
+    ) {
         let border_hi = Tryte6::from_palette_index(4).to_word21();
         let border_lo = Tryte6::from_palette_index(16).to_word21();
         let title_bg = Tryte6::from_palette_index(title_color).to_word21();
@@ -638,14 +718,14 @@ impl SetunDesktop {
                     if (dx == 8 || dx == 9 || dx == 10 || dx == 11) && (dy == 8 || dy == 9) {
                         dos.mem.write_word_fast(addr, cyan_eye); // Central glowing eye
                     } else if (dy == 13 || dy == 14) && (6..=13).contains(&dx) && (dx % 2 == 0) {
-                        dos.mem.write_word_fast(addr, ivory);    // Teeth
+                        dos.mem.write_word_fast(addr, ivory); // Teeth
                     } else {
                         dos.mem.write_word_fast(addr, red);
                     }
                 } else if dist_sq <= 81 {
                     dos.mem.write_word_fast(addr, dark_red); // Outline
                 } else if dy >= 17 && (4..=17).contains(&dx) {
-                    dos.mem.write_word_fast(addr, shadow);   // Drop shadow
+                    dos.mem.write_word_fast(addr, shadow); // Drop shadow
                 }
             }
         }

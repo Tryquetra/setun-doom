@@ -13,9 +13,9 @@
 //! - `4_664_256 .. 4_664_512` (`MMIO_BASE`): Memory-mapped I/O registers (Timer, Keyboard, DMA).
 //! - `4_782_968` (`STACK_TOP`): Initial default top for Stack Pointer (`SP`).
 
+use core::fmt;
 #[cfg(feature = "std")]
 use std::error::Error;
-use core::fmt;
 
 use crate::word::{Tryte6, Word21, HALF_POW3, POW3};
 
@@ -72,7 +72,10 @@ impl fmt::Display for MemoryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::OutOfBounds(addr) => {
-                write!(f, "Memory address {addr} is out of bounds (0..{MEMORY_SIZE})")
+                write!(
+                    f,
+                    "Memory address {addr} is out of bounds (0..{MEMORY_SIZE})"
+                )
             }
             Self::DmaOverflow { base, len } => {
                 write!(f, "DMA transfer overflow at base {base} with length {len}")
@@ -179,7 +182,12 @@ impl Memory {
 
     /// Writes a pixel to position `(x, y)` in the framebuffer (`320x200`) using a `Tryte6`.
     #[inline(always)]
-    pub fn write_pixel_tryte(&mut self, x: usize, y: usize, color: Tryte6) -> Result<(), MemoryError> {
+    pub fn write_pixel_tryte(
+        &mut self,
+        x: usize,
+        y: usize,
+        color: Tryte6,
+    ) -> Result<(), MemoryError> {
         if x >= FB_WIDTH || y >= FB_HEIGHT {
             return Err(MemoryError::OutOfBounds((y * FB_WIDTH + x) as i64));
         }

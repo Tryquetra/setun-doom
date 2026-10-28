@@ -1,0 +1,9 @@
+# Google Rust Style Guide formatting settings.
+# https://chromium.googlesource.com/external/github.com/google/styleguide/+/HEAD/rustguide.md
+#
+# The guide also lists imports_granularity = "Module" and
+# format_macro_matchers = true. Both are nightly-only rustfmt options, and the
+# guide allows a codebase to skip them when it builds on stable. The tree was
+# normalized once with nightly rustfmt and stable rustfmt preserves that layout.
+max_width = 100
+hex_literal_case = "Lower"

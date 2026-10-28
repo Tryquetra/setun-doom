@@ -28,15 +28,14 @@ impl LlvmParser {
         Ok(module)
     }
 
-    fn parse_function<'a, I>(
-        header: &str,
-        lines: &mut I,
-    ) -> Result<LlvmFunction, String>
+    fn parse_function<'a, I>(header: &str, lines: &mut I) -> Result<LlvmFunction, String>
     where
         I: Iterator<Item = &'a str>,
     {
         // Example: define dso_local i32 @fixed_mul(i32 noundef %0, i32 noundef %1) ... {
-        let name_start = header.find('@').ok_or("Function name not found in header")?;
+        let name_start = header
+            .find('@')
+            .ok_or("Function name not found in header")?;
         let name_end = header[name_start..]
             .find('(')
             .ok_or("Argument list opening parenthesis not found")?
@@ -82,7 +81,9 @@ impl LlvmParser {
         for param_chunk in param_chunks {
             for word in param_chunk.split_whitespace() {
                 if word.starts_with('%') {
-                    let p_name = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '%').to_string();
+                    let p_name = word
+                        .trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '%')
+                        .to_string();
                     if !p_name.is_empty() {
                         params.push(p_name);
                         break;
@@ -263,9 +264,7 @@ impl LlvmParser {
                     }
                     None
                 }
-                "alloca" => {
-                    Some(LlvmInst::Alloca { dst })
-                }
+                "alloca" => Some(LlvmInst::Alloca { dst }),
                 "load" => {
                     // Example: load i32, ptr %x, align 4 or load volatile i32, ptr %3, align 4
                     let mut ptr_tok = "";
@@ -292,7 +291,9 @@ impl LlvmParser {
                                 let v = Self::parse_val(val_s.trim());
                                 let lbl = lbl_s
                                     .trim()
-                                    .trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '%')
+                                    .trim_matches(|c: char| {
+                                        !c.is_alphanumeric() && c != '_' && c != '%'
+                                    })
                                     .trim_start_matches('%')
                                     .to_string();
                                 if !lbl.is_empty() {
@@ -452,7 +453,11 @@ impl LlvmParser {
 
     fn parse_global(line: &str) -> Option<LlvmGlobal> {
         let (lhs, rhs) = line.split_once('=')?;
-        let name = lhs.trim().trim_start_matches('@').trim_matches('"').to_string();
+        let name = lhs
+            .trim()
+            .trim_start_matches('@')
+            .trim_matches('"')
+            .to_string();
         let is_constant = rhs.contains(" constant ");
 
         let mut words = Vec::new();
@@ -492,7 +497,8 @@ impl LlvmParser {
                 let inside = &rhs[arr_start + 1..arr_end];
                 for elem in inside.split(',') {
                     if let Some(val_tok) = elem.split_whitespace().last() {
-                        let clean = val_tok.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
+                        let clean =
+                            val_tok.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
                         if let Ok(v) = clean.parse::<i64>() {
                             words.push(v);
                         }
@@ -503,7 +509,9 @@ impl LlvmParser {
             // Scalar integer literal: e.g. "global i32 42, align 4"
             let tokens: Vec<&str> = rhs.split_whitespace().collect();
             for (i, &tok) in tokens.iter().enumerate() {
-                if (tok == "i32" || tok == "i64" || tok == "i16" || tok == "i8") && i + 1 < tokens.len() {
+                if (tok == "i32" || tok == "i64" || tok == "i16" || tok == "i8")
+                    && i + 1 < tokens.len()
+                {
                     let val_tok = tokens[i + 1].trim_matches(',');
                     if let Ok(v) = val_tok.parse::<i64>() {
                         words.push(v);
@@ -525,7 +533,8 @@ impl LlvmParser {
 
     fn parse_val(token: &str) -> LlvmValue {
         let clean = token.split(',').next().unwrap_or(token).trim();
-        let clean = clean.trim_matches(|c: char| !c.is_alphanumeric() && c != '%' && c != '@' && c != '-');
+        let clean =
+            clean.trim_matches(|c: char| !c.is_alphanumeric() && c != '%' && c != '@' && c != '-');
         if clean.starts_with('%') {
             LlvmValue::Variable(clean.to_string())
         } else if clean.starts_with('@') {

@@ -143,7 +143,8 @@ impl DoomDosRunner {
         self.dos.dispatch_current_syscall(SYS_BLIT);
 
         self.frame_counter += 1;
-        self.last_frame_pixels.copy_from_slice(frame_palette_indices);
+        self.last_frame_pixels
+            .copy_from_slice(frame_palette_indices);
         self.dos.tick_timer();
 
         Ok(())

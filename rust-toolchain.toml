@@ -1,0 +1,6 @@
+[toolchain]
+# Formatting output depends on the rustfmt version (import grouping and hex
+# literal case), so the workspace pins the toolchain that produced the
+# committed formatting.
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]

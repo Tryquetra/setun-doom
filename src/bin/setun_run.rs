@@ -51,7 +51,14 @@ fn main() {
     println!("================================================================");
     println!(" SETUN NATIVE EXECUTION COMPLETED");
     println!("================================================================");
-    println!(" * Exit Status       : {}", if cpu.halted { "HALT (Clean Exit)" } else { "Active/Timeout" });
+    println!(
+        " * Exit Status       : {}",
+        if cpu.halted {
+            "HALT (Clean Exit)"
+        } else {
+            "Active/Timeout"
+        }
+    );
     println!(" * Steps / Cycles    : {}", steps);
     println!(" * Return ACC (21t)  : {}", cpu.acc.as_i64());
     println!(

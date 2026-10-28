@@ -27,7 +27,10 @@ fn test_setun_dos_boot_and_memory_map() {
     assert_ne!(tivt_word, Word21::ZERO);
 
     // Verify VGA Framebuffer is initialized to black
-    let fb_pixel = dos.mem.read_word(FRAMEBUFFER_BASE).expect("Failed to read FB");
+    let fb_pixel = dos
+        .mem
+        .read_word(FRAMEBUFFER_BASE)
+        .expect("Failed to read FB");
     assert_eq!(fb_pixel, Word21::ZERO);
 
     // Verify boundary helper functions
@@ -136,7 +139,9 @@ fn test_setun_dos_tfx_executable_lifecycle() {
     assert_eq!(tfx, deserialized);
 
     // Load executable into Setun-DOS
-    let pid = dos.load_executable(&tfx, "draw_test.tfx").expect("Failed to load TFX");
+    let pid = dos
+        .load_executable(&tfx, "draw_test.tfx")
+        .expect("Failed to load TFX");
     assert_eq!(pid, 1);
 
     // Run until exit
@@ -158,22 +163,31 @@ fn test_setun_dos_doom_runner_and_wad_mounting() {
         None
     };
 
-    let mut runner = DoomDosRunner::new(wad_bytes.as_deref()).expect("Failed to create Doom runner");
+    let mut runner =
+        DoomDosRunner::new(wad_bytes.as_deref()).expect("Failed to create Doom runner");
 
     if wad_bytes.is_some() {
-        assert!(!runner.dos.fs.files.is_empty(), "WAD lumps were not mounted");
+        assert!(
+            !runner.dos.fs.files.is_empty(),
+            "WAD lumps were not mounted"
+        );
         // Verify key lumps exist
-        assert!(runner.dos.fs.find("PLAYPAL").is_some(), "PLAYPAL lump missing");
+        assert!(
+            runner.dos.fs.find("PLAYPAL").is_some(),
+            "PLAYPAL lump missing"
+        );
     }
 
     // Render 10 simulated frames and inject keys
     runner.inject_key(119); // 'w'
-    runner.inject_key(32);  // space
+    runner.inject_key(32); // space
 
     let mut test_frame = vec![12u8; 320 * 200];
     for frame in 0..10 {
         test_frame[0] = frame as u8;
-        runner.render_frame(&test_frame).expect("Failed to render Doom frame");
+        runner
+            .render_frame(&test_frame)
+            .expect("Failed to render Doom frame");
     }
 
     assert_eq!(runner.frame_counter, 10);

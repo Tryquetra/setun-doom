@@ -78,11 +78,13 @@ pub use elf::{Elf32Image, ElfError, ElfSection, ElfSegment, LoadedElfLayout};
 pub use fixed::{TernaryFixed, FRAC_SCALE, FRAC_TRITS, INT_TRITS};
 #[cfg(feature = "std")]
 pub use gui::BenchGui;
-pub use memory::{Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE};
+pub use memory::{
+    Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
+};
 #[cfg(feature = "std")]
 pub use mmo::{
-    DG_DrawFrame, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init, DG_SleepMs,
-    DmaTranscodeMode, KeyEvent, SetunDoomMachine, WadDmaLoader, WadLumpInfo, global_machine,
+    global_machine, DG_DrawFrame, DG_DrawFrameToBuffer, DG_GetKey, DG_GetTicksMs, DG_Init,
+    DG_SleepMs, DmaTranscodeMode, KeyEvent, SetunDoomMachine, WadDmaLoader, WadLumpInfo,
 };
 pub use render::{ColumnDrawParams, TernaryRenderer};
 pub use trit::Trit;

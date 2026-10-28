@@ -126,9 +126,7 @@ pub enum LlvmInst {
         rhs: LlvmValue,
     },
     /// `br label %target`
-    BrUncond {
-        target: String,
-    },
+    BrUncond { target: String },
     /// `br i1 %cond, label %if_true, label %if_false`
     BrCond {
         cond: LlvmValue,
@@ -136,33 +134,20 @@ pub enum LlvmInst {
         if_false: String,
     },
     /// `ret i32 %val` or `ret void`
-    Ret {
-        val: Option<LlvmValue>,
-    },
+    Ret { val: Option<LlvmValue> },
     /// Direct assignment, sign-extension or truncation (`sext`, `trunc`, `or 0`)
-    Copy {
-        dst: String,
-        src: LlvmValue,
-    },
+    Copy { dst: String, src: LlvmValue },
     /// `%dst = phi i32 [ %val1, %label1 ], [ %val2, %label2 ]`
     Phi {
         dst: String,
         incomings: Vec<(LlvmValue, String)>,
     },
     /// `%dst = alloca i32, align 4`
-    Alloca {
-        dst: String,
-    },
+    Alloca { dst: String },
     /// `%dst = load i32, ptr %ptr`
-    Load {
-        dst: String,
-        ptr: LlvmValue,
-    },
+    Load { dst: String, ptr: LlvmValue },
     /// `store i32 %val, ptr %ptr`
-    Store {
-        val: LlvmValue,
-        ptr: LlvmValue,
-    },
+    Store { val: LlvmValue, ptr: LlvmValue },
     /// `%dst = select i1 %cond, i32 %val_true, i32 %val_false`
     Select {
         dst: String,

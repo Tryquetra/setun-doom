@@ -125,11 +125,8 @@ impl TfxExecutable {
         let mut words = Vec::with_capacity(word_count);
         for i in 0..word_count {
             let chunk = &bytes[i * 8..(i + 1) * 8];
-            let val = i64::from_le_bytes(
-                chunk
-                    .try_into()
-                    .expect("Valid 8-byte chunk for TFX word"),
-            );
+            let val =
+                i64::from_le_bytes(chunk.try_into().expect("Valid 8-byte chunk for TFX word"));
             words.push(Word21::new(val));
         }
 
@@ -140,12 +137,8 @@ impl TfxExecutable {
     pub fn load_into_memory(&self, mem: &mut Memory, load_base: i64) -> Result<(), String> {
         for (i, &word) in self.words.iter().enumerate() {
             let addr = load_base + (i as i64);
-            mem.write_word(addr, word).map_err(|e| {
-                format!(
-                    "Memory fault loading TFX at address {}: {:?}",
-                    addr, e
-                )
-            })?;
+            mem.write_word(addr, word)
+                .map_err(|e| format!("Memory fault loading TFX at address {}: {:?}", addr, e))?;
         }
         Ok(())
     }
