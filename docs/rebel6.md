@@ -18,6 +18,10 @@ atribuição se perca em comentários.
 * **Código de referência:** [Soppe/RV32IToREBEL](https://github.com/Soppe/RV32IToREBEL), vendorizado
   em [`vendor/RV32IToREBEL`](../vendor/RV32IToREBEL), licença MIT
 * **Dissertação:** MSc de Vetle Bodahl, USN, base do pipeline R2R (referência [12] do paper)
+* **Tese de doutorado:** Steven Bos, *Beyond 0 and 1: A mixed radix design and verification workflow
+  for modern ternary computers*, USN, 2024, 212 páginas (referência [9] do paper). Cópia local:
+  [`docs/papers/bos-2024-mixed-radix-thesis.pdf`](papers/bos-2024-mixed-radix-thesis.pdf), licença
+  **CC BY-NC-SA 4.0**
 
 ## 2. O que o ISA define
 
