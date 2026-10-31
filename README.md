@@ -77,7 +77,7 @@ The Setun-Doom CPU implements 36 authentic opcodes utilizing a 21-trit instructi
 
 ## Emulation Evolution Levels & Branch Roadmap
 
-The project progresses through five architectural levels of balanced ternary emulation, advancing from arithmetic co-processing to full dynamic translation, native compiler targeting, full-system OS emulation, and physical FPGA synthesis:
+The project progresses through seven architectural levels of balanced ternary emulation, advancing from arithmetic co-processing to full dynamic translation, native compiler targeting, full-system OS emulation, physical FPGA synthesis, a native REBEL-6 toolchain, and specification-first verification for machine-generated code:
 
 | Level | Architecture Stage | Scope & Implementation Details | Git Branch | Tag / Status |
 | :---: | :--- | :--- | :--- | :---: |
@@ -87,6 +87,20 @@ The project progresses through five architectural levels of balanced ternary emu
 | **Level 3** | **Full-System Emulation (`Setun-DOS`)** | Autonomous 21-trit operating environment with Trichotomic Interrupt Vector Table (`TIVT`), window manager, graphical desktop environment with clickable icons, task scheduling, in-memory virtual filesystem, WAD lump mounting, TFX flat executable loader, and authentic Doom 1993 engine integration running inside Setun-DOS. | [`feat/level-3-full-system-dos`](https://github.com/Tryquetra/setun-doom/tree/feat/level-3-full-system-dos) | **Completed** |
 | **Unikernel** | **Bare-Metal RISC-V Unikernel on QEMU** | Autonomous `no_std` kernel booting bare-metal under RISC-V Supervisor Mode (SBI) on QEMU `virt` machine. Features Bochs VBE PCI display driver ($640 \times 400 \times 32$ bpp), VirtIO Tablet absolute mouse tracking, and real-time Setun-DOS desktop render loop. | [`feat/setun-dos-riscv-unikernel`](https://github.com/Tryquetra/setun-doom/tree/feat/setun-dos-riscv-unikernel) | **Completed** |
 | **Level 4** | **Physical Hardware Synthesis (FPGA / ASIC)** | Verilog and SystemVerilog implementation utilizing dual-rail encoding (2 bits per trit). Target synthesis for Lattice iCE40 and Xilinx Artix-7 FPGAs. Physical memory controller and hardware VGA DAC rasterization outputting live video to real displays. | `feat/level-4-fpga-synthesis` | Planned |
+| **Level 5** | **Native REBEL-6 Toolchain & ABI** | LLVM backend emitting 32-trit REBEL-6 instructions directly from C via LLVM IR, with a ternary-native ABI over the 729-register file, a 24-trit pointer and stack model, a runtime with syscalls and a reduced libc, and a conformance suite (gcc-torture, Csmith, CoreMark, Dhrystone). Measures the native path against the RV32I translation on instructions, cycles, density and energy. | `feat/level-5-rebel6-native` | Planned |
+| **Level 6** | **Specification-First Verification & AI-Native Review** | Machine-readable ISA and ABI specification as the single source for encoder, assembler, simulator and tests. Translation validation between source, IR, ternary binary and a generated high-level view, deterministic provenance for every artifact, and measured density, range and energy as the empirical case for ternary hardware. | `feat/level-6-verified-ternary` | Planned |
+
+### Level 5: Native REBEL-6 Toolchain and ABI
+
+Level 4 makes the ternary hardware real. Level 6 assumes machine-generated low-level code and verified human-readable views. Between them, the project needs a compiler that targets REBEL-6 directly: an LLVM backend that emits 32-trit instructions, an ABI that uses the 729-register file and defines the pointer and stack model, a runtime with syscalls and a reduced libc, and a conformance suite (gcc-torture, Csmith, CoreMark, Dhrystone). Without this level there is no native ternary C code to verify, measure or review.
+
+Level 2 applies the same idea to the 21-trit Setun accumulator machine. Level 5 retargets it to REBEL-6 and retires the RV32I translation as the only path from C to the ternary core. The RV32I path remains as the compatibility track for Doom and existing binaries.
+
+### Level 6: Specification-First Verification and AI-Native Review
+
+If generating low-level code becomes cheap, the bottleneck moves from writing the compiler to proving what it produced. Level 6 makes the machine-readable ISA and ABI specification the single source for the encoder, assembler, simulator and test suite; adds translation validation between source, IR, ternary binary and a generated high-level view; and records deterministic provenance so every artifact can be audited and reproduced.
+
+The human-readable view in C, Rust or Python is accepted only when it is proven or tested equivalent to the binary. Human review then targets invariants, contracts and measured differences. The project's differentiator stops being the compiler and becomes the ternary specification, the verification harness and the physical measurement of density, range and energy per operation.
 
 ---
 

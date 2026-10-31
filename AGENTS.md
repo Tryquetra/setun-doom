@@ -45,6 +45,8 @@ The primary mission is executing the original 1993 **Id Software Doom** engine (
 | **Level 2** | **Native LLVM Backend (`ternary21-setun`)**<br>Emits native 21-trit machine instructions from C/C++ without DBT layer. Planned. | `feat/level-2-llvm-target` | Clang/LLVM target |
 | **Level 3** | **Full-System DOS Emulation (`Setun-DOS`)**<br>Ternary operating environment with BIOS interrupts, TFX flat loader, and DMA WAD loading inspired by KolibriOS architecture. Completed. | [`feat/level-3-full-system-dos`](https://github.com/Tryquetra/setun-doom/tree/feat/level-3-full-system-dos) | `target/release/setun_dos`<br>`src/dos/` |
 | **Level 4** | **Physical FPGA Synthesis**<br>Lattice iCE40 and Xilinx Artix-7 dual-rail Verilog synthesis with physical VGA DAC. Planned. | `feat/level-4-fpga-synthesis` | Bitstreams |
+| **Level 5** | **Native REBEL-6 Toolchain & ABI**<br>LLVM backend emitting 32-trit REBEL-6 instructions, ternary-native ABI over 729 registers, 24-trit pointer and stack model, runtime, reduced libc, conformance suite and native-vs-RV32I measurement. Planned. | `feat/level-5-rebel6-native` | Native C binaries |
+| **Level 6** | **Specification-First Verification & AI-Native Review**<br>Machine-readable ISA and ABI specification as the single source for encoder, assembler, simulator and tests; translation validation; proven high-level views; deterministic provenance; density, range and energy measurement. Planned. | `feat/level-6-verified-ternary` | Verified artifacts |
 
 ---
 
