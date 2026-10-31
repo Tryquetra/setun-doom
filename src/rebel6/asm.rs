@@ -243,7 +243,7 @@ impl Assembler {
                     }
                 }
             }
-            ".half" | ".2byte" => {
+            ".half" | ".2byte" | ".short" => {
                 if self.section == Section::Bss {
                     let count = split_operands(args).len();
                     self.check_bss_zero(args, name)?;
@@ -257,7 +257,7 @@ impl Assembler {
                     }
                 }
             }
-            ".word" | ".4byte" => {
+            ".word" | ".4byte" | ".int" | ".long" => {
                 if self.section == Section::Bss {
                     let count = split_operands(args).len();
                     self.check_bss_zero(args, name)?;
@@ -282,13 +282,32 @@ impl Assembler {
                     }
                 }
             }
-            ".zero" | ".space" => {
+            ".zero" | ".space" | ".skip" => {
                 let n = parse_number(args).unwrap_or(0).max(0) as usize;
                 if self.section == Section::Bss {
                     self.bss_len += n;
                 } else {
                     self.data.resize(self.data.len() + n, 0);
                 }
+            }
+            ".comm" | ".lcomm" => {
+                let parts = split_operands(args);
+                if parts.len() < 2 {
+                    return self.error(format!("`{name}` needs a name and a size"));
+                }
+                let symbol = parts[0].trim().to_string();
+                let size = parse_number(parts[1].trim()).unwrap_or(0).max(0) as usize;
+                if let Some(align) = parts.get(2).and_then(|value| parse_number(value.trim())) {
+                    let align = (align.max(1)) as usize;
+                    while !self.bss_len.is_multiple_of(align) {
+                        self.bss_len += 1;
+                    }
+                }
+                if self.labels.contains_key(&symbol) {
+                    return self.error(format!("duplicate symbol `{symbol}`"));
+                }
+                self.labels.insert(symbol, (Section::Bss, self.bss_len as i64));
+                self.bss_len += size;
             }
             _ => return self.error(format!("unknown directive `{name}`")),
         }
