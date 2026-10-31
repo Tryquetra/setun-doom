@@ -4,6 +4,22 @@
 
 **Setun-Doom** is a gate-level balanced ternary computer architecture emulator (`{-1, 0, +1}`) written in Rust that executes classic **Doom (1993)** (`DOOM1.WAD` via `doomgeneric`). It synthesizes historical Soviet balanced ternary architectures (**Setun-1958** and **Setun-70** by Nikolai Brusentsov, Moscow State University) with modern ternary RISC extensions (**REBEL-2** and **REBEL-6**, IEEE ISMVL 2025) and **J. Ramil Alvarez's (1974)** recurrent $p \to p \pm 1$ hardware base converter.
 
+## Demo Videos
+
+[![Level 1 fast: RV32IM Doom on the 21-trit DBT](assets/videos/level1-fast.gif)](https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level1-fast.mp4)
+
+Sixty-second recordings of every implemented level at 1920x1080 and 60 fps. The GIF above is a six-second excerpt from Level 1 in fast mode. The full MP4s are attached to the [`demo-videos-v1`](https://github.com/Tryquetra/setun-doom/releases/tag/demo-videos-v1) release.
+
+| Level | Mode | Preview | Full video |
+| :---: | :--- | :---: | :--- |
+| 0 | Veracity, gate-level FFI | <a href="https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level0-fidelity.mp4"><img src="assets/videos/level0-fidelity.jpg" width="320" alt="Level 0 veracity recording"></a> | [MP4](https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level0-fidelity.mp4) |
+| 1 | Fast, direct host arithmetic | <a href="https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level1-fast.mp4"><img src="assets/videos/level1-fast.jpg" width="320" alt="Level 1 fast recording"></a> | [MP4](https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level1-fast.mp4) |
+| 1 | Veracity, gates and telemetry | <a href="https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level1-veracity.mp4"><img src="assets/videos/level1-veracity.jpg" width="320" alt="Level 1 veracity recording"></a> | [MP4](https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level1-veracity.mp4) |
+| 2 | Veracity, LLVM IR to TFX trace | <a href="https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level2-fidelity.mp4"><img src="assets/videos/level2-fidelity.jpg" width="320" alt="Level 2 trace recording"></a> | [MP4](https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level2-fidelity.mp4) |
+| 3 | Veracity, Setun-DOS and native Doom | <a href="https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level3-dos-doom.mp4"><img src="assets/videos/level3-dos-doom.jpg" width="320" alt="Level 3 Setun-DOS recording"></a> | [MP4](https://github.com/Tryquetra/setun-doom/releases/download/demo-videos-v1/level3-dos-doom.mp4) |
+
+Level 4 (FPGA synthesis) is planned and has no recording yet. The capture harness lives in [`scripts/record-levels.sh`](scripts/record-levels.sh), and [`scripts/make-video-assets.sh`](scripts/make-video-assets.sh) rebuilds these previews from the raw MP4s.
+
 ---
 
 ## Architectural Highlights
