@@ -35,6 +35,7 @@ flowchart LR
 | `src/bin/rebel6_asm.rs` | Assembles a `.tas` image and reports its layout |
 | `src/bin/rebel6_doom.rs` | Doom runner with the eleven `ecall` services |
 | `scripts/setup_r2r.sh` | Clones the `setun-doom-compat` branch of the R2R fork and builds it |
+| `vendor/RV32IToREBEL` | Translator and linker: `--link`, `--emit-obj`, `--emit-image`, `--run-tests`, `--diff`, `--stats` |
 | `scripts/build_rebel6_doom.py` | Compiles to stdout, normalizes, renames unit-local symbols, concatenates, translates and emits `doom_all.tas` plus `doom_all.map` and `doom_all.syms` |
 
 ## Build and run

@@ -174,4 +174,6 @@ divide; the player weapon sprite is not rendered.
 5. **REBEL-6 Core Stays `no_std`**:
    `src/rebel6/{word,encoding,mem,cpu}.rs` compile without `std`. The assembler and binaries require `std`. `cargo build --no-default-features --lib` must pass.
 6. **R2R Is External and Forked**:
-   `vendor/RV32IToREBEL` is gitignored. `scripts/setup_r2r.sh` clones the fork `Tryquetra/RV32IToREBEL` (from `Soppe/RV32IToREBEL`) and checks out the `setun-doom-compat` branch, which carries the four compatibility changes, then builds it. A fresh worktree has no translator until the script runs. Override with `R2R_REPO` and `R2R_REF`.
+   `vendor/RV32IToREBEL` is gitignored. `scripts/setup_r2r.sh` clones the fork `Tryquetra/RV32IToREBEL` (from `Soppe/RV32IToREBEL`) and checks out the `setun-doom-compat` branch, which carries the compatibility changes plus the tooling added on top, then builds it. A fresh worktree has no translator until the script runs. Override with `R2R_REPO` and `R2R_REF`.
+
+   The branch now also provides: multi-input linking with per-unit symbol scoping (`--link`), relocatable `.mto` objects (`--emit-obj`), R6IM machine images (`--emit-image`, `--no-tas`), the official RV32I suite (`--run-tests`), a differential simulator (`--diff`), JSON telemetry (`--stats`, `--simulate`), typed diagnostics with source positions, range-checked immediates, `.comm` and the other assembler directives, RV32M lowering to the soft helpers, and zero compiler warnings.

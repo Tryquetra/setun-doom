@@ -225,7 +225,7 @@ O encoding veio da especificação de referência pública do REBEL-6, não da d
 6. R2R gera `doom_all.tas`.
 7. `rebel6_asm`/`rebel6_doom` montam e executam.
 
-O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`, com quatro mudanças de compatibilidade: parser aceita `symbol+offset`, `.string` sem aspas, `main` sem as simulações RV32I/REBEL-6 e o assembler tolera o `.tas` gerado antes de estourar o tamanho fixo de memória.
+O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`. Além das mudanças de compatibilidade, a branch ganhou link com escopo por unidade (`--link`), objetos `.mto` (`--emit-obj`), imagens R6IM (`--emit-image`), a suíte RV32I (`--run-tests`), diferencial de simuladores (`--diff`), telemetria JSON (`--stats`) e diagnósticos com linha.
 
 ---
 
