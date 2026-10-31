@@ -96,6 +96,9 @@ impl Host {
             }
             SYS_BLIT => {
                 let len = WIDTH * HEIGHT;
+                if let Err(err) = cpu.data.read_bytes(a0, len) {
+                    eprintln!("blit: cannot read {len} bytes at {a0}: {err:?}");
+                }
                 if let Ok(indices) = cpu.data.read_bytes(a0, len) {
                     for (i, &index) in indices.iter().enumerate() {
                         let p = index as usize * 3;

@@ -30,7 +30,7 @@ flowchart LR
 | `src/rebel6/encoding.rs` | Seven instruction formats, opcode/func tables, encoder and decoder packed at two bits per trit in a `u64` |
 | `src/rebel6/mem.rs` | Byte/tryte addressed data memory with little-endian binary loads and stores |
 | `src/rebel6/cpu.rs` | 729-register file, `X0` hardwired to zero, 74 architectural instructions, traps, Harvard fetch |
-| `src/rebel6/asm.rs` | Two-pass `.tas` assembler: directives, labels, relocations, pseudo-instructions |
+| `src/rebel6/asm.rs` | Two-pass `.tas` assembler: directives, labels, relocations, pseudo-instructions, BSS as NOBITS |
 | `src/bin/rebel6_run.rs` | Runs a `.tas` image and reports registers and telemetry |
 | `src/bin/rebel6_asm.rs` | Assembles a `.tas` image and reports its layout |
 | `src/bin/rebel6_doom.rs` | Doom runner with the eleven `ecall` services |
@@ -91,6 +91,11 @@ of string-loop iterations. The final architectural state is identical.
 - The assembler concatenates translation units instead of resolving ELF-style objects. Symbol
   scoping replaces part of a linker; there are no relocation records, so unused code cannot be
   dropped the way `--gc-sections` drops it on the RV32IM path.
+- `.bss` is NOBITS: it is reserved after all initialized data and never stored in the image. The
+  Doom image keeps 4,357,942 data trytes and reserves 243,796 BSS trytes.
+- `.align` and `.balign` are honoured. `.p2align`, which clang emits for every global, stays
+  opt-in (`REBEL6_ASM_P2ALIGN=1`) because honouring it by default shifts the Doom image and the
+  frame no longer renders, which points at a latent layout assumption in the guest.
 - The data space is a single window starting after the instruction image; D-ROM and MMIO regions
   are not modeled.
 - No interrupts, timers or privilege levels. `WFI.T` and `TRET.T` trap.

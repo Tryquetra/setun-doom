@@ -129,8 +129,10 @@ palette path is integrated; a vectorized `R_DrawSpan` measured 0.94x and was rem
 
 Known limits: the pipeline concatenates translation units instead of linking objects, with
 unit-local symbols renamed and duplicate labels rejected; there are no relocation records, so
-unused code is not dropped; the data space is a flat byte-addressed window; the guest uses
-`-march=rv32i` with soft multiply and divide; the player weapon sprite is not rendered.
+unused code is not dropped; `.bss` is NOBITS and follows the initialized data; `.p2align` is
+opt-in because honouring clang's alignment by default shifts the image and breaks the frame; the
+data space is a flat byte-addressed window; the guest uses `-march=rv32i` with soft multiply and
+divide; the player weapon sprite is not rendered.
 
 ---
 

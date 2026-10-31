@@ -341,6 +341,25 @@ def debug_locations(text: str) -> tuple[list[tuple[str, int]], list[tuple[int, t
     return out, positions
 
 
+def canonical_section(line: str) -> str | None:
+    """Returns the section a directive selects, or None when the line is not a section change."""
+    match = re.match(r"^\s*\.section\s+([^,\s]+)", line)
+    if match:
+        name = match.group(1)
+    else:
+        match = re.match(r"^\s*\.(text|data|bss|rodata)\s*$", line)
+        if not match:
+            return None
+        name = "." + match.group(1)
+    if ".text" in name:
+        return ".text"
+    if ".bss" in name:
+        return ".bss"
+    if ".rodata" in name:
+        return ".rodata"
+    return ".data"
+
+
 def normalize(text: str, prefix: str, path: Path | None) -> Unit:
     defined, globals_, common = collect_symbols(text)
     rename = {
@@ -368,21 +387,30 @@ def normalize(text: str, prefix: str, path: Path | None) -> Unit:
         common=common,
         label_loc=label_loc,
     )
+    section = ".text"
     for number, raw in enumerate(text.splitlines(), 1):
         line = strip_comment(raw)
         if DROP.match(line) or DEAD_LABEL.match(line):
             continue
         c_file, c_line = locations[number - 1]
-        if COMM.match(line):
+        is_common = bool(COMM.match(line))
+        if is_common:
             # `.comm` sits after the last function, so its `.loc` is stale.
             c_file, c_line = "", 0
-        for out in expand(line):
+        expanded = expand(line)
+        if is_common:
+            # `.comm` expands into a .bss block; restore the section in effect before it.
+            expanded.append(f".section {section}")
+        for out in expanded:
             out = rewrite(out, prefix)
             out = rename_tokens(out, rename)
             unit.lines.append(out)
             unit.source.append(number)
             unit.c_line.append(c_line or number)
             unit.c_file.append(c_file)
+        selected = canonical_section(line)
+        if selected is not None:
+            section = selected
     return unit
 
 

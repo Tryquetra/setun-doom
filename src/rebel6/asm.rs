@@ -28,6 +28,8 @@ pub struct Image {
     pub instrs: Vec<u64>,
     /// Data bytes.
     pub data: Vec<i16>,
+    /// Size of the uninitialized data area that follows `data` in memory.
+    pub bss_len: usize,
     /// Data base address.
     pub data_base: i64,
     /// Entry instruction index.
@@ -53,7 +55,7 @@ impl Image {
     /// Creates a machine sized for this image.
     #[must_use]
     pub fn machine(&self) -> Cpu {
-        let size = (self.data_base as usize + self.data.len()).max(DEFAULT_DATA_SIZE);
+        let size = (self.data_base as usize + self.data.len() + self.bss_len).max(DEFAULT_DATA_SIZE);
         let mut cpu = Cpu::new(self.instrs.clone(), size);
         self.load_into(&mut cpu);
         cpu
@@ -81,6 +83,8 @@ impl std::error::Error for AsmError {}
 enum Section {
     Text,
     Data,
+    /// Uninitialized data: reserved after `.data`, not stored in the image.
+    Bss,
 }
 
 /// `(offset, base register, optional symbol addend)`.
@@ -113,6 +117,7 @@ struct Assembler {
     section: Section,
     instrs: Vec<Instr>,
     data: Vec<i16>,
+    bss_len: usize,
     labels: HashMap<String, (Section, i64)>,
     instr_relocs: Vec<InstrReloc>,
     data_relocs: Vec<DataReloc>,
@@ -130,6 +135,7 @@ pub fn assemble(source: &str) -> Result<Image, AsmError> {
         section: Section::Text,
         instrs: Vec::new(),
         data: Vec::new(),
+        bss_len: 0,
         labels: HashMap::new(),
         instr_relocs: Vec::new(),
         data_relocs: Vec::new(),
@@ -166,6 +172,7 @@ impl Assembler {
             let location = match self.section {
                 Section::Text => self.instrs.len() as i64,
                 Section::Data => self.data.len() as i64,
+                Section::Bss => self.bss_len as i64,
             };
             self.labels
                 .insert(label.to_string(), (self.section, location));
@@ -186,27 +193,35 @@ impl Assembler {
         let args = args.trim();
         match name {
             ".text" => self.section = Section::Text,
-            ".data" | ".rodata" | ".bss" | ".sbss" => self.section = Section::Data,
+            ".data" | ".rodata" => self.section = Section::Data,
+            ".bss" | ".sbss" => self.section = Section::Bss,
             ".section" => {
                 let lower = args.to_ascii_lowercase();
                 self.section = if lower.contains(".text") {
                     Section::Text
+                } else if lower.contains(".bss") {
+                    Section::Bss
                 } else {
                     Section::Data
                 };
             }
             ".globl" | ".global" | ".type" | ".size" | ".file" | ".ident" | ".attribute"
-            | ".option" | ".set" | ".local" | ".weak" | ".p2align" | ".balign" => {}
-            ".align" => {
-                if self.section == Section::Data {
-                    let n = parse_number(args).unwrap_or(0).clamp(0, 16) as u32;
-                    let align = 1usize << n;
-                    while !self.data.len().is_multiple_of(align) {
-                        self.data.push(0);
-                    }
+            | ".option" | ".set" | ".local" | ".weak" => {}
+            ".align_ignored" => {
+                let _ = args;
+            }
+            ".align" | ".balign" => {
+                self.apply_alignment(name, args)?;
+            }
+            ".p2align" => {
+                // clang emits .p2align for every global. Honouring it by default shifts the
+                // Doom image and exposes a layout assumption in the guest, so it stays opt-in.
+                if std::env::var("REBEL6_ASM_P2ALIGN").is_ok() {
+                    self.apply_alignment(name, args)?;
                 }
             }
             ".string" | ".asciz" | ".ascii" => {
+                self.reject_bss(name)?;
                 let bytes = parse_string(args)?;
                 for b in bytes {
                     self.data.push(i16::from(b));
@@ -216,21 +231,39 @@ impl Assembler {
                 }
             }
             ".byte" => {
-                for part in split_operands(args) {
-                    let value = parse_number(part.trim())
-                        .ok_or_else(|| self.err(format!("invalid .byte value `{part}`")))?;
-                    self.data.push((value & 0xff) as i16);
+                if self.section == Section::Bss {
+                    let count = split_operands(args).len();
+                    self.check_bss_zero(args, name)?;
+                    self.bss_len += count;
+                } else {
+                    for part in split_operands(args) {
+                        let value = parse_number(part.trim())
+                            .ok_or_else(|| self.err(format!("invalid .byte value `{part}`")))?;
+                        self.data.push((value & 0xff) as i16);
+                    }
                 }
             }
             ".half" | ".2byte" => {
-                for part in split_operands(args) {
-                    let value = parse_number(part.trim())
-                        .ok_or_else(|| self.err(format!("invalid .half value `{part}`")))?;
-                    self.data.push((value & 0xff) as i16);
-                    self.data.push(((value >> 8) & 0xff) as i16);
+                if self.section == Section::Bss {
+                    let count = split_operands(args).len();
+                    self.check_bss_zero(args, name)?;
+                    self.bss_len += 2 * count;
+                } else {
+                    for part in split_operands(args) {
+                        let value = parse_number(part.trim())
+                            .ok_or_else(|| self.err(format!("invalid .half value `{part}`")))?;
+                        self.data.push((value & 0xff) as i16);
+                        self.data.push(((value >> 8) & 0xff) as i16);
+                    }
                 }
             }
             ".word" | ".4byte" => {
+                if self.section == Section::Bss {
+                    let count = split_operands(args).len();
+                    self.check_bss_zero(args, name)?;
+                    self.bss_len += 4 * count;
+                    return Ok(());
+                }
                 for part in split_operands(args) {
                     let part = part.trim();
                     if let Some(value) = parse_number(part) {
@@ -251,7 +284,11 @@ impl Assembler {
             }
             ".zero" | ".space" => {
                 let n = parse_number(args).unwrap_or(0).max(0) as usize;
-                self.data.resize(self.data.len() + n, 0);
+                if self.section == Section::Bss {
+                    self.bss_len += n;
+                } else {
+                    self.data.resize(self.data.len() + n, 0);
+                }
             }
             _ => return self.error(format!("unknown directive `{name}`")),
         }
@@ -512,6 +549,49 @@ impl Assembler {
         }
     }
 
+    fn apply_alignment(&mut self, name: &str, args: &str) -> Result<(), AsmError> {
+        let first = args.split(',').next().unwrap_or("");
+        let n = parse_number(first).unwrap_or(0).clamp(0, 16) as u32;
+        let align = if name == ".balign" {
+            (n as usize).max(1)
+        } else {
+            1usize << n
+        };
+        match self.section {
+            Section::Data => {
+                while !self.data.len().is_multiple_of(align) {
+                    self.data.push(0);
+                }
+            }
+            Section::Bss => {
+                while !self.bss_len.is_multiple_of(align) {
+                    self.bss_len += 1;
+                }
+            }
+            Section::Text => {}
+        }
+        Ok(())
+    }
+
+    fn check_bss_zero(&self, args: &str, directive: &str) -> Result<(), AsmError> {
+        for part in split_operands(args) {
+            if parse_number(part.trim()) != Some(0) {
+                return self.error(format!(
+                    "directive `{directive}` initializes data in .bss: `{}`",
+                    part.trim()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn reject_bss(&self, directive: &str) -> Result<(), AsmError> {
+        if self.section == Section::Bss {
+            return self.error(format!("directive `{directive}` is not allowed in .bss"));
+        }
+        Ok(())
+    }
+
     fn finish(mut self) -> Result<Image, AsmError> {
         // R2R lays data immediately after the instruction image, rounded up to four trytes.
         let instruction_trytes = ((self.instrs.len() as i64 * 32) + 5) / 6;
@@ -520,9 +600,12 @@ impl Assembler {
         } else {
             instruction_trytes + 4 - (instruction_trytes % 4)
         };
+        let bss_base = ((self.data.len() as i64) + 3) & !3;
         for (section, location) in self.labels.values_mut() {
-            if *section == Section::Data {
-                *location += data_base;
+            match section {
+                Section::Data => *location += data_base,
+                Section::Bss => *location += data_base + bss_base,
+                Section::Text => {}
             }
         }
         let entry_name = if self.labels.contains_key("main") {
@@ -610,6 +693,7 @@ impl Assembler {
         Ok(Image {
             instrs: self.instrs.iter().map(encode).collect(),
             data: self.data,
+            bss_len: self.bss_len,
             data_base,
             entry,
             symbols,

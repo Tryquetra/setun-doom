@@ -29,9 +29,10 @@ fn main() -> ExitCode {
         }
     };
     println!(
-        "instructions={} data={} data_base={} entry={} symbols={}",
+        "instructions={} data={} bss={} data_base={} entry={} symbols={}",
         image.instrs.len(),
         image.data.len(),
+        image.bss_len,
         image.data_base,
         image.entry,
         image.symbols.len()
