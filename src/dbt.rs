@@ -107,6 +107,7 @@ pub enum Rv32iInstr {
     Rem { rd: u8, rs1: u8, rs2: u8 },
     Remu { rd: u8, rs1: u8, rs2: u8 },
     Fence,
+    FenceI,
     Ecall,
     Ebreak,
 }
@@ -219,17 +220,22 @@ impl Rv32iInstr {
                 (7, 0x01) => Ok(Self::Remu { rd, rs1, rs2 }),
                 _ => Err(DbtError::IllegalInstruction { raw, pc: 0 }),
             },
-            0x0f => Ok(Self::Fence),
+            0x0f => match funct3 {
+                0 => Ok(Self::Fence),
+                1 => Ok(Self::FenceI),
+                _ => Err(DbtError::IllegalInstruction { raw, pc: 0 }),
+            },
             0x73 => {
                 if funct3 == 0 {
                     match raw >> 20 {
                         0 => Ok(Self::Ecall),
                         1 => Ok(Self::Ebreak),
-                        _ => Ok(Self::Fence),
+                        _ => Err(DbtError::IllegalInstruction { raw, pc: 0 }),
                     }
                 } else {
-                    // CSR instructions (when occurring in bare-metal prologues) treated as NOP
-                    Ok(Self::Fence)
+                    // CSR instructions belong to Zicsr and are not part of the
+                    // RV32I base implemented by this engine.
+                    Err(DbtError::IllegalInstruction { raw, pc: 0 })
                 }
             }
             _ => Err(DbtError::IllegalInstruction { raw, pc: 0 }),
@@ -320,6 +326,8 @@ pub enum DbtError {
     Breakpoint { pc: u32 },
     /// Program counter left the executable ranges of the loaded image.
     PcOutsideText { pc: u32 },
+    /// Program counter is not aligned to a 4-byte instruction boundary.
+    PcMisaligned { pc: u32 },
     /// Maximum cycle/instruction limit exceeded (prevents infinite loop in tests).
     StepLimitExceeded(u64),
 }
@@ -336,6 +344,10 @@ impl fmt::Display for DbtError {
             Self::PcOutsideText { pc } => write!(
                 f,
                 "Program counter 0x{pc:08X} is outside the executable ranges"
+            ),
+            Self::PcMisaligned { pc } => write!(
+                f,
+                "Program counter 0x{pc:08X} is not aligned to a 4-byte instruction boundary"
             ),
             Self::StepLimitExceeded(limit) => write!(f, "Step limit exceeded: {limit} cycles"),
         }
@@ -507,6 +519,8 @@ pub struct SetunDbtEngine<const VERACITY: bool = true> {
     pub immediate_fusions_executed: u64,
     pub branch_fusions_executed: u64,
     pub neg_fusions_executed: u64,
+    /// Set when a store or `FENCE.I` makes translated code stale.
+    code_cache_invalidated: bool,
     /// Console buffer for `write` syscall.
     pub stdout_buffer: Vec<u8>,
     /// Optional host dispatcher for `ecall` services (video, input, clock, WAD access).
@@ -584,6 +598,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             immediate_fusions_executed: 0,
             branch_fusions_executed: 0,
             neg_fusions_executed: 0,
+            code_cache_invalidated: false,
             stdout_buffer: Vec::new(),
             platform: None,
         };
@@ -622,6 +637,11 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
 
     /// Writes `data` into guest memory starting at `vaddr`.
     pub fn guest_write_bytes(&mut self, vaddr: u32, data: &[u8]) -> Result<(), MemoryError> {
+        let touches_code =
+            (0..data.len()).any(|i| self.is_executable_byte(vaddr.wrapping_add(i as u32)));
+        if touches_code {
+            self.invalidate_code_cache();
+        }
         for (i, &byte) in data.iter().enumerate() {
             write_elf_u8(
                 &mut self.memory,
@@ -763,6 +783,60 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
         }
     }
 
+    /// End of the address span covered by the direct block index.
+    #[inline]
+    fn code_end(&self) -> u32 {
+        self.code_base
+            .saturating_add((self.block_table.len() as u32).saturating_mul(4))
+    }
+
+    /// Returns whether `pc` is a 4-byte aligned address with a full instruction
+    /// inside one of the executable ranges.
+    fn is_executable_pc(&self, pc: u32) -> bool {
+        if pc & 3 != 0 {
+            return false;
+        }
+        if self.layout.executable_ranges.is_empty() {
+            return pc >= self.code_base
+                && pc.checked_add(4).is_some_and(|end| end <= self.code_end());
+        }
+        self.layout
+            .executable_ranges
+            .iter()
+            .any(|&(start, end)| pc >= start && pc.checked_add(4).is_some_and(|next| next <= end))
+    }
+
+    /// Returns whether `addr` falls inside an executable byte range.
+    fn is_executable_byte(&self, addr: u32) -> bool {
+        if self.layout.executable_ranges.is_empty() {
+            return addr >= self.code_base && addr < self.code_end();
+        }
+        self.layout
+            .executable_ranges
+            .iter()
+            .any(|&(start, end)| addr >= start && addr < end)
+    }
+
+    /// Discards every translated block so the next fetch re-reads guest memory.
+    fn invalidate_code_cache(&mut self) {
+        self.block_table.fill(0);
+        self.blocks.clear();
+        self.ops.clear();
+        self.bceg_fused.clear();
+        self.translation_scratch.clear();
+        self.code_cache_invalidated = true;
+    }
+
+    /// Invalidates translated code when a store touches an executable range.
+    fn invalidate_if_code_range(&mut self, vaddr: u32, len: u32) {
+        for i in 0..len {
+            if self.is_executable_byte(vaddr.wrapping_add(i)) {
+                self.invalidate_code_cache();
+                return;
+            }
+        }
+    }
+
     /// Returns the direct-index slot for `pc` when it falls inside the executable ranges.
     #[inline(always)]
     fn block_slot(&self, pc: u32) -> Option<usize> {
@@ -777,6 +851,12 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
 
     /// Translates (or retrieves from the arena) the basic block starting at `start_pc`.
     pub fn get_or_translate_block(&mut self, start_pc: u32) -> Result<BlockEntry, DbtError> {
+        if start_pc & 3 != 0 {
+            return Err(DbtError::PcMisaligned { pc: start_pc });
+        }
+        if !self.is_executable_pc(start_pc) {
+            return Err(DbtError::PcOutsideText { pc: start_pc });
+        }
         let slot = self
             .block_slot(start_pc)
             .ok_or(DbtError::PcOutsideText { pc: start_pc })?;
@@ -790,6 +870,9 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
         let mut cur_pc = start_pc;
 
         for _ in 0..64 {
+            if !self.is_executable_pc(cur_pc) {
+                break;
+            }
             let raw0 = read_elf_u32_le(&self.memory, self.layout.setun_base_offset, cur_pc)?;
             let instr0 = Rv32iInstr::decode(raw0).map_err(|_| DbtError::IllegalInstruction {
                 raw: raw0,
@@ -797,7 +880,8 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
             })?;
 
             let next_pc = cur_pc.wrapping_add(4);
-            let can_fuse_next = !self.branch_targets.contains(&next_pc);
+            let can_fuse_next =
+                !self.branch_targets.contains(&next_pc) && self.is_executable_pc(next_pc);
 
             // 1. Attempt LUI + ADDI -> LI.T fusion (complete 32-bit constant in 21 trits)
             if let Rv32iInstr::Lui { rd, imm: hi20 } = instr0 {
@@ -930,6 +1014,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
                                 if exp_rd != 0
                                     && exp_rd != cmp_rd
                                     && !self.branch_targets.contains(&third_pc)
+                                    && self.is_executable_pc(third_pc)
                                 {
                                     if let Ok(raw2) = read_elf_u32_le(
                                         &self.memory,
@@ -1014,6 +1099,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
                     | Rv32iInstr::Bge { .. }
                     | Rv32iInstr::Bltu { .. }
                     | Rv32iInstr::Bgeu { .. }
+                    | Rv32iInstr::FenceI
                     | Rv32iInstr::Ecall
                     | Rv32iInstr::Ebreak
             );
@@ -1043,6 +1129,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
     /// Executes the translated `RV32I` program until encountering an exit call (`ecall` / `main` return)
     /// or reaching `max_steps`.
     pub fn run(&mut self, max_steps: u64) -> Result<DbtExecutionReport, DbtError> {
+        self.code_cache_invalidated = false;
         while self.setun_instructions_executed < max_steps {
             if self.pc == SENTINEL_RETURN_PC {
                 let a0_val = self.read_reg(10).to_i32_saturating();
@@ -1199,6 +1286,10 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
                                 a0_return_value: a0_val,
                             }));
                         }
+                        if self.code_cache_invalidated {
+                            self.code_cache_invalidated = false;
+                            break;
+                        }
                         if self.pc != pc.wrapping_add(4) {
                             // Branch taken inside block
                             break;
@@ -1341,6 +1432,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
                 let addr_w = self.gate_add_i32(self.read_reg(rs1), Word21::from_i32(imm));
                 let vaddr = addr_w.to_i32_saturating() as u32;
                 let val_i32 = self.gate_alvarez_ter_to_bin(self.read_reg(rs2));
+                self.invalidate_if_code_range(vaddr, 1);
                 write_elf_u8(
                     &mut self.memory,
                     self.layout.setun_base_offset,
@@ -1353,6 +1445,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
                 let vaddr = addr_w.to_i32_saturating() as u32;
                 let val_i32 = self.gate_alvarez_ter_to_bin(self.read_reg(rs2));
                 let bytes = (val_i32 as u16).to_le_bytes();
+                self.invalidate_if_code_range(vaddr, 2);
                 write_elf_u8(
                     &mut self.memory,
                     self.layout.setun_base_offset,
@@ -1371,6 +1464,7 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
                 let vaddr = addr_w.to_i32_saturating() as u32;
                 let val_i32 = self.gate_alvarez_ter_to_bin(self.read_reg(rs2));
                 let bytes = (val_i32 as u32).to_le_bytes();
+                self.invalidate_if_code_range(vaddr, 4);
                 for i in 0..4 {
                     write_elf_u8(
                         &mut self.memory,
@@ -1571,6 +1665,9 @@ impl<const VERACITY: bool> SetunDbtEngine<VERACITY> {
                 self.write_reg(rd, res)?;
             }
             Rv32iInstr::Fence => {}
+            Rv32iInstr::FenceI => {
+                self.invalidate_code_cache();
+            }
             Rv32iInstr::Ecall => {
                 let a0 = self.read_reg(10).to_i32_saturating();
                 let a1 = self.read_reg(11).to_i32_saturating();
@@ -1872,6 +1969,87 @@ mod tests {
             "RV32M extension test failed with exit: {:?}",
             report.exit
         );
+    }
+
+    #[test]
+    fn test_decode_rejects_csr_and_accepts_fence_i() {
+        assert_eq!(
+            Rv32iInstr::decode(0x0000_100f).expect("FENCE.I must decode"),
+            Rv32iInstr::FenceI
+        );
+        assert_eq!(
+            Rv32iInstr::decode(0x0ff0_000f).expect("FENCE must decode"),
+            Rv32iInstr::Fence
+        );
+        for raw in [0x3000_1073, 0x3020_0073, 0x1050_0073] {
+            assert!(
+                matches!(
+                    Rv32iInstr::decode(raw),
+                    Err(DbtError::IllegalInstruction { .. })
+                ),
+                "instruction 0x{raw:08X} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_translation_rejects_misaligned_and_non_text_pc() {
+        let elf_bytes = include_bytes!("../vendor/riscv_tests/elf/add.elf");
+        let mut engine =
+            SetunDbtEngine::<true>::from_elf_bytes(elf_bytes).expect("Failed to load add.elf");
+        let entry = engine.layout.entry_point;
+
+        assert!(engine.is_executable_pc(entry));
+        assert!(!engine.is_executable_pc(entry + 2));
+        assert!(engine.is_executable_byte(entry));
+        assert!(matches!(
+            engine.get_or_translate_block(entry + 2),
+            Err(DbtError::PcMisaligned { .. })
+        ));
+        assert!(matches!(
+            engine.get_or_translate_block(0xffff_fff0),
+            Err(DbtError::PcOutsideText { .. })
+        ));
+    }
+
+    #[test]
+    fn test_store_to_text_invalidates_translated_blocks() {
+        let elf_bytes = include_bytes!("../vendor/riscv_tests/elf/add.elf");
+        let mut engine =
+            SetunDbtEngine::<true>::from_elf_bytes(elf_bytes).expect("Failed to load add.elf");
+        let entry = engine.layout.entry_point;
+        let block = engine
+            .get_or_translate_block(entry)
+            .expect("entry block must translate");
+        assert!(block.ops_len > 0);
+        assert!(engine.block_table.iter().any(|&slot| slot != 0));
+
+        engine
+            .guest_write_bytes(entry, &[0x13, 0x00, 0x00, 0x00])
+            .expect("code store must succeed");
+
+        assert!(engine.code_cache_invalidated);
+        assert!(engine.block_table.iter().all(|&slot| slot == 0));
+        assert!(engine.blocks.is_empty());
+    }
+
+    #[test]
+    fn test_fence_i_invalidates_translated_blocks() {
+        let elf_bytes = include_bytes!("../vendor/riscv_tests/elf/add.elf");
+        let mut engine =
+            SetunDbtEngine::<true>::from_elf_bytes(elf_bytes).expect("Failed to load add.elf");
+        let entry = engine.layout.entry_point;
+        let block = engine
+            .get_or_translate_block(entry)
+            .expect("entry block must translate");
+        assert!(block.ops_len > 0);
+
+        let exit = engine
+            .execute_single_instr(Rv32iInstr::FenceI, entry)
+            .expect("FENCE.I must execute");
+        assert!(exit.is_none());
+        assert!(engine.code_cache_invalidated);
+        assert!(engine.block_table.iter().all(|&slot| slot == 0));
     }
 
     #[test]
