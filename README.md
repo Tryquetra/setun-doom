@@ -93,7 +93,9 @@ The project progresses through seven architectural levels of balanced ternary em
 The execution plan, decisions and acceptance criteria for these two levels live in
 [`docs/level-5-6-plan.md`](docs/level-5-6-plan.md). The principles that govern decisions across
 the project, written for the people and the AI agents working on it, live in
-[`docs/directives.md`](docs/directives.md) (in Portuguese).
+[`docs/directives.md`](docs/directives.md) (in Portuguese). The native calling convention, data
+model, syscall interface and versioning policy live in [`docs/abi.md`](docs/abi.md), as the
+`abi-v0` proposal.
 
 ### Level 5: Native REBEL-6 Toolchain and ABI
 

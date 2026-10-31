@@ -21,7 +21,7 @@ criteria for each phase.
 | --: | :-- | :-- | :-- |
 | 1 | Move the build to `R2R --link` | Removes the 126,931-line concatenation and the Python scoping logic; the linker already exists | Identical `.tas` and image, frame 2 unchanged |
 | 2 | Add `--emit-map` and `--emit-syms` to R2R | The diagnostic map is a Level 6 prerequisite and currently comes from Python | Map with unit, C line and combined line per expression |
-| 3 | Write `docs/abi.md` | The ABI is the contract for the backend, the runtime and verification | Calling convention, register classes, stack, pointers, `char`, varargs, structs |
+| 3 | Write `docs/abi.md` | The ABI is the contract for the backend, the runtime and verification | Calling convention, register classes, stack, pointers, `char`, varargs, structs (draft written, `abi-v0`, awaits the freeze gate) |
 | 4 | Single source for the ISA specification | The encoder is generated from the Rust spec; the assembler and simulator keep copies | One file generates encoder, assembler tables, decoder and tests |
 | 5 | Retarget `src/codegen` to REBEL-6 | The LLVM IR pipeline exists, but emits the 21-trit Setun ISA | A whole C program compiles and runs on the REBEL-6 core |
 | 6 | C harness: gcc-torture, Csmith, CoreMark, Dhrystone | The 37 RV32I tests prove the translator, not a C compiler | Pass rate and native-versus-translated comparison |
