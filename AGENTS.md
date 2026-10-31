@@ -127,9 +127,10 @@ AVX2 kernels cover bitsliced tritwise operations and the framebuffer palette con
 palette path is integrated; a vectorized `R_DrawSpan` measured 0.94x and was removed. See
 [`docs/simd.md`](file:///home/robson/coding/setun-doom/docs/simd.md).
 
-Known limits: the pipeline concatenates translation units instead of linking objects; the data
-space is a flat byte-addressed window; the guest uses `-march=rv32i` with soft multiply and
-divide; the player weapon sprite is not rendered; the R2R tool needs the compatibility patch.
+Known limits: the pipeline concatenates translation units instead of linking objects, with
+unit-local symbols renamed and duplicate labels rejected; there are no relocation records, so
+unused code is not dropped; the data space is a flat byte-addressed window; the guest uses
+`-march=rv32i` with soft multiply and divide; the player weapon sprite is not rendered.
 
 ---
 

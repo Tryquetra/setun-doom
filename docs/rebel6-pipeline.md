@@ -15,8 +15,8 @@ and the DBT are not used on this path.
 
 ```mermaid
 flowchart LR
-  A[doomgeneric C + port] -->|clang -S -march=rv32i| B[.s per file]
-  B -->|normalize + concatenate| C[doom_all.s]
+  A[doomgeneric C + port] -->|clang -S -march=rv32i -o -| B[assembly on stdout]
+  B -->|normalize + scope + concatenate| C[doom_all.s]
   C -->|R2R| D[doom_all.tas]
   D -->|rebel6 assembler| E[instruction + data image]
   E -->|rebel6 core| F[ecall host: WAD, blit, palette, keyboard]
@@ -35,7 +35,7 @@ flowchart LR
 | `src/bin/rebel6_asm.rs` | Assembles a `.tas` image and reports its layout |
 | `src/bin/rebel6_doom.rs` | Doom runner with the eleven `ecall` services |
 | `scripts/setup_r2r.sh` | Clones the `setun-doom-compat` branch of the R2R fork and builds it |
-| `scripts/build_rebel6_doom.py` | Compiles, normalizes, concatenates, translates and emits `doom_all.tas` |
+| `scripts/build_rebel6_doom.py` | Compiles to stdout, normalizes, renames unit-local symbols, concatenates, translates and emits `doom_all.tas` plus `doom_all.map` and `doom_all.syms` |
 
 ## Build and run
 
@@ -79,7 +79,8 @@ of string-loop iterations. The final architectural state is identical.
 | R2R parser accepts `symbol+offset` | Clang emits jump tables and aliases with addends; the reference parser accepted only bare symbols |
 | `.string` quotes stripped | The reference assembler emitted the quote characters as string data |
 | `.asciz` expanded to `.byte` | Octal escapes such as `\000` were decoded incorrectly by the normalization layer |
-| Single concatenated translation unit | R2R has no linker and accepts one assembly file; local labels are renamed per file |
+| Single concatenated translation unit | R2R has no linker and accepts one assembly file; `.L` labels and every symbol clang does not declare `.globl` are renamed per unit, and duplicate labels abort the build |
+| Line map and symbol table | `doom_all.map` and `doom_all.syms` carry the C file and line for every combined line and symbol, from clang's `.loc` directives (`-gline-directives-only`) |
 | `__muldi3` implemented with shift-add | A 64-bit `*` lowers to a recursive `__muldi3` call on RV32I |
 | `__mulsi3`, `__divsi3`, `__udivsi3`, `__modsi3`, `__umodsi3` added | The guest was built with `-march=rv32i`, without the M extension |
 | Flat data space | The core populates one byte-addressed data window instead of the three-region D-ROM/D-RAM/MMIO map |
@@ -87,7 +88,9 @@ of string-loop iterations. The final architectural state is identical.
 
 ## Known limits
 
-- The assembler and linker concatenate translation units instead of resolving ELF-style objects.
+- The assembler concatenates translation units instead of resolving ELF-style objects. Symbol
+  scoping replaces part of a linker; there are no relocation records, so unused code cannot be
+  dropped the way `--gc-sections` drops it on the RV32IM path.
 - The data space is a single window starting after the instruction image; D-ROM and MMIO regions
   are not modeled.
 - No interrupts, timers or privilege levels. `WFI.T` and `TRET.T` trap.

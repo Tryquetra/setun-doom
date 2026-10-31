@@ -216,11 +216,13 @@ O encoding veio da especificação de referência pública do REBEL-6, não da d
 
 ### Pipeline R2R
 
-1. `clang -S -march=rv32i` por arquivo C.
-2. Normalização: comentários, `.asciz` para `.byte`, `%hi`/`%lo` com addend, pseudo-instruções `zext`/`sext`/`tail`, labels locais renomeados.
-3. Concatenação em um único `.s`, porque o R2R aceita um arquivo e não tem linker.
-4. R2R gera `doom_all.tas`.
-5. `rebel6_asm`/`rebel6_doom` montam e executam.
+1. `clang -S -march=rv32i -o -` por arquivo C, com a assembly capturada em memória. Nenhum `.s` intermediário vai para o disco.
+2. Normalização: comentários, `.asciz` para `.byte`, `%hi`/`%lo` com addend, pseudo-instruções `zext`/`sext`/`tail`, `.loc` descartado e `.Ltmp`/`.Lfunc_*` removidos.
+3. Escopo: todo símbolo que o clang não declara `.globl` é renomeado com o prefixo da unidade. Duas `static` de mesmo nome (`plr` em `am_map.c` e `hu_stuff.c`) deixam de compartilhar endereço. Label duplicado aborta o build.
+4. Concatenação em um único `.s`, porque o R2R aceita um arquivo e não tem linker.
+5. `doom_all.map` (linha combinada para arquivo e linha C) e `doom_all.syms` (símbolo para escopo, unidade e linha) são escritos junto.
+6. R2R gera `doom_all.tas`.
+7. `rebel6_asm`/`rebel6_doom` montam e executam.
 
 O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`, com quatro mudanças de compatibilidade: parser aceita `symbol+offset`, `.string` sem aspas, `main` sem as simulações RV32I/REBEL-6 e o assembler tolera o `.tas` gerado antes de estourar o tamanho fixo de memória.
 
@@ -292,7 +294,7 @@ O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`, com quat
 4. Levar o modo RPN do Setun-70 para o Setun-DOS ou para um parser infixa via Shunting-yard no testbench.
 5. Implementar `li2.t` (dois imediatos de 6 trits) e avaliar `round` por shift e `min`/`max` ternários, citados no paper.
 6. Decidir o destino de `src/dos/playpal.bin` (untracked, sem uso) e de `o que é aarch64?.md` (rascunho untracked).
-7. Linker real de `.tas` no lugar da concatenação de unidades de tradução.
+7. Linker real de `.tas` no lugar da concatenação de unidades de tradução, com registros de relocação para descartar código inalcançável.
 8. Medir carry com sinal no `Word24` do REBEL-6 com um modo de ripple de 24 estágios.
 9. Fechar a fidelidade visual do Doom no core REBEL-6: a arma em primeira pessoa não é desenhada e alguns pixels de sprites mascarados divergem.
 10. Avaliar AVX-512 (`vpscatterdd`, `vpermb`) para spans longos e colunas; o AVX2 de 320 pixels não compensa.
