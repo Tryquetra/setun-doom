@@ -90,6 +90,9 @@ The project progresses through seven architectural levels of balanced ternary em
 | **Level 5** | **Native REBEL-6 Toolchain & ABI** | LLVM backend emitting 32-trit REBEL-6 instructions directly from C via LLVM IR, with a ternary-native ABI over the 729-register file, a 24-trit pointer and stack model, a runtime with syscalls and a reduced libc, and a conformance suite (gcc-torture, Csmith, CoreMark, Dhrystone). Measures the native path against the RV32I translation on instructions, cycles, density and energy. | `feat/level-5-rebel6-native` | Planned |
 | **Level 6** | **Specification-First Verification & AI-Native Review** | Machine-readable ISA and ABI specification as the single source for encoder, assembler, simulator and tests. Translation validation between source, IR, ternary binary and a generated high-level view, deterministic provenance for every artifact, and measured density, range and energy as the empirical case for ternary hardware. | `feat/level-6-verified-ternary` | Planned |
 
+The execution plan, decisions and acceptance criteria for these two levels live in
+[`docs/level-5-6-plan.md`](docs/level-5-6-plan.md).
+
 ### Level 5: Native REBEL-6 Toolchain and ABI
 
 Level 4 makes the ternary hardware real. Level 6 assumes machine-generated low-level code and verified human-readable views. Between them, the project needs a compiler that targets REBEL-6 directly: an LLVM backend that emits 32-trit instructions, an ABI that uses the 729-register file and defines the pointer and stack model, a runtime with syscalls and a reduced libc, and a conformance suite (gcc-torture, Csmith, CoreMark, Dhrystone). Without this level there is no native ternary C code to verify, measure or review.
