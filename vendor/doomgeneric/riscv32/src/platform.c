@@ -71,6 +71,15 @@ wad_file_class_t stdc_wad_file;
 static wad_file_t *W_Host_OpenFile(char *path)
 {
     (void)path;
+#ifdef SETUN_RV32_DEMO
+    /* The guest WAD backend always opens the mounted IWAD. Demo playback passes
+     * `-playdemo demo1`, and `D_AddFile` first tries an external `demo1.lmp`.
+     * Rejecting that path makes the engine fall back to the DEMO1 lump inside the
+     * WAD, which is the only file the guest can read. */
+    if (strstr(path, ".lmp") != NULL) {
+        return NULL;
+    }
+#endif
     if (setun_wad_open() < 0) {
         return NULL;
     }
@@ -114,14 +123,22 @@ static char arg_episode[] = "1";
 static char arg_map[] = "1";
 static char arg_skill[] = "-skill";
 static char arg_skill_value[] = "3";
+#ifdef SETUN_RV32_DEMO
+static char arg_playdemo[] = "-playdemo";
+static char arg_demo1[] = "demo1";
+#endif
 
 int main(void)
 {
     char *argv[] = {
         arg_doom, arg_mb, arg_mb_value, arg_iwad, arg_iwad_value, arg_nosound,
-        arg_warp, arg_episode, arg_map, arg_skill, arg_skill_value, NULL,
+        arg_warp, arg_episode, arg_map, arg_skill, arg_skill_value,
+#ifdef SETUN_RV32_DEMO
+        arg_playdemo, arg_demo1,
+#endif
+        NULL,
     };
-    doomgeneric_Create(11, argv);
+    doomgeneric_Create((int)(sizeof(argv) / sizeof(argv[0])) - 1, argv);
 
     /* `D_DoomMain` returns after one tick; the platform owns the outer loop, as in the
      * native driver. */

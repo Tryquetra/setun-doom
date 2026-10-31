@@ -16,6 +16,7 @@ use std::ptr;
 
 const SDL_INIT_VIDEO: u32 = 0x00000020;
 const SDL_WINDOW_SHOWN: u32 = 0x00000004;
+const SDL_WINDOW_RESIZABLE: u32 = 0x00000020;
 const SDL_RENDERER_ACCELERATED: u32 = 0x00000002;
 const SDL_RENDERER_PRESENTVSYNC: u32 = 0x00000004;
 const SDL_TEXTUREACCESS_STREAMING: i32 = 1;
@@ -168,7 +169,7 @@ impl BenchGui {
                 0x1fff0000,
                 (FB_WIDTH * 2) as i32,
                 (FB_HEIGHT * 2) as i32,
-                SDL_WINDOW_SHOWN,
+                SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE,
             );
             if window.is_null() {
                 eprintln!("[GUI] Failed to create SDL2 window.");

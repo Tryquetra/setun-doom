@@ -292,7 +292,10 @@ impl Rv32Platform for HostPlatform {
 }
 
 fn main() {
-    let elf_path = PathBuf::from("vendor/doomgeneric/riscv32/doom_rv32.elf");
+    let elf_path = PathBuf::from(
+        std::env::var("SETUN_RV32_ELF")
+            .unwrap_or_else(|_| "vendor/doomgeneric/riscv32/doom_rv32.elf".to_string()),
+    );
     let elf = match std::fs::read(&elf_path) {
         Ok(bytes) => bytes,
         Err(error) => {

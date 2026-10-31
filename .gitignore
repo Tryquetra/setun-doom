@@ -1,4 +1,5 @@
 /target/
+/recordings/
 /.savegame/
 /.default.cfg
 /default.cfg
@@ -14,4 +15,6 @@
 /vendor/setun-papers-articles-translations/
 /vendor/ternary-computing-terminology/
 /vendor/doomgeneric/riscv32/build/
+/vendor/doomgeneric/riscv32/build_demo/
 /vendor/doomgeneric/riscv32/doom_rv32.elf
+/vendor/doomgeneric/riscv32/doom_rv32_demo.elf
