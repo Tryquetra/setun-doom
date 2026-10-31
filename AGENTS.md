@@ -114,9 +114,9 @@ Current results on the branch:
 | :-- | :-- |
 | `cargo test` | 109/109 |
 | Official RV32I tests | 37/37 |
-| Doom image | 70,999 instructions, 3,555,004 data bytes |
+| Doom image | 75,509 instructions, 4,357,942 data trytes, 243,848 BSS trytes |
 | Doom frame 2 | 63,847 non-zero pixels, E1M1 with HUD |
-| Frame 2 | 31,302,550 cycles, ~60 s, ~0.14 FPS steady |
+| Frame 2 | 31,188,234 cycles, ~54 s, ~0.15 FPS steady |
 | Frame parity with the 21-trit reference | 97.5% |
 
 Carry telemetry classifies every ripple-adder carry as `+1`, `-1` or `0` and measures absorption

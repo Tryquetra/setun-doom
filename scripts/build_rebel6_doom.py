@@ -171,6 +171,18 @@ def rename_tokens(line: str, mapping: dict[str, str]) -> str:
     return "".join(out)
 
 
+def rename_line(line: str, mapping: dict[str, str]) -> str:
+    """Renames symbols on a line, leaving the mnemonic of an instruction alone.
+
+    A local symbol can share its name with a mnemonic (clang emits a label named
+    `tail`), and renaming the mnemonic would turn `tail foo` into a directive.
+    """
+    match = re.match(r"^(\s*)([A-Za-z_][\w.]*)(.*)$", line)
+    if match and not match.group(2).startswith(".") and not match.group(3).lstrip().startswith(":"):
+        return match.group(1) + match.group(2) + rename_tokens(match.group(3), mapping)
+    return rename_tokens(line, mapping)
+
+
 def expand_string(body: str) -> str:
     out: list[int] = []
     i = 0
@@ -239,30 +251,7 @@ def expand(line: str) -> list[str]:
     if match:
         return [expand_string(match.group(1))]
 
-    match = re.fullmatch(r"\s*zext\.b\s+(\w+),\s*(\w+)\s*", line)
-    if match:
-        return [f"\tandi {match.group(1)}, {match.group(2)}, 255"]
-    match = re.fullmatch(r"\s*zext\.h\s+(\w+),\s*(\w+)\s*", line)
-    if match:
-        return [f"\tslli {match.group(1)}, {match.group(2)}, 16", f"\tsrli {match.group(1)}, {match.group(1)}, 16"]
-    match = re.fullmatch(r"\s*sext\.b\s+(\w+),\s*(\w+)\s*", line)
-    if match:
-        return [f"\tslli {match.group(1)}, {match.group(2)}, 24", f"\tsrai {match.group(1)}, {match.group(1)}, 24"]
-    match = re.fullmatch(r"\s*sext\.h\s+(\w+),\s*(\w+)\s*", line)
-    if match:
-        return [f"\tslli {match.group(1)}, {match.group(2)}, 16", f"\tsrai {match.group(1)}, {match.group(1)}, 16"]
-    match = re.fullmatch(r"\s*tail\s+(\S+)\s*", line)
-    if match:
-        return [f"\tjal x0, {match.group(1)}"]
-    match = re.fullmatch(r"\s*call\s+(\S+)\s*", line)
-    if match:
-        return [f"\tjal ra, {match.group(1)}"]
-    match = re.fullmatch(r"\s*j\s+(\S+)\s*", line)
-    if match:
-        return [f"\tjal x0, {match.group(1)}"]
-    match = re.fullmatch(r"\s*jr\s+(\w+)\s*", line)
-    if match:
-        return [f"\tjalr x0, 0({match.group(1)})"]
+    # zext, sext, tail, call, j and jr are translated by R2R.
 
     return [line]
 
@@ -374,7 +363,7 @@ def normalize(text: str, prefix: str, path: Path | None) -> Unit:
             c_file, c_line = "", 0
         for out in expand(line):
             out = rewrite(out, prefix)
-            out = rename_tokens(out, rename)
+            out = rename_line(out, rename)
             unit.lines.append(out)
             unit.source.append(number)
             unit.c_line.append(c_line or number)

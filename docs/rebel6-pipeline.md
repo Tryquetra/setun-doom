@@ -66,7 +66,7 @@ does not depend on host speed. Frame 1 is the initial view; frame 2 is the first
 | Doom startup | reaches `D_DoomMain`, loads `DOOM1.WAD`, initializes video, sound, HUD and the level |
 | Doom frame | 63,847 non-zero framebuffer bytes at frame 2, E1M1 rendered with HUD |
 | Frame parity with the 21-trit reference | 97.5% of pixels identical (`compare -metric AE`) |
-| `cargo test` | 102 tests pass |
+| `cargo test` | 85 library tests pass |
 
 The instruction counts and trit-flip totals for Dhrystone differ from the reference simulator
 because the two implementations lay data out differently and therefore execute different numbers
