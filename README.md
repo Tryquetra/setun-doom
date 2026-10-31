@@ -91,7 +91,9 @@ The project progresses through seven architectural levels of balanced ternary em
 | **Level 6** | **Specification-First Verification & AI-Native Review** | Machine-readable ISA and ABI specification as the single source for encoder, assembler, simulator and tests. Translation validation between source, IR, ternary binary and a generated high-level view, deterministic provenance for every artifact, and measured density, range and energy as the empirical case for ternary hardware. | `feat/level-6-verified-ternary` | Planned |
 
 The execution plan, decisions and acceptance criteria for these two levels live in
-[`docs/level-5-6-plan.md`](docs/level-5-6-plan.md).
+[`docs/level-5-6-plan.md`](docs/level-5-6-plan.md). The principles that govern decisions across
+the project, written for the people and the AI agents working on it, live in
+[`docs/directives.md`](docs/directives.md) (in Portuguese).
 
 ### Level 5: Native REBEL-6 Toolchain and ABI
 
