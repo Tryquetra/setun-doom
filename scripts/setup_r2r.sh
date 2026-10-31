@@ -10,7 +10,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR="$ROOT/vendor/RV32IToREBEL"
-REPO="${R2R_REPO:-https://github.com/Tryquetra/RV32IToREBEL.git}"
+# The fork is the only R2R source. SSH keeps the checkout push-capable; set R2R_REPO
+# to the HTTPS URL for an anonymous clone.
+REPO="${R2R_REPO:-git@github.com:Tryquetra/RV32IToREBEL.git}"
 REF="${R2R_REF:-setun-doom-compat}"
 
 if [[ ! -d "$VENDOR/.git" ]]; then
