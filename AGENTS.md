@@ -102,7 +102,7 @@ The `feat/rebel6-pure` branch executes `doomgeneric` on a 32-trit REBEL-6 core w
 words, 729 registers and Harvard memories. The 21-trit ISA and the DBT are not used on this path.
 
 ```bash
-./scripts/setup_r2r.sh                 # vendor, patch and build the R2R reference tool
+./scripts/setup_r2r.sh                 # clone the R2R fork branch and build the translator
 python3 scripts/build_rebel6_doom.py   # C -> RV32I assembly -> R2R -> doom_all.tas
 cargo build --release --bin rebel6_doom --bin rebel6_run --bin rebel6_asm
 ./target/release/rebel6_doom vendor/doomgeneric/riscv32/build/rebel6/doom_all.tas 2
@@ -147,7 +147,7 @@ divide; the player weapon sprite is not rendered; the R2R tool needs the compati
 * [`src/rebel6/`](file:///home/robson/coding/setun-doom/src/rebel6/): 32-trit REBEL-6 core (`Word24`, instruction encoding, 729 registers, Harvard memories, `.tas` assembler) and the R2R Doom pipeline. See [`docs/rebel6-pipeline.md`](file:///home/robson/coding/setun-doom/docs/rebel6-pipeline.md).
 * [`src/simd.rs`](file:///home/robson/coding/setun-doom/src/simd.rs): AVX2 bitsliced ternary kernels and the framebuffer palette conversion, with scalar fallback and runtime feature detection.
 * [`src/bin/rebel6_run.rs`](file:///home/robson/coding/setun-doom/src/bin/rebel6_run.rs) / [`src/bin/rebel6_asm.rs`](file:///home/robson/coding/setun-doom/src/bin/rebel6_asm.rs) / [`src/bin/rebel6_doom.rs`](file:///home/robson/coding/setun-doom/src/bin/rebel6_doom.rs): `.tas` runner, assembler CLI and Doom `ecall` host.
-* [`scripts/setup_r2r.sh`](file:///home/robson/coding/setun-doom/scripts/setup_r2r.sh) / [`scripts/build_rebel6_doom.py`](file:///home/robson/coding/setun-doom/scripts/build_rebel6_doom.py) / [`scripts/r2r.patch`](file:///home/robson/coding/setun-doom/scripts/r2r.patch): R2R setup, C-to-`.tas` pipeline and compatibility patch.
+* [`scripts/setup_r2r.sh`](file:///home/robson/coding/setun-doom/scripts/setup_r2r.sh) / [`scripts/build_rebel6_doom.py`](file:///home/robson/coding/setun-doom/scripts/build_rebel6_doom.py): R2R clone and build, plus the C-to-`.tas` pipeline. The compatibility changes live on the `setun-doom-compat` branch of [`Tryquetra/RV32IToREBEL`](https://github.com/Tryquetra/RV32IToREBEL), forked from `Soppe/RV32IToREBEL`.
 * [`docs/carry-telemetry.md`](file:///home/robson/coding/setun-doom/docs/carry-telemetry.md) / [`docs/simd.md`](file:///home/robson/coding/setun-doom/docs/simd.md): signed carry measurements and SIMD results.
 * [`src/stack_machine.rs`](file:///home/robson/coding/setun-doom/src/stack_machine.rs): Setun-70 two-stack RPN machine over ternary memory (operand and return stacks, tryte-stream decoder, textual assembler with labels and typed errors), independent of the accumulator CPU and the DBT.
 * [`src/dos/`](file:///home/robson/coding/setun-doom/src/dos/): Setun-DOS kernel, static memory mapping, TFX loader, trichotomic syscalls, and Doom runner.
@@ -170,5 +170,5 @@ divide; the player weapon sprite is not rendered; the R2R tool needs the compati
    AVX2 code lives behind `cfg(all(feature = "std", target_arch = "x86_64"))` with a scalar fallback. A kernel enters a hot path only after an A/B benchmark. The vectorized `R_DrawSpan` measured 0.94x and was removed; the palette conversion measured 1.5x to 2.0x and stayed.
 5. **REBEL-6 Core Stays `no_std`**:
    `src/rebel6/{word,encoding,mem,cpu}.rs` compile without `std`. The assembler and binaries require `std`. `cargo build --no-default-features --lib` must pass.
-6. **R2R Is External and Patched**:
-   `vendor/RV32IToREBEL` is gitignored. `scripts/setup_r2r.sh` copies it from the main worktree, applies `scripts/r2r.patch` and builds it. A fresh worktree has no translator until the script runs.
+6. **R2R Is External and Forked**:
+   `vendor/RV32IToREBEL` is gitignored. `scripts/setup_r2r.sh` clones the fork `Tryquetra/RV32IToREBEL` (from `Soppe/RV32IToREBEL`) and checks out the `setun-doom-compat` branch, which carries the four compatibility changes, then builds it. A fresh worktree has no translator until the script runs. Override with `R2R_REPO` and `R2R_REF`.

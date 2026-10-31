@@ -1,25 +1,35 @@
 #!/usr/bin/env bash
 # Prepares the vendored R2R reference tool for the REBEL-6 Doom pipeline.
 #
-# The vendor directory is gitignored, so a fresh worktree does not contain it. This script
-# copies the pristine upstream checkout from the main worktree (or $R2R_SOURCE), applies the
-# small compatibility patch in scripts/r2r.patch, and builds the translator.
+# vendor/RV32IToREBEL is gitignored, so a fresh worktree has no translator. This script
+# clones the Tryquetra fork and checks out setun-doom-compat, which carries upstream
+# Soppe/RV32IToREBEL plus the four compatibility changes the Doom build needs (symbol+addend
+# operands, unquoted .string parameters, descriptive symbol errors, REBEL-6 only backend).
+# Override the remote with R2R_REPO and the branch with R2R_REF.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR="$ROOT/vendor/RV32IToREBEL"
-SOURCE="${R2R_SOURCE:-$ROOT/../setun-doom/vendor/RV32IToREBEL}"
+REPO="${R2R_REPO:-https://github.com/Tryquetra/RV32IToREBEL.git}"
+REF="${R2R_REF:-setun-doom-compat}"
 
-if [[ ! -d "$VENDOR" ]]; then
-    if [[ ! -d "$SOURCE" ]]; then
-        echo "R2R source not found at $SOURCE; set R2R_SOURCE to a pristine checkout" >&2
+if [[ ! -d "$VENDOR/.git" ]]; then
+    if [[ -e "$VENDOR" ]]; then
+        echo "$VENDOR exists and is not a git checkout; remove it and rerun" >&2
         exit 1
     fi
-    cp -r "$SOURCE" "$VENDOR"
+    git clone --quiet --no-checkout --origin setun "$REPO" "$VENDOR"
 fi
 
-if ! grep -q "find_last_of" "$VENDOR/code/Assemblers/REBEL6/executableprogram.cpp"; then
-    patch -d "$ROOT" -p1 < "$ROOT/scripts/r2r.patch"
+if ! git -C "$VENDOR" remote get-url setun >/dev/null 2>&1; then
+    git -C "$VENDOR" remote add setun "$REPO"
+fi
+git -C "$VENDOR" fetch --quiet setun "+refs/heads/$REF:refs/remotes/setun/$REF"
+if git -C "$VENDOR" rev-parse --verify --quiet "refs/heads/$REF" >/dev/null; then
+    git -C "$VENDOR" checkout --quiet "$REF"
+    git -C "$VENDOR" merge --ff-only --quiet "setun/$REF"
+else
+    git -C "$VENDOR" checkout --quiet --track -b "$REF" "setun/$REF"
 fi
 
 cmake -S "$VENDOR/code" -B "$VENDOR/build" \

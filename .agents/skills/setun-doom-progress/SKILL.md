@@ -92,7 +92,7 @@ cargo build --target riscv64gc-unknown-none-elf --release -p setun-kernel
 ```bash
 cd /home/robson/coding/setun-doom-rebel6
 
-# Uma vez por worktree: copia, patcha e compila o R2R vendorizado
+# Uma vez por worktree: clona a branch do fork e compila o R2R vendorizado
 ./scripts/setup_r2r.sh
 
 # Pipeline completo: C -> clang -S rv32i -> normalização -> R2R -> doom_all.tas
@@ -222,7 +222,7 @@ O encoding veio da especificação de referência pública do REBEL-6, não da d
 4. R2R gera `doom_all.tas`.
 5. `rebel6_asm`/`rebel6_doom` montam e executam.
 
-O R2R vendorizado recebeu um patch em `scripts/r2r.patch`: parser aceita `symbol+offset`, `.string` sem aspas, `main` sem as simulações RV32I/REBEL-6 e o assembler tolera o `.tas` gerado antes de estourar o tamanho fixo de memória.
+O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`, com quatro mudanças de compatibilidade: parser aceita `symbol+offset`, `.string` sem aspas, `main` sem as simulações RV32I/REBEL-6 e o assembler tolera o `.tas` gerado antes de estourar o tamanho fixo de memória.
 
 ---
 
@@ -237,7 +237,7 @@ O R2R vendorizado recebeu um patch em `scripts/r2r.patch`: parser aceita `symbol
 7. **Doom usa 35 Hz de tic e dorme 1 ms** em `TryRunTics`; por isso o modo rápido estabiliza perto de 66 FPS.
 8. **O core REBEL-6 é `no_std`-compatível.** `src/rebel6/{word,encoding,mem,cpu}.rs` não usam `std`; `asm.rs` e os binários são `std`. SIMD fica atrás de `cfg(all(feature = "std", target_arch = "x86_64"))`.
 9. **SIMD só entra com medição.** O caminho de palette ganhou; o `R_DrawSpan` perdeu e foi removido. Não integrar kernel sem benchmark antes e depois.
-10. **R2R é ferramenta externa.** O diretório `vendor/RV32IToREBEL` é ignorado pelo git. `scripts/setup_r2r.sh` copia do worktree principal, aplica `scripts/r2r.patch` e compila. Uma worktree nova não tem o R2R até rodar o script.
+10. **R2R é ferramenta externa.** O diretório `vendor/RV32IToREBEL` é ignorado pelo git. `scripts/setup_r2r.sh` clona o fork `Tryquetra/RV32IToREBEL` e faz checkout da branch `setun-doom-compat`, depois compila. Uma worktree nova não tem o R2R até rodar o script.
 11. **O guest Doom usa `-march=rv32i`.** `__mulsi3`, `__divsi3`, `__udivsi3`, `__modsi3`, `__umodsi3` estão em `src/softmul.c`. `__muldi3` usa shift-add para não recursar no RV32I.
 
 ---
@@ -272,9 +272,8 @@ O R2R vendorizado recebeu um patch em `scripts/r2r.patch`: parser aceita `symbol
 - `src/bin/rebel6_doom.rs`: host Doom com WAD, palette, blit, teclado, relógio e sleeps.
 - `src/simd.rs`: kernels AVX2 bitsliced e conversão de palette.
 - `src/bin/simd_bench.rs`: benchmark dos kernels e da palette.
-- `scripts/setup_r2r.sh`: copia, patcha e compila o R2R.
+- `scripts/setup_r2r.sh`: clona o fork do R2R na branch `setun-doom-compat` e compila.
 - `scripts/build_rebel6_doom.py`: pipeline C → RV32I → R2R → `.tas`.
-- `scripts/r2r.patch`: patch de compatibilidade do R2R.
 - `vendor/doomgeneric/riscv32/`: guest freestanding (headers, libc, soft-float, soft-mul, ABI `ecall`, linker, Makefile).
 - `src/bin/setun_doom_rv32.rs`: driver host do nível 1 (SDL, paleta, teclado, relógio, WAD).
 - `docs/rebel6.md`, `docs/rebel6-pipeline.md`, `docs/carry-telemetry.md`, `docs/simd.md`: referência, pipeline, carry com sinal e SIMD.

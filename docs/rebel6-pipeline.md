@@ -34,14 +34,13 @@ flowchart LR
 | `src/bin/rebel6_run.rs` | Runs a `.tas` image and reports registers and telemetry |
 | `src/bin/rebel6_asm.rs` | Assembles a `.tas` image and reports its layout |
 | `src/bin/rebel6_doom.rs` | Doom runner with the eleven `ecall` services |
-| `scripts/setup_r2r.sh` | Copies and patches the vendored R2R tool, then builds it |
+| `scripts/setup_r2r.sh` | Clones the `setun-doom-compat` branch of the R2R fork and builds it |
 | `scripts/build_rebel6_doom.py` | Compiles, normalizes, concatenates, translates and emits `doom_all.tas` |
-| `scripts/r2r.patch` | Compatibility patch for the reference tool |
 
 ## Build and run
 
 ```bash
-# Once per worktree: vendor and patch R2R.
+# Once per worktree: clone the R2R fork branch and build the translator.
 ./scripts/setup_r2r.sh
 
 # Build the translator and the Rust binaries.
