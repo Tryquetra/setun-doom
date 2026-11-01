@@ -95,7 +95,8 @@ The execution plan, decisions and acceptance criteria for these two levels live 
 the project, written for the people and the AI agents working on it, live in
 [`docs/directives.md`](docs/directives.md) (in Portuguese). The native calling convention, data
 model, syscall interface and versioning policy live in [`docs/abi.md`](docs/abi.md), as the
-`abi-v0` proposal.
+`abi-v0` proposal. The falsifiable hypotheses for the FPGA level, with their tests and metrics,
+live in [`docs/fpga-hypotheses.md`](docs/fpga-hypotheses.md) (in Portuguese).
 
 ### Level 5: Native REBEL-6 Toolchain and ABI
 
