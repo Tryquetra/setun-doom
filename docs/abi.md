@@ -120,9 +120,12 @@ values, borrowed instead of invented: `-EPERM (-1)`, `-ENOENT (-2)`, `-EIO (-5)`
 `-EFAULT (-14)`, `-EINVAL (-22)`. A value of zero from `wad_read` means end of file; a failure
 returns a negative number.
 
-This section changes current behavior. Today `SYS_WAD_OPEN` returns a boolean and `SYS_WAD_READ`
-returns 0 both at end of file and on failure (`src/bin/rebel6_doom.rs:75`), which loses
-information. The host and the guest shim both need the change before the ABI freezes.
+This section changed behavior that existed before it. `SYS_WAD_OPEN` returned a boolean and
+`SYS_WAD_READ` returned 0 both at end of file and on failure, which lost information. The host now
+returns the negative errno and the guest shim treats a negative return as a failure:
+`W_Host_OpenFile` returns NULL on `-ENOENT` and `W_Host_Read` returns 0 on a negative seek or read.
+Verified with the Doom guest, which renders E1M1 with the palette set, and with a missing WAD,
+which fails in about half a second instead of reading garbage.
 
 ### 4.4 Traps
 

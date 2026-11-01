@@ -88,8 +88,11 @@ static void W_Host_CloseFile(wad_file_t *wad)
 static size_t W_Host_Read(wad_file_t *wad, unsigned int offset, void *buffer, size_t buffer_len)
 {
     (void)wad;
-    setun_wad_seek((int32_t)offset);
-    return (size_t)setun_wad_read(buffer, (int32_t)buffer_len);
+    if (setun_wad_seek((int32_t)offset) < 0) {
+        return 0;
+    }
+    int32_t read = setun_wad_read(buffer, (int32_t)buffer_len);
+    return read < 0 ? 0 : (size_t)read;
 }
 
 /* `w_file.c` dispatches through this class object; `w_file_stdc.c` is not built. */

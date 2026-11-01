@@ -24,6 +24,12 @@ const SYS_WAD_SIZE: i64 = 8;
 const SYS_SLEEP_MS: i64 = 9;
 const SYS_PALETTE: i64 = 10;
 
+// Negative errno values, borrowed from the Linux generic numbering (`docs/abi.md` 4.3).
+const ERR_NOENT: i32 = -2;
+const ERR_IO: i32 = -5;
+const ERR_BADF: i32 = -9;
+const ERR_FAULT: i32 = -14;
+
 const WIDTH: usize = 320;
 const HEIGHT: usize = 200;
 const STACK_TOP: i64 = 6_500_000;
@@ -83,11 +89,17 @@ impl Host {
             }
             SYS_WRITE => {
                 let len = a1.max(0) as usize;
-                if let Ok(bytes) = cpu.data.read_bytes(a0, len) {
-                    print!("{}", String::from_utf8_lossy(&bytes));
-                    let _ = std::io::stdout().flush();
+                match cpu.data.read_bytes(a0, len) {
+                    Ok(bytes) => {
+                        let mut stdout = std::io::stdout();
+                        let written = match stdout.write_all(&bytes).and_then(|()| stdout.flush()) {
+                            Ok(()) => len as i32,
+                            Err(_) => ERR_IO,
+                        };
+                        cpu.regs[10] = Word24::from_i32(written);
+                    }
+                    Err(_) => cpu.regs[10] = Word24::from_i32(ERR_FAULT),
                 }
-                cpu.regs[10] = Word24::from_i32(len as i32);
             }
             SYS_TICKS_MS => {
                 // Deterministic clock tied to retired instructions: 1 ms per 1000 instructions.
@@ -96,43 +108,50 @@ impl Host {
             }
             SYS_BLIT => {
                 let len = WIDTH * HEIGHT;
-                if let Err(err) = cpu.data.read_bytes(a0, len) {
-                    eprintln!("blit: cannot read {len} bytes at {a0}: {err:?}");
-                }
-                if let Ok(indices) = cpu.data.read_bytes(a0, len) {
-                    for (i, &index) in indices.iter().enumerate() {
-                        let p = index as usize * 3;
-                        self.rgba[i * 4] = self.palette[p];
-                        self.rgba[i * 4 + 1] = self.palette[p + 1];
-                        self.rgba[i * 4 + 2] = self.palette[p + 2];
-                        self.rgba[i * 4 + 3] = 255;
+                match cpu.data.read_bytes(a0, len) {
+                    Err(err) => {
+                        eprintln!("blit: cannot read {len} bytes at {a0}: {err:?}");
+                        cpu.regs[10] = Word24::from_i32(ERR_FAULT);
                     }
-                    let nonzero = indices.iter().filter(|&&v| v != 0).count();
-                    if std::env::var("REBEL6_FRAME_TRACE").is_ok() {
-                        eprintln!(
-                            "blit frame={} nonzero={} palette0={:?} palette_nonzero={}",
-                            self.frames + 1,
-                            nonzero,
-                            &self.palette[..12],
-                            self.palette.iter().filter(|&&v| v != 0).count()
-                        );
-                    }
-                    self.frames += 1;
-                    if std::env::var("REBEL6_FRAME_TRACE").is_ok() {
-                        let now = Instant::now();
-                        eprintln!(
-                            "frame={} cycles={} since_start={:?} since_last={:?}",
-                            self.frames,
-                            cpu.cycles,
-                            self.started.elapsed(),
-                            now.duration_since(self.last_frame)
-                        );
-                        self.last_frame = now;
-                    }
-                    if self.frames <= 3 {
-                        let name = format!("rebel6_frame_{}.ppm", self.frames);
-                        let _ = save_ppm(&name, &self.rgba);
-                        println!("frame {} saved to {name}", self.frames);
+                    Ok(indices) => {
+                        for (i, &index) in indices.iter().enumerate() {
+                            let p = index as usize * 3;
+                            self.rgba[i * 4] = self.palette[p];
+                            self.rgba[i * 4 + 1] = self.palette[p + 1];
+                            self.rgba[i * 4 + 2] = self.palette[p + 2];
+                            self.rgba[i * 4 + 3] = 255;
+                        }
+                        let nonzero = indices.iter().filter(|&&v| v != 0).count();
+                        if std::env::var("REBEL6_FRAME_TRACE").is_ok() {
+                            eprintln!(
+                                "blit frame={} nonzero={} palette0={:?} palette_nonzero={}",
+                                self.frames + 1,
+                                nonzero,
+                                &self.palette[..12],
+                                self.palette.iter().filter(|&&v| v != 0).count()
+                            );
+                        }
+                        self.frames += 1;
+                        if std::env::var("REBEL6_FRAME_TRACE").is_ok() {
+                            let now = Instant::now();
+                            eprintln!(
+                                "frame={} cycles={} since_start={:?} since_last={:?}",
+                                self.frames,
+                                cpu.cycles,
+                                self.started.elapsed(),
+                                now.duration_since(self.last_frame)
+                            );
+                            self.last_frame = now;
+                        }
+                        if self.frames <= 3 {
+                            let name = format!("rebel6_frame_{}.ppm", self.frames);
+                            if let Err(err) = save_ppm(&name, &self.rgba) {
+                                eprintln!("cannot write {name}: {err}");
+                            } else {
+                                println!("frame {} saved to {name}", self.frames);
+                            }
+                        }
+                        cpu.regs[10] = Word24::ZERO;
                     }
                 }
             }
@@ -140,23 +159,37 @@ impl Host {
                 cpu.regs[10] = Word24::ZERO;
             }
             SYS_WAD_OPEN => {
-                let ok = self.open_wad("vendor/DOOM1.WAD");
-                cpu.regs[10] = Word24::from_i32(i32::from(ok));
+                let opened = self.open_wad("vendor/DOOM1.WAD");
+                cpu.regs[10] = Word24::from_i32(if opened { 0 } else { ERR_NOENT });
             }
             SYS_WAD_SEEK => {
-                if let Some(file) = self.wad.as_mut() {
-                    if file.seek(SeekFrom::Start(a0 as u64)).is_ok() {
-                        self.wad_pos = a0;
-                    }
-                }
-                cpu.regs[10] = Word24::ZERO;
+                let result = match self.wad.as_mut() {
+                    None => ERR_BADF,
+                    Some(file) => match file.seek(SeekFrom::Start(a0 as u64)) {
+                        Ok(_) => {
+                            self.wad_pos = a0;
+                            0
+                        }
+                        Err(_) => ERR_IO,
+                    },
+                };
+                cpu.regs[10] = Word24::from_i32(result);
             }
             SYS_WAD_READ => {
                 let len = a1.max(0) as usize;
                 let mut buffer = vec![0u8; len];
                 let read = match self.wad.as_mut() {
-                    Some(file) => file.read(&mut buffer).unwrap_or(0),
-                    None => 0,
+                    None => {
+                        cpu.regs[10] = Word24::from_i32(ERR_BADF);
+                        return Ok(());
+                    }
+                    Some(file) => match file.read(&mut buffer) {
+                        Ok(read) => read,
+                        Err(_) => {
+                            cpu.regs[10] = Word24::from_i32(ERR_IO);
+                            return Ok(());
+                        }
+                    },
                 };
                 if read > 0 {
                     if std::env::var("REBEL6_WAD_TRACE").is_ok() && self.wad_pos < 128 {
@@ -168,7 +201,11 @@ impl Host {
                             &buffer[..read.min(16)]
                         );
                     }
-                    let _ = cpu.data.write_bytes(a0, &buffer[..read]);
+                    if let Err(err) = cpu.data.write_bytes(a0, &buffer[..read]) {
+                        eprintln!("wad read: cannot write {read} bytes at {a0}: {err:?}");
+                        cpu.regs[10] = Word24::from_i32(ERR_FAULT);
+                        return Ok(());
+                    }
                     self.wad_pos += read as i64;
                 }
                 cpu.regs[10] = Word24::from_i32(read as i32);
@@ -177,21 +214,34 @@ impl Host {
                 if std::env::var("REBEL6_WAD_TRACE").is_ok() {
                     eprintln!("wad size = {}", self.wad_len);
                 }
-                cpu.regs[10] = Word24::from_i32(self.wad_len as i32);
+                let size = if self.wad.is_some() {
+                    self.wad_len as i32
+                } else {
+                    ERR_BADF
+                };
+                cpu.regs[10] = Word24::from_i32(size);
             }
-            SYS_SLEEP_MS => {}
-            SYS_PALETTE => {
-                if let Ok(bytes) = cpu.data.read_bytes(a0, 768) {
-                    if std::env::var("REBEL6_FRAME_TRACE").is_ok() {
-                        eprintln!(
-                            "palette call: first={:?} nonzero={}",
-                            &bytes[..12],
-                            bytes.iter().filter(|&&v| v != 0).count()
-                        );
-                    }
-                    self.palette.copy_from_slice(&bytes);
-                }
+            SYS_SLEEP_MS => {
                 cpu.regs[10] = Word24::ZERO;
+            }
+            SYS_PALETTE => {
+                match cpu.data.read_bytes(a0, 768) {
+                    Ok(bytes) => {
+                        if std::env::var("REBEL6_FRAME_TRACE").is_ok() {
+                            eprintln!(
+                                "palette call: first={:?} nonzero={}",
+                                &bytes[..12],
+                                bytes.iter().filter(|&&v| v != 0).count()
+                            );
+                        }
+                        self.palette.copy_from_slice(&bytes);
+                        cpu.regs[10] = Word24::ZERO;
+                    }
+                    Err(err) => {
+                        eprintln!("palette: cannot read 768 bytes at {a0}: {err:?}");
+                        cpu.regs[10] = Word24::from_i32(ERR_FAULT);
+                    }
+                }
             }
             other => {
                 eprintln!("unknown ecall {other}");

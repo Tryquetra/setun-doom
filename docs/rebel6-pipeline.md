@@ -87,6 +87,19 @@ of string-loop iterations. The final architectural state is identical.
 | Flat data space | The core populates one byte-addressed data window instead of the three-region D-ROM/D-RAM/MMIO map |
 | Binary loads and stores | Doom uses the RV32I byte-addressed forms; ternary `lw.t`/`sw.t` are implemented but not used by this guest |
 
+## Frame parity and the deterministic clock
+
+Frame parity is only meaningful for changes that keep the guest image identical. The host clock is
+deterministic, one millisecond per 1000 retired instructions, so any guest source change moves the
+game's timeline relative to the blit index. A build that renders E1M1 at blit 2 can render it at
+blit 4 with the same pixels: the errno change reached 63,847 non-zero pixels and a set palette at
+blit 4, while the unmodified build reached them at blit 2.
+
+Acceptance for a guest source change is therefore the first rendered frame with the level content
+and the palette set, plus equal content at equal cycle budgets. Acceptance for a tooling change
+that preserves the image, such as moving the build to `R2R --link`, stays exact: identical `.tas`
+and identical frame bytes.
+
 ## Known limits
 
 - The assembler concatenates translation units instead of resolving ELF-style objects. Symbol
