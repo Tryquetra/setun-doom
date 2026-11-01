@@ -129,12 +129,14 @@ AVX2 kernels cover bitsliced tritwise operations and the framebuffer palette con
 palette path is integrated; a vectorized `R_DrawSpan` measured 0.94x and was removed. See
 [`docs/simd.md`](file:///home/robson/coding/setun-doom/docs/simd.md).
 
-Known limits: the pipeline concatenates translation units instead of linking objects, with
-unit-local symbols renamed and duplicate labels rejected; there are no relocation records, so
-unused code is not dropped; `.bss` is NOBITS and follows the initialized data; `.p2align` is
-opt-in because honouring clang's alignment by default shifts the image and breaks the frame; the
-data space is a flat byte-addressed window; the guest uses `-march=rv32i` with soft multiply and
-divide; the player weapon sprite is not rendered.
+Known limits: the build normalizes one `.s` per translation unit and links them with `R2R --link`,
+which scopes every symbol a unit does not declare `.globl` by unit name; the linker works on
+source-level units, so there are no relocation records and unused code is not dropped; `.bss` is
+NOBITS and follows the initialized data; `.p2align` is opt-in because honouring clang's alignment
+shifts the image and the frame stops matching at the same blit index, which needs re-checking
+against the deterministic-clock rule in `docs/rebel6-pipeline.md`; the data space is a flat
+byte-addressed window; the guest uses `-march=rv32i` with soft multiply and divide; the player
+weapon sprite is not rendered.
 
 ---
 

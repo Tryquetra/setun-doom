@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """Build the doomgeneric guest for the REBEL-6 core.
 
-Pipeline: clang -S (rv32i) -> text normalization -> single concatenated .s -> R2R -> .tas.
+Pipeline: clang -S (rv32i) -> text normalization -> one `.s` per unit -> `R2R --link` -> `.tas`.
 
-The R2R reference tool accepts one assembly file and has no linker, so every translation unit
-is normalized and concatenated into one source before translation. clang writes assembly to
-stdout, so no per-unit `.s` files touch the disk.
+Each translation unit is normalized into `build/rebel6/units/<stem>.s` and handed to the R2R
+linker, which scopes every symbol the unit does not declare `.globl` with the unit prefix and
+merges the units into one image. Two file-scope statics of the same name (`plr` in `am_map.c` and
+`hu_stuff.c`, `anims` in `wi_stuff.c` and `p_spec.c`) therefore keep separate addresses without a
+Python renaming pass.
 
-Scope handling replaces a linker: every symbol that clang does not declare `.globl` is local to
-its translation unit, so it is renamed with the unit prefix. Without that pass, two file-scope
-statics of the same name (`plr` in `am_map.c` and `hu_stuff.c`, `anims` in `wi_stuff.c` and
-`p_spec.c`) share one address in the combined image.
+Alongside the image the build writes two indexes:
 
-Alongside `doom_all.s` the build writes two indexes:
-
-* `doom_all.map`: combined line -> translation unit and original line.
-* `doom_all.syms`: emitted symbol -> scope, translation unit and original line.
+* `doom_all.map`: unit -> its `.s` file, and per line the C file and line in effect.
+* `doom_all.syms`: emitted symbol -> scope, unit, original line and original name.
 """
 
 from __future__ import annotations
@@ -71,7 +68,6 @@ CFLAGS = [
     "-D_DEFAULT_SOURCE",
 ]
 
-IDENT = re.compile(r"[A-Za-z_.$][\w.$]*")
 GLOBALS = re.compile(r"^\s*\.(?:globl|global|weak)\s+(.+?)\s*$")
 LOCALS = re.compile(r"^\s*\.local\s+(.+?)\s*$")
 LABEL = re.compile(r"^([A-Za-z_.$][\w.$]*):")
@@ -137,50 +133,6 @@ def collect_symbols(text: str) -> tuple[dict[str, int], set[str], set[str]]:
             defined.setdefault(match.group(1), number)
             common.add(match.group(1))
     return defined, globals_, common
-
-
-def rename_tokens(line: str, mapping: dict[str, str]) -> str:
-    """Rewrites whole identifier tokens, skipping string literals."""
-    if not mapping:
-        return line
-    out: list[str] = []
-    i = 0
-    while i < len(line):
-        c = line[i]
-        if c == '"':
-            j = i + 1
-            while j < len(line):
-                if line[j] == "\\":
-                    j += 2
-                    continue
-                if line[j] == '"':
-                    j += 1
-                    break
-                j += 1
-            out.append(line[i:j])
-            i = j
-            continue
-        match = IDENT.match(line, i)
-        if match:
-            token = match.group(0)
-            out.append(mapping.get(token, token))
-            i = match.end()
-            continue
-        out.append(c)
-        i += 1
-    return "".join(out)
-
-
-def rename_line(line: str, mapping: dict[str, str]) -> str:
-    """Renames symbols on a line, leaving the mnemonic of an instruction alone.
-
-    A local symbol can share its name with a mnemonic (clang emits a label named
-    `tail`), and renaming the mnemonic would turn `tail foo` into a directive.
-    """
-    match = re.match(r"^(\s*)([A-Za-z_][\w.]*)(.*)$", line)
-    if match and not match.group(2).startswith(".") and not match.group(3).lstrip().startswith(":"):
-        return match.group(1) + match.group(2) + rename_tokens(match.group(3), mapping)
-    return rename_tokens(line, mapping)
 
 
 def expand_string(body: str) -> str:
@@ -274,8 +226,7 @@ def rewrite(line: str, prefix: str) -> str:
 
     line = re.sub(r"\.section\s+([^,\n]+).*", section, line)
 
-    # File-local labels: clang's `.L*` names and assembler numeric labels.
-    line = re.sub(r"\.L([A-Za-z0-9_.$]*)", lambda m: f".L{prefix}_{m.group(1)}", line)
+    # Assembler numeric labels become named labels; `.L*` names are scoped by the linker.
     line = re.sub(r"^\s*(\d+):", lambda m: f".L{prefix}_num{m.group(1)}:", line)
     line = re.sub(r"\b(\d+)b\b", lambda m: f".L{prefix}_num{m.group(1)}", line)
     line = re.sub(r"\b(\d+)f\b", lambda m: f".L{prefix}_num{m.group(1)}", line)
@@ -293,7 +244,6 @@ class Unit:
     c_file: list[str] = field(default_factory=list)
     defined: dict[str, int] = field(default_factory=dict)
     globals: set[str] = field(default_factory=set)
-    rename: dict[str, str] = field(default_factory=dict)
     common: set[str] = field(default_factory=set)
     label_loc: dict[int, tuple[str, int]] = field(default_factory=dict)
 
@@ -327,11 +277,6 @@ def debug_locations(text: str) -> tuple[list[tuple[str, int]], list[tuple[int, t
 
 def normalize(text: str, prefix: str, path: Path | None) -> Unit:
     defined, globals_, common = collect_symbols(text)
-    rename = {
-        name: f".L{prefix}_{name}"
-        for name in defined
-        if name not in globals_ and not name.startswith(".L")
-    }
     locations, positions = debug_locations(text)
     label_loc: dict[int, tuple[str, int]] = {}
     for name, asm_line in defined.items():
@@ -348,7 +293,6 @@ def normalize(text: str, prefix: str, path: Path | None) -> Unit:
         path=path,
         defined=defined,
         globals=globals_,
-        rename=rename,
         common=common,
         label_loc=label_loc,
     )
@@ -363,7 +307,6 @@ def normalize(text: str, prefix: str, path: Path | None) -> Unit:
             c_file, c_line = "", 0
         for out in expand(line):
             out = rewrite(out, prefix)
-            out = rename_line(out, rename)
             unit.lines.append(out)
             unit.source.append(number)
             unit.c_line.append(c_line or number)
@@ -386,21 +329,24 @@ def compile_assembly(source: Path) -> str:
     return result.stdout
 
 
-def write_indexes(units: list[Unit], map_path: Path, syms_path: Path) -> dict[str, list[tuple[int, int, str]]]:
-    """Writes the line map and the symbol table.
+def write_indexes(
+    units: list[Unit], names: list[str], map_path: Path, syms_path: Path
+) -> dict[str, list[tuple[int, int, str]]]:
+    """Writes the per-unit line map and the symbol table.
 
     Returns symbol -> [(unit, line, file)], where an empty file means the unit's own source.
     """
     origin: dict[str, list[tuple[int, int, str]]] = {}
-    map_rows = ["# combined\tunit\tline\tfile"]
+    map_rows = ["# unit\tlinker name\tsource\tassembly"]
     sym_rows = ["# emitted\tscope\tunit\tline\tfile\toriginal"]
     for index, unit in enumerate(units):
         label = str(unit.path) if unit.path else "<generated>"
-        map_rows.append(f"# unit {index}\t{label}")
+        map_rows.append(f"# unit {index}\t{names[index]}\t{label}\tunits/{names[index]}.s")
+        map_rows.append("# line\tc_line\tc_file")
         located = dict(zip(unit.source, zip(unit.c_line, unit.c_file)))
         for name, asm_line in unit.defined.items():
-            emitted = unit.rename.get(name, name)
             scope = "global" if name in unit.globals else "local"
+            emitted = name if scope == "global" else f".{names[index]}_{name}"
             c_line, c_file = located.get(asm_line, (asm_line, ""))
             if name in unit.common:
                 c_line, c_file = 0, ""
@@ -411,12 +357,8 @@ def write_indexes(units: list[Unit], map_path: Path, syms_path: Path) -> dict[st
             sym_rows.append(f"{emitted}\t{scope}\t{index}\t{c_line}\t{c_file}\t{name}")
         for name in sorted(unit.globals - set(unit.defined)):
             sym_rows.append(f"{name}\tglobal\t{index}\t0\t\t{name}")
-
-    combined_line = 0
-    for index, unit in enumerate(units):
-        for c_line, c_file in zip(unit.c_line, unit.c_file):
-            combined_line += 1
-            map_rows.append(f"{combined_line}\t{index}\t{c_line}\t{c_file}")
+        for line_number, (c_line, c_file) in enumerate(zip(unit.c_line, unit.c_file), 1):
+            map_rows.append(f"{line_number}\t{c_line}\t{c_file}")
 
     map_path.write_text("\n".join(map_rows) + "\n")
     syms_path.write_text("\n".join(sym_rows) + "\n")
@@ -468,50 +410,46 @@ def main() -> None:
     ]
     units.append(Unit(path=None, lines=heap, source=[0] * len(heap), c_line=[0] * len(heap), c_file=[""] * len(heap)))
 
-    combined: list[str] = []
-    for unit in units:
-        combined.extend(unit.lines)
+    unit_dir = BUILD / "units"
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    for stale in unit_dir.glob("*.s"):
+        stale.unlink()
+    legacy = BUILD / "doom_all.s"
+    if legacy.exists():
+        legacy.unlink()
 
-    defined_at: dict[str, tuple[int, int]] = {}
-    duplicates: list[str] = []
-    line_number = 0
-    for unit_index, unit in enumerate(units):
-        for offset, line in enumerate(unit.lines):
-            line_number += 1
-            match = LABEL.match(line)
-            if not match:
-                continue
-            name = match.group(1)
-            if name in defined_at:
-                first_unit, first_offset = defined_at[name]
-                duplicates.append(
-                    f"{name}: {units[first_unit].path} line {units[first_unit].c_line[first_offset]} and "
-                    f"{units[unit_index].path} line {unit.c_line[offset]} (combined line {line_number})"
-                )
-            else:
-                defined_at[name] = (unit_index, offset)
-    if duplicates:
-        for duplicate in duplicates:
-            print(f"error: duplicate label {duplicate}", file=sys.stderr)
-        raise SystemExit("duplicate labels in the combined assembly")
+    names: list[str] = []
+    unit_paths: list[Path] = []
+    seen: dict[str, int] = {}
+    for index, unit in enumerate(units):
+        stem = unit.path.stem if unit.path else ("text" if index == 0 else "heap")
+        count = seen.get(stem, 0)
+        seen[stem] = count + 1
+        name = stem if count == 0 else f"{stem}_{count}"
+        names.append(name)
+        path = unit_dir / f"{name}.s"
+        path.write_text("\n".join(unit.lines) + "\n")
+        unit_paths.append(path)
 
-    combined_path = BUILD / "doom_all.s"
-    combined_path.write_text("\n".join(combined))
-    origin = write_indexes(units, BUILD / "doom_all.map", BUILD / "doom_all.syms")
+    origin = write_indexes(units, names, BUILD / "doom_all.map", BUILD / "doom_all.syms")
 
-    renamed = sum(len(unit.rename) for unit in units)
     owners: dict[str, list[int]] = {}
     for index, unit in enumerate(units):
         for name in unit.defined:
             owners.setdefault(name, []).append(index)
     collisions = {name: index for name, index in owners.items() if len(index) > 1}
-    print(f"combined: {combined_path} ({len(combined)} lines)")
-    print(f"scope: {renamed} local symbols renamed, {len(collisions)} duplicate definitions avoided")
+    print(f"units: {len(unit_paths)} files in {unit_dir} ({sum(len(unit.lines) for unit in units)} lines)")
+    print(f"scope: {len(collisions)} same-named definitions resolved by the linker")
     for name, index in sorted(collisions.items()):
         units_of = ", ".join(Path(str(units[i].path)).name if units[i].path else "<generated>" for i in index)
         print(f"       {name}: {units_of}")
 
-    result = subprocess.run([str(R2R), str(combined_path)], cwd=BUILD, text=True, capture_output=True)
+    result = subprocess.run(
+        [str(R2R), "--link", "-o", "doom_all", *[str(path) for path in unit_paths]],
+        cwd=BUILD,
+        text=True,
+        capture_output=True,
+    )
     tas = BUILD / "doom_all.tas"
     if not tas.exists():
         explain(result.stdout + result.stderr, origin, units)

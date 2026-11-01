@@ -16,8 +16,8 @@ and the DBT are not used on this path.
 ```mermaid
 flowchart LR
   A[doomgeneric C + port] -->|clang -S -march=rv32i -o -| B[assembly on stdout]
-  B -->|normalize + scope + concatenate| C[doom_all.s]
-  C -->|R2R| D[doom_all.tas]
+  B -->|normalize per unit| C[units/*.s]
+  C -->|R2R --link| D[doom_all.tas]
   D -->|rebel6 assembler| E[instruction + data image]
   E -->|rebel6 core| F[ecall host: WAD, blit, palette, keyboard]
 ```
@@ -36,7 +36,7 @@ flowchart LR
 | `src/bin/rebel6_doom.rs` | Doom runner with the eleven `ecall` services |
 | `scripts/setup_r2r.sh` | Clones the `setun-doom-compat` branch of the R2R fork and builds it |
 | `vendor/RV32IToREBEL` | Translator and linker: `--link`, `--emit-obj`, `--emit-image`, `--run-tests`, `--diff`, `--stats` |
-| `scripts/build_rebel6_doom.py` | Compiles to stdout, normalizes, renames unit-local symbols, concatenates, translates and emits `doom_all.tas` plus `doom_all.map` and `doom_all.syms` |
+| `scripts/build_rebel6_doom.py` | Compiles to stdout, normalizes each unit into `build/rebel6/units/<stem>.s`, links with `R2R --link` and writes `doom_all.tas` plus `doom_all.map` and `doom_all.syms` |
 
 ## Build and run
 
@@ -80,8 +80,8 @@ of string-loop iterations. The final architectural state is identical.
 | R2R parser accepts `symbol+offset` | Clang emits jump tables and aliases with addends; the reference parser accepted only bare symbols |
 | `.string` quotes stripped | The reference assembler emitted the quote characters as string data |
 | `.asciz` expanded to `.byte` | Octal escapes such as `\000` were decoded incorrectly by the normalization layer |
-| Single concatenated translation unit | R2R has no linker and accepts one assembly file; `.L` labels and every symbol clang does not declare `.globl` are renamed per unit, and duplicate labels abort the build |
-| Line map and symbol table | `doom_all.map` and `doom_all.syms` carry the C file and line for every combined line and symbol, from clang's `.loc` directives (`-gline-directives-only`) |
+| Per-unit symbol scoping | The linker prefixes every symbol a unit does not declare `.globl` with the unit name, so two file-scope statics called `plr` (`am_map.c`, `hu_stuff.c`) or `anims` (`p_spec.c`, `wi_stuff.c`) keep separate addresses |
+| Line map and symbol table | `doom_all.map` records, per unit, its `.s` file and the C file and line in effect on each line; `doom_all.syms` carries the emitted name, scope, unit and original name, from clang's `.loc` directives (`-gline-directives-only`) |
 | `__muldi3` implemented with shift-add | A 64-bit `*` lowers to a recursive `__muldi3` call on RV32I |
 | `__mulsi3`, `__divsi3`, `__udivsi3`, `__modsi3`, `__umodsi3` added | The guest was built with `-march=rv32i`, without the M extension |
 | Flat data space | The core populates one byte-addressed data window instead of the three-region D-ROM/D-RAM/MMIO map |
@@ -102,9 +102,9 @@ and identical frame bytes.
 
 ## Known limits
 
-- The assembler concatenates translation units instead of resolving ELF-style objects. Symbol
-  scoping replaces part of a linker; there are no relocation records, so unused code cannot be
-  dropped the way `--gc-sections` drops it on the RV32IM path.
+- The linker merges source-level units and resolves symbols by name; it does not consume ELF
+  objects or relocation records, so unused code cannot be dropped the way `--gc-sections` drops it
+  on the RV32IM path.
 - `.bss` is NOBITS: it is reserved after all initialized data and never stored in the image. The
   Doom image keeps 4,357,942 data trytes and reserves 243,796 BSS trytes.
 - `.align` and `.balign` are honoured. `.p2align`, which clang emits for every global, stays

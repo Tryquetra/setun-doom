@@ -19,8 +19,8 @@ criteria for each phase.
 
 | Order | Step | Why now | Acceptance |
 | --: | :-- | :-- | :-- |
-| 1 | Move the build to `R2R --link` | Removes the 126,931-line concatenation and the Python scoping logic; the linker already exists | Identical `.tas` and image, frame 2 unchanged |
-| 2 | Add `--emit-map` and `--emit-syms` to R2R | The diagnostic map is a Level 6 prerequisite and currently comes from Python | Map with unit, C line and combined line per expression |
+| 1 | Move the build to `R2R --link` | Removes the 126,931-line concatenation and the Python scoping logic; the linker already exists | Done: 87 units linked, image identical (75,515 instructions, entry 74,280, data base 402,748, 22,148,056 cycles at frame 1) |
+| 2 | Add `--emit-map` and `--emit-syms` to R2R | The diagnostic map is a Level 6 prerequisite and currently comes from Python | Map with unit, C line and assembly line per expression |
 | 3 | Write `docs/abi.md` | The ABI is the contract for the backend, the runtime and verification | Calling convention, register classes, stack, pointers, `char`, varargs, structs (draft written, `abi-v0`, awaits the freeze gate) |
 | 4 | Single source for the ISA specification | The encoder is generated from the Rust spec; the assembler and simulator keep copies | One file generates encoder, assembler tables, decoder and tests |
 | 5 | Retarget `src/codegen` to REBEL-6 | The LLVM IR pipeline exists, but emits the 21-trit Setun ISA | A whole C program compiles and runs on the REBEL-6 core |
@@ -79,7 +79,7 @@ model can coexist with this one.
 ## First week
 
 1. Open `feat/level-5-rebel6-native`.
-2. Migrate `build_rebel6_doom.py` to `R2R --link` and compare image and frame.
+2. Migrate `build_rebel6_doom.py` to `R2R --link` and compare image and frame. Done.
 3. Add `--emit-map` and `--emit-syms` to R2R.
 4. Write `docs/abi.md` with the calling convention and the pointer model.
 5. Create `tests/level5/` with an arithmetic C program and the `rebel6_cc` driver skeleton.
