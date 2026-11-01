@@ -5,6 +5,7 @@
 pub mod asm;
 pub mod cpu;
 pub mod encoding;
+pub mod isa;
 pub mod mem;
 pub mod word;
 
@@ -12,5 +13,6 @@ pub mod word;
 pub use asm::{assemble, AsmError, Image, DATA_BASE};
 pub use cpu::{Cpu, Outcome, RunResult, Trap, REGISTERS};
 pub use encoding::{decode, encode, get_field, get_trit, Format, Instr, Op};
+pub use isa::{spec, Spec, INSTRUCTIONS};
 pub use mem::{DataMem, MemError};
 pub use word::{Word24, HALF, MODULUS, TRITS};

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 use crate::rebel6::cpu::Cpu;
 use crate::rebel6::encoding::{encode, spec, Format, Instr, Op};
+use crate::rebel6::isa;
 use crate::rebel6::word::POW3;
 
 /// Fallback data base used when the image has no instructions.
@@ -701,9 +702,9 @@ impl Assembler {
                 return Err(AsmError {
                     line: self.line,
                     message: format!(
-                        "immediate {} out of range for {}",
+                        "immediate {} out of range for {:?}",
                         instr.imm,
-                        instr.op.name()
+                        instr.op
                     ),
                 });
             }
@@ -974,6 +975,7 @@ fn parse_string(text: &str) -> Result<Vec<u8>, AsmError> {
 }
 
 fn parse_op(name: &str) -> Option<(Op, i8, bool)> {
+    // Aliases live here; canonical mnemonics come from the instruction table.
     let (op, fill, sign) = match name {
         "add.t" => (Op::AddT, 0, false),
         "sub.t" => (Op::SubT, 0, false),
@@ -1057,7 +1059,7 @@ fn parse_op(name: &str) -> Option<(Op, i8, bool)> {
         "sw" => (Op::Sw, 0, false),
         "sh" => (Op::Sh, 0, false),
         "sb" => (Op::Sb, 0, false),
-        _ => return None,
+        _ => (isa::op_for_name(name)?, 0, false),
     };
     Some((op, fill, sign))
 }

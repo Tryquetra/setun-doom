@@ -205,6 +205,7 @@ comparáveis ao 33,24% do paper.
 
 ### Core puro
 
+- `src/rebel6/isa.rs`: fonte única do ISA, uma linha por encoding (operação, mnemônico, formato, opcode e func), lida pelo encoder, decoder, assembler e testes.
 - `src/rebel6/word.rs`: `Word24`, wrap balanceado módulo `3^24`, shifts, rotações, lógica trit a trit, maioria/minoria, flips e energia.
 - `src/rebel6/encoding.rs`: sete formatos (R, I, B, G, X, D, Y), encoder/decoder empacotado em 2 bits por trit em `u64`.
 - `src/rebel6/mem.rs`: memória de dados endereçada em byte/tryte, loads e stores binários little-endian.

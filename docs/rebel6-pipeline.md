@@ -27,7 +27,8 @@ flowchart LR
 | Path | Contents |
 | :-- | :-- |
 | `src/rebel6/word.rs` | `Word24`, balanced wrap modulo `3^24`, shifts, rotations, tritwise logic, majority/minority, flip and energy accounting |
-| `src/rebel6/encoding.rs` | Seven instruction formats, opcode/func tables, encoder and decoder packed at two bits per trit in a `u64` |
+| `src/rebel6/isa.rs` | Single source of the instruction set: one row per encoding with operation, mnemonic, format, opcode and function field, plus the lookups the encoder, the decoder, the assembler and the tests use |
+| `src/rebel6/encoding.rs` | Seven instruction formats, encoder and decoder packed at two bits per trit in a `u64`, both driven by the `isa` table |
 | `src/rebel6/mem.rs` | Byte/tryte addressed data memory with little-endian binary loads and stores |
 | `src/rebel6/cpu.rs` | 729-register file, `X0` hardwired to zero, 74 architectural instructions, traps, Harvard fetch |
 | `src/rebel6/asm.rs` | Two-pass `.tas` assembler: directives, labels, relocations, pseudo-instructions, BSS as NOBITS |
