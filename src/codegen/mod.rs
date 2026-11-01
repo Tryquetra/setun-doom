@@ -4,6 +4,7 @@ pub mod ir;
 pub mod isel;
 pub mod linker;
 pub mod parser;
+pub mod rebel6;
 
 pub use ir::{LlvmBlock, LlvmFunction, LlvmInst, LlvmModule, LlvmValue};
 pub use isel::SetunCodeGenerator;
@@ -11,3 +12,4 @@ pub use linker::{
     LinkedImage, RelocationRecord, SetunLinker, CODE_SEGMENT_BASE, RODATA_SEGMENT_BASE,
 };
 pub use parser::LlvmParser;
+pub use rebel6::Rebel6CodeGenerator;

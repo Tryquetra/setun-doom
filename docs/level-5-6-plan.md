@@ -23,7 +23,7 @@ criteria for each phase.
 | 2 | Add `--emit-map` and `--emit-syms` to R2R | The diagnostic map is a Level 6 prerequisite and came from Python | Done: the linker writes both, map with unit, assembly line and C file and line, symbols with emitted name, scope, unit, C line and original name |
 | 3 | Write `docs/abi.md` | The ABI is the contract for the backend, the runtime and verification | Calling convention, register classes, stack, pointers, `char`, varargs, structs (draft written, `abi-v0`, awaits the freeze gate) |
 | 4 | Single source for the ISA specification | The encoder is generated from the Rust spec; the assembler and simulator keep copies | Done: `src/rebel6/isa.rs` holds one row per encoding and the encoder, decoder, assembler mnemonic lookup and tests read it |
-| 5 | Retarget `src/codegen` to REBEL-6 | The LLVM IR pipeline exists, but emits the 21-trit Setun ISA | A whole C program compiles and runs on the REBEL-6 core |
+| 5 | Retarget `src/codegen` to REBEL-6 | The LLVM IR pipeline exists, but emits the 21-trit Setun ISA | Done: `src/codegen/rebel6.rs` emits `.tas` for the same IR, `rebel6-cc` drives it, and `tests/level5/arith.c` runs on the core at `-O0` and `-O1` |
 | 6 | C harness: gcc-torture, Csmith, CoreMark, Dhrystone | The 37 RV32I tests prove the translator, not a C compiler | Pass rate and native-versus-translated comparison |
 | 7 | Minimal runtime: start, syscalls, `malloc`, `stdio`, `setjmp` | Real C programs need a runtime | Hello world, allocation and I/O working |
 | 8 | REBEL-6 decompiler to C or Rust with round-trip | This is the human view of Level 6 | Decompiled binary recompiles to the same behavior |
@@ -78,8 +78,8 @@ model can coexist with this one.
 
 ## First week
 
-1. Open `feat/level-5-rebel6-native`.
+1. Open `feat/level-5-rebel6-native`. Done.
 2. Migrate `build_rebel6_doom.py` to `R2R --link` and compare image and frame. Done.
 3. Add `--emit-map` and `--emit-syms` to R2R. Done.
 4. Write `docs/abi.md` with the calling convention and the pointer model.
-5. Create `tests/level5/` with an arithmetic C program and the `rebel6_cc` driver skeleton.
+5. Create `tests/level5/` with an arithmetic C program and the `rebel6_cc` driver skeleton. Done.

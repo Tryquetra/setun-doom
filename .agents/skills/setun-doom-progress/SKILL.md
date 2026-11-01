@@ -274,6 +274,7 @@ O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`. Além da
 - `src/bin/rebel6_run.rs`: executa uma imagem `.tas`.
 - `src/bin/rebel6_asm.rs`: monta uma imagem `.tas` e reporta o layout.
 - `src/bin/rebel6_doom.rs`: host Doom com WAD, palette, blit, teclado, relógio e sleeps.
+- `src/codegen/rebel6.rs`: backend de nível 5 que gera `.tas` REBEL-6 a partir da mesma IR LLVM; `src/bin/rebel6_cc.rs` é o driver e `tests/level5/arith.c` a carga de conformidade.
 - `src/simd.rs`: kernels AVX2 bitsliced e conversão de palette.
 - `src/bin/simd_bench.rs`: benchmark dos kernels e da palette.
 - `scripts/setup_r2r.sh`: clona o fork do R2R na branch `setun-doom-compat` e compila.
