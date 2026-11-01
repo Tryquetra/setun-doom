@@ -32,7 +32,16 @@ criteria for each phase.
 
 **Level 5, foundation (steps 1 to 5).** Modernize the toolchain and start the native
 backend. Exit criterion: an arithmetic C program without libc, compiled by LLVM for
-REBEL-6 and executed on the core with the same result as the RV32I path.
+REBEL-6 and executed on the core with the same result as the RV32I path. Met:
+`tests/level5/arith.c` returns 144222 on both paths at `-O0`, through `_start` and the
+exit syscall. The native side is `rebel6-cc` plus the 32-trit core; the translated side is
+clang for `riscv32-unknown-elf`, `scripts/build_level5_parity.py` and `R2R --link`. The
+check is `tests/integration_level5.rs::rv32i_translation_and_native_backend_agree`.
+
+Closing this criterion required one loader fix: the assembler used to enter an image at
+`main` whenever that symbol existed, so a program returned through whatever `ra` the host
+left in the register. The entry is `_start` now, as `docs/abi.md` section 5.3 states. The
+Doom image is unchanged and renders the same frame bytes, three instructions later.
 
 **Level 5, completeness (steps 6 and 7).** ABI implemented, runtime and reduced libc,
 conformance suite. Exit criterion: a real C subset with structs, varargs, pointers and

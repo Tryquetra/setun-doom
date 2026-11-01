@@ -628,10 +628,13 @@ impl Assembler {
                 Section::Text => {}
             }
         }
-        let entry_name = if self.labels.contains_key("main") {
-            "main"
-        } else if self.labels.contains_key("_start") {
+        // The loader enters at `_start`, which receives the stack pointer and calls `main`
+        // (`docs/abi.md`, section 5.3). Entering at `main` would make the program depend on the
+        // `ra` value the host happens to leave in the register.
+        let entry_name = if self.labels.contains_key("_start") {
             "_start"
+        } else if self.labels.contains_key("main") {
+            "main"
         } else {
             ""
         };
@@ -1088,6 +1091,27 @@ mod tests {
         let mut cpu = image.machine();
         assert_eq!(cpu.run(32), Ok(RunResult::Ecall(0)));
         assert_eq!(cpu.regs[2].raw(), 12);
+    }
+
+    #[test]
+    fn enters_at_start_when_main_also_exists() {
+        let source = r#"
+            .text
+            .globl main
+        main:
+            li.t x10, 1
+            jalr.t x0, 0(x1)
+            .globl _start
+        _start:
+            li.t x10, 2
+            li.t a7, 0
+            ecall
+        "#;
+        let image = assemble(source).unwrap();
+        assert_eq!(image.entry, image.symbols["_start"]);
+        let mut cpu = image.machine();
+        assert_eq!(cpu.run(16), Ok(RunResult::Ecall(0)));
+        assert_eq!(cpu.regs[10].raw(), 2);
     }
 
     #[test]

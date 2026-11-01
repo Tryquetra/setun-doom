@@ -260,10 +260,10 @@ def normalize(text: str, prefix: str, path: Path | None) -> Unit:
     return unit
 
 
-def compile_assembly(source: Path) -> str:
+def compile_assembly(source: Path, flags: list[str] = CFLAGS) -> str:
     """Compiles one C file to assembly on stdout, no intermediate file."""
     result = subprocess.run(
-        ["clang", *CFLAGS, "-S", str(source), "-o", "-"],
+        ["clang", *flags, "-S", str(source), "-o", "-"],
         cwd=GUEST,
         text=True,
         capture_output=True,

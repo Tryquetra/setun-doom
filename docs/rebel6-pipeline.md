@@ -36,6 +36,7 @@ flowchart LR
 | `src/bin/rebel6_asm.rs` | Assembles a `.tas` image and reports its layout |
 | `src/bin/rebel6_doom.rs` | Doom runner with the eleven `ecall` services |
 | `scripts/setup_r2r.sh` | Clones the `setun-doom-compat` branch of the R2R fork and builds it |
+| `scripts/build_level5_parity.py` | Builds `tests/level5/arith.c` through clang and `R2R --link`, for the comparison against `rebel6-cc` |
 | `vendor/RV32IToREBEL` | Translator and linker: `--link`, `--emit-map`, `--emit-syms`, `--emit-obj`, `--emit-image`, `--run-tests`, `--diff`, `--stats` |
 | `scripts/build_rebel6_doom.py` | Compiles to stdout, normalizes each unit into `build/rebel6/units/<stem>.s`, and runs `R2R --link --emit-map --emit-syms` |
 
@@ -53,11 +54,18 @@ python3 scripts/build_rebel6_doom.py
 
 # Run until the second frame, saving PPM frames.
 ./target/release/rebel6_doom vendor/doomgeneric/riscv32/build/rebel6/doom_all.tas 2
+
+# Level 5 parity: the same C through clang and R2R, to compare against `rebel6-cc`.
+./scripts/build_level5_parity.py -O 0
 ```
 
 The guest is headless: the host owns the WAD, the palette, the framebuffer and the keyboard. The
 host clock is deterministic, one millisecond per 1000 retired instructions, so the startup path
 does not depend on host speed. Frame 1 is the initial view; frame 2 is the first full E1M1 frame.
+
+The loader enters an image at `_start` and falls back to `main` only when the image has no
+`_start`, as `docs/abi.md` section 5.3 requires: the host places the stack pointer before the
+entry, and the entry calls `main` and exits through the syscall.
 
 ## Conformance
 
@@ -68,7 +76,9 @@ does not depend on host speed. Frame 1 is the initial view; frame 2 is the first
 | Doom startup | reaches `D_DoomMain`, loads `DOOM1.WAD`, initializes video, sound, HUD and the level |
 | Doom frame | 63,847 non-zero framebuffer bytes at frame 2, E1M1 rendered with HUD |
 | Frame parity with the 21-trit reference | 97.5% of pixels identical (`compare -metric AE`) |
-| `cargo test` | 85 library tests pass |
+| Level 5 parity, `tests/level5/arith.c` at `-O0` | 144222 on the native backend and on the RV32I translation, both through `_start` and `ecall 0` |
+| Doom frame after the `_start` entry fix | identical PPM bytes for frames 1 and 2, 27,416,256 cycles against 27,416,253 |
+| `cargo test` | 88 library tests pass |
 
 The instruction counts and trit-flip totals for Dhrystone differ from the reference simulator
 because the two implementations lay data out differently and therefore execute different numbers

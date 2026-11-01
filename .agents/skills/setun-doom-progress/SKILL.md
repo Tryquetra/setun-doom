@@ -29,8 +29,8 @@ triggers:
 > Progresso salvo em **2026-10-28**.
 > Repositório principal: `/home/robson/coding/setun-doom`
 > Worktree do core REBEL-6 puro: `/home/robson/coding/setun-doom-rebel6`
-> Branch de trabalho atual: `feat/rebel6-pure`, último commit `d4d3e59`.
-> 109 testes na branch, `cargo clippy --all-targets` limpo, unikernel RISC-V compilando.
+> Branch de trabalho atual: `feat/level-5-rebel6-native`, último commit `1699da1`.
+> 88 testes de biblioteca na branch, `cargo clippy --all-targets` limpo, unikernel RISC-V compilando.
 
 ---
 
@@ -149,6 +149,8 @@ Perfil do caminho quente medido: `gate_ripple_carry_add` 217 ns, `gate_add_i32` 
 | Doom, tempo até o frame 2 | ~60 s no host de desenvolvimento |
 | Doom, regime | ~0,14 FPS, 3,83 M ciclos por frame, ~563 mil instruções/s |
 | Paridade com o frame de 21 trits | 97,5% dos pixels |
+| Nível 5, `tests/level5/arith.c` em `-O0` | 144222 nas duas rotas: `rebel6-cc` e clang + R2R |
+| Doom, ciclos até o frame 2 com a entrada em `_start` | 27 416 256 (três instruções a mais), bytes dos frames 1 e 2 idênticos |
 
 O primeiro frame leva ~44 s porque inclui carga do WAD, montagem do nível e ~26 M instruções de inicialização. O relógio do guest é determinístico: 1 ms por 1000 instruções aposentadas.
 
@@ -243,6 +245,7 @@ O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`. Além da
 9. **SIMD só entra com medição.** O caminho de palette ganhou; o `R_DrawSpan` perdeu e foi removido. Não integrar kernel sem benchmark antes e depois.
 10. **R2R é ferramenta externa.** O diretório `vendor/RV32IToREBEL` é ignorado pelo git. `scripts/setup_r2r.sh` clona o fork `Tryquetra/RV32IToREBEL` e faz checkout da branch `setun-doom-compat`, depois compila. Uma worktree nova não tem o R2R até rodar o script.
 11. **O guest Doom usa `-march=rv32i`.** `__mulsi3`, `__divsi3`, `__udivsi3`, `__modsi3`, `__umodsi3` estão em `src/softmul.c`. `__muldi3` usa shift-add para não recursar no RV32I.
+12. **A imagem entra em `_start`.** O assembler prefere `_start` e só cai em `main` quando a imagem não tem `_start`, como `docs/abi.md` seção 5.3 exige. Entrar em `main` fazia o programa voltar por qualquer `ra` que o host tivesse deixado no registrador.
 
 ---
 
@@ -279,6 +282,7 @@ O R2R vem do fork `Tryquetra/RV32IToREBEL`, branch `setun-doom-compat`. Além da
 - `src/bin/simd_bench.rs`: benchmark dos kernels e da palette.
 - `scripts/setup_r2r.sh`: clona o fork do R2R na branch `setun-doom-compat` e compila.
 - `scripts/build_rebel6_doom.py`: pipeline C → RV32I → R2R → `.tas`.
+- `scripts/build_level5_parity.py`: o mesmo `tests/level5/arith.c` por clang e `R2R --link`, para comparar com `rebel6-cc` no teste `rv32i_translation_and_native_backend_agree`.
 - `vendor/doomgeneric/riscv32/`: guest freestanding (headers, libc, soft-float, soft-mul, ABI `ecall`, linker, Makefile).
 - `src/bin/setun_doom_rv32.rs`: driver host do nível 1 (SDL, paleta, teclado, relógio, WAD).
 - `docs/rebel6.md`, `docs/rebel6-pipeline.md`, `docs/carry-telemetry.md`, `docs/simd.md`: referência, pipeline, carry com sinal e SIMD.
