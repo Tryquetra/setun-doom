@@ -20,6 +20,47 @@ Fatos da revisão do módulo `leitura_nucleo_setun`, que valem independentemente
 | C4 | Dois bits por trit dão 48 bits por palavra de 24 trits, enquanto o conteúdo de informação é $\log_2 3^{24} = 38{,}04$ bits. O desperdício é 20,8% do espaço de estados | aritmética |
 | C5 | Uma palavra de 24 trits tem $2^{48} / 3^{24} = 996{,}6$ codificações possíveis por codificação legal | aritmética |
 
+## Placa alvo: Sipeed Tang Nano 20K
+
+A placa encomendada muda o alvo físico do nível 4. Especificações do fabricante:
+
+| Recurso | Valor |
+| :-- | :-- |
+| FPGA | GW2AR-LV18QN88C8/I7 |
+| LUT4 (Look-Up Table de 4 entradas) | 20.736 |
+| Flip-flops | 15.552 |
+| S-RAM distribuída | 41.472 bits |
+| B-SRAM (Block RAM, memória em blocos) | 828 Kbit em 46 blocos, 103,5 KiB |
+| SDRAM | 64 Mbit, 8 MiB, 32 bits |
+| Multiplicadores 18×18 | 48 |
+| PLL (Phase-Locked Loop, laço de fase) | 2 |
+| Clock | cristal de 27 MHz e gerador MS5351 |
+| Vídeo | HDMI e conector RGB de 40 pinos para LCD |
+| Depuração | BL616 com JTAG e UART por USB |
+| Armazenamento | flash de 64 Mbit para bitstream e slot de cartão TF |
+
+### Orçamento de memória (aritmética)
+
+| Item | Tamanho | Onde cabe |
+| :-- | --: | :-- |
+| Banco de 729 registradores de 24 trits, 2 bits por trit | 4.374 B | B-SRAM, 4,1% |
+| Framebuffer 320 × 200 com índice de paleta | 64.000 B | B-SRAM, 60,4% |
+| Banco mais framebuffer | 68.374 B | 64,5% da B-SRAM, sobram 37,6 KiB para caches |
+| Imagem do guest Doom, 75.515 instruções de 32 trits | 604.120 B | não cabe na B-SRAM, que é 5,7 vezes menor |
+| Código, dados e BSS do Doom | 4,96 MiB | SDRAM de 8 MiB, 62,1% |
+
+Consequência imediata: o Doom não roda a partir da B-SRAM nesta placa. Ele exige a SDRAM de 8 MiB,
+um controlador de SDRAM e uma cache de instruções. A carga pequena, Dhrystone, CoreMark e o
+programa de nível 5, cabe inteira na B-SRAM.
+
+### O que a placa não tem
+
+| Ausência | Efeito |
+| :-- | :-- |
+| DAC de VGA | O roadmap fala em rasterização por DAC de VGA; a placa oferece HDMI por TMDS (Transition-Minimized Differential Signaling) e RGB paralelo para LCD |
+| Medição de corrente | H9 continua exigindo instrumento externo, com shunt na alimentação ou sonda |
+| Alvo iCE40 ou Artix-7 | O nível 4 muda de alvo para GW2A; as hipóteses de área em iCE40 passam a ser limite inferior, não alvo |
+
 ## H1: o código canônico custa menos lógica que o código redundante
 
 **Afirmação.** Para uma fatia de 24 trits, o código canônico (`01` = +1, `10` = -1, `00` = 0,
@@ -172,6 +213,52 @@ informa nada.
 
 **Classe.** Chapéu.
 
+## H11: o fluxo aberto reproduz o fluxo do fornecedor no que o projeto usa
+
+**Afirmação.** O fluxo aberto com Apicula e `nextpnr-gowin` sintetiza o core para GW2A-18 com
+B-SRAM, PLL e saída HDMI sem divergência material em área, Fmax e comportamento.
+
+**Teste.** Sintetizar o mesmo desenho no Gowin EDA e no fluxo aberto, com as mesmas restrições.
+
+**Métrica.** LUT, B-SRAM, Fmax, e igualdade funcional em simulação com os mesmos vetores.
+
+**Derruba a hipótese.** O fluxo aberto falha em B-SRAM, PLL ou TMDS, ou diverge de forma que impeça
+build reprodutível no CI.
+
+**Classe.** Corte de cabelo: decide se o CI do nível 4 é reprodutível sem ferramenta proprietária.
+
+## H12: o Doom roda a partir da SDRAM acima da velocidade do emulador
+
+**Afirmação.** Com a imagem na SDRAM e uma cache de instruções pequena na B-SRAM, o core sustenta
+taxa útil bem acima dos 563 mil instruções por segundo do interpretador em Rust.
+
+**Teste.** Core com controlador de SDRAM e cache de 16 KiB, executando a imagem do Doom; medir
+tempo até o frame 2 e taxa de acerto da cache.
+
+**Métrica.** Instruções por segundo, ciclos por instrução, tempo até o frame 2.
+
+**Derruba a hipótese.** A taxa cai para a ordem do emulador, ou o tempo até o frame 2 fica acima de
+dez segundos.
+
+**Previsão.** A 100 MHz com seis ciclos por instrução, 16,7 milhões de instruções por segundo, cerca
+de 30 vezes o emulador, e frame 2 em 1,9 s. `[INFERENCE]`
+
+**Classe.** Corte de cabelo.
+
+## H13: a telemetria de trits alterados não derruba o Fmax
+
+**Afirmação.** Contar trits alterados em cada escrita de registrador, com XOR de 48 bits e
+`popcount`, cabe no caminho crítico a 100 MHz.
+
+**Teste.** Sintetizar o core com e sem o contador e comparar Fmax e área.
+
+**Métrica.** Fmax com e sem o contador, LUT do contador, e custo por escrita.
+
+**Derruba a hipótese.** O contador derruba o Fmax abaixo do alvo, e a telemetria precisa de modo de
+medição separado, como os modos veracidade e rápido do software.
+
+**Classe.** Chapéu.
+
 ## Ordem de execução por custo
 
 | Ordem | Hipótese | Custo do teste |
@@ -185,7 +272,10 @@ informa nada.
 | 7 | H4, empacotamento denso | um dia |
 | 8 | H8, assíncrono | dias, só se a decisão existir |
 | 9 | H10, realizações do zero | dias, trabalho de emulador |
-| 10 | H9, energia | exige placa e instrumento |
+| 10 | H11, fluxo aberto | horas, decide o CI do nível 4 |
+| 11 | H13, telemetria no caminho crítico | horas, com o core sintetizado |
+| 12 | H12, Doom pela SDRAM | semanas, depende do controlador de SDRAM |
+| 13 | H9, energia | exige placa e instrumento |
 
 ## O que este documento decide agora
 
