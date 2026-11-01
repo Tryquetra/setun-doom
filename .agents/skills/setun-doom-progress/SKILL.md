@@ -221,7 +221,7 @@ O encoding veio da especificação de referência pública do REBEL-6, não da d
 3. Escopo: todo símbolo que o clang não declara `.globl` é renomeado com o prefixo da unidade. Duas `static` de mesmo nome (`plr` em `am_map.c` e `hu_stuff.c`) deixam de compartilhar endereço. Label duplicado aborta o build.
 4. Cada unidade é escrita em `build/rebel6/units/<stem>.s` e o R2R faz o link com `--link`, aplicando escopo por unidade. Cada bloco `.comm` restaura a seção anterior depois de virar `.bss`.
 4b. `.bss` é NOBITS no `rebel6_asm`: reservado depois dos dados, não materializado. `.align`/`.balign` valem; `.p2align` só com `REBEL6_ASM_P2ALIGN=1`, porque honrá-lo por padrão desloca a imagem e quebra o frame.
-5. `doom_all.map` (por unidade: arquivo `.s` e, por linha, arquivo e linha C) e `doom_all.syms` (nome emitido, escopo, unidade, linha e nome original) são escritos junto.
+5. O próprio linker escreve os índices com `--emit-map` (por unidade: linha de assembly e arquivo e linha C) e `--emit-syms` (nome emitido, escopo, unidade, linha C e nome original). O build acrescenta um `.file 1, "<fonte>"` por unidade para o índice 1 resolver no arquivo C.
 6. R2R gera `doom_all.tas`.
 7. `rebel6_asm`/`rebel6_doom` montam e executam.
 

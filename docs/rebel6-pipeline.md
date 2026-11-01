@@ -35,8 +35,8 @@ flowchart LR
 | `src/bin/rebel6_asm.rs` | Assembles a `.tas` image and reports its layout |
 | `src/bin/rebel6_doom.rs` | Doom runner with the eleven `ecall` services |
 | `scripts/setup_r2r.sh` | Clones the `setun-doom-compat` branch of the R2R fork and builds it |
-| `vendor/RV32IToREBEL` | Translator and linker: `--link`, `--emit-obj`, `--emit-image`, `--run-tests`, `--diff`, `--stats` |
-| `scripts/build_rebel6_doom.py` | Compiles to stdout, normalizes each unit into `build/rebel6/units/<stem>.s`, links with `R2R --link` and writes `doom_all.tas` plus `doom_all.map` and `doom_all.syms` |
+| `vendor/RV32IToREBEL` | Translator and linker: `--link`, `--emit-map`, `--emit-syms`, `--emit-obj`, `--emit-image`, `--run-tests`, `--diff`, `--stats` |
+| `scripts/build_rebel6_doom.py` | Compiles to stdout, normalizes each unit into `build/rebel6/units/<stem>.s`, and runs `R2R --link --emit-map --emit-syms` |
 
 ## Build and run
 
@@ -81,7 +81,7 @@ of string-loop iterations. The final architectural state is identical.
 | `.string` quotes stripped | The reference assembler emitted the quote characters as string data |
 | `.asciz` expanded to `.byte` | Octal escapes such as `\000` were decoded incorrectly by the normalization layer |
 | Per-unit symbol scoping | The linker prefixes every symbol a unit does not declare `.globl` with the unit name, so two file-scope statics called `plr` (`am_map.c`, `hu_stuff.c`) or `anims` (`p_spec.c`, `wi_stuff.c`) keep separate addresses |
-| Line map and symbol table | `doom_all.map` records, per unit, its `.s` file and the C file and line in effect on each line; `doom_all.syms` carries the emitted name, scope, unit and original name, from clang's `.loc` directives (`-gline-directives-only`) |
+| Line map and symbol table | The linker consumes `.file` and `.loc`, annotates every expression with its C origin and writes both indexes: `--emit-map` records, per unit, the assembly line and the C file and line in effect, and `--emit-syms` records the emitted name, scope, unit, C line and original name. The build adds one `.file 1, "<source>"` line per unit so index 1 resolves to the C file |
 | `__muldi3` implemented with shift-add | A 64-bit `*` lowers to a recursive `__muldi3` call on RV32I |
 | `__mulsi3`, `__divsi3`, `__udivsi3`, `__modsi3`, `__umodsi3` added | The guest was built with `-march=rv32i`, without the M extension |
 | Flat data space | The core populates one byte-addressed data window instead of the three-region D-ROM/D-RAM/MMIO map |
