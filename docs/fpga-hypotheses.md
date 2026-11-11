@@ -141,7 +141,21 @@ normalização. Com dois zeros, a comparação precisa canonicalizar 24 trits an
 
 **Derruba a hipótese.** As duas codificações custam o mesmo.
 
-**Classe.** Corte de cabelo.
+**Resultado. 2026-11-11.** Sintetizado `fpga/gowin/trit_word_eq.v` com `yosys` 0.66
+(`synth_gowin`) para GW2A-18C, contagem do JSON de síntese. Comportamento
+verificado por exaustão com `eval` (N=2: canônica 81 casos, redundante 256,
+todos passando). `scripts/synth_h3.sh` reproduz a contagem.
+
+| Codificação | LUT4 | LUT1 | Total |
+| :-- | --: | --: | --: |
+| Canônica (redução XOR de 48 bits) | 27 | 33 | 60 |
+| Redundante (canonicaliza e reduz) | 31 | 2 | 33 |
+
+Duas formulações da canônica (AND de XNOR por trit e redução XOR direta com
+inversão na ponta) sintetizaram nas mesmas contagens. A redundante sai 45%
+menor em células de lógica, então a afirmação de que a igualdade canônica
+custa menos é falsificada na área. A latência do desvio e o Fmax ficam
+pendentes de colocação do core inteiro.
 
 ## H4: o empacotamento denso reduz a memória do banco de registradores
 
