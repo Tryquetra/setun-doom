@@ -75,7 +75,29 @@ as mesmas restrições de clock.
 
 **Derruba a hipótese.** O código redundante empata ou ganha em LUT com Fmax igual.
 
-**Classe.** Corte de cabelo: muda o mapeamento do core, não a ISA.
+**Resultado. 2026-11-11.** Sintetizado `fpga/gowin/trit_ops.v` com `yosys` 0.66
+(`synth_gowin`) para GW2A-18C, contagem de células do JSON de síntese, e
+comportamento verificado por exaustão com `eval` do yosys (9 casos canônicos
+e 16 redundantes por operação, todos passando). `scripts/synth_h1.sh`
+reproduz a contagem.
+
+| Operação | Canônica LUT4 | Redundante LUT4 |
+| :-- | --: | --: |
+| `min` | 48 | 48 |
+| `max` | 48 | 48 |
+| soma mod 3 | 48 | 48 |
+| igualdade | 24 | 24 |
+| negação (H2) | 0 | 48 LUT1 |
+
+Nas quatro operações as duas codificações empatam em LUT4. O sintetizador
+absorve a canonicalização da leitura redundante (XNOR) na mesma lógica da
+canônica (NOR). A única diferença de área está na negação, onde a canônica
+custa 0 LUT e a redundante 48 LUT1. A afirmação de que a canônica custa menos
+em geral é falsa: ela empata nas quatro operações e vence só na negação.
+O argumento de área por si só não decide a codificação; a decidem a detecção
+de erro (`11` reservado, C3 e H6) e o custo de caminhos de palavra inteira
+(H3, H7). Fmax e caminho crítico ficam para quando o core inteiro tiver mapa
+de pinos e puder ser colocado.
 
 ## H2: a negação custa zero LUT nas duas codificações
 
