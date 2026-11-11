@@ -199,7 +199,24 @@ de bit cada uma detecta.
 
 **Derruba a hipótese.** A paridade por palavra cobre os mesmos casos com menos lógica.
 
-**Classe.** Corte de cabelo.
+**Resultado. 2026-11-11.** Sintetizado `fpga/gowin/trit_detect.v` com `yosys` 0.66
+(`synth_gowin`) para GW2A-18C, contagem do JSON de síntese. Cobertura medida
+por enumeração exaustiva de inversões sobre palavras canônicas de 4 trits
+(648 inversões simples e 2.268 duplas). `scripts/synth_h6.sh` reproduz as
+contagens.
+
+| Detector | LUT4 | LUT1 | Simples | Duplas |
+| :-- | --: | --: | --: | --: |
+| `11` por trit | 15 | 2 | 33,3% | 52,4% |
+| Paridade da palavra | 19 | 0 | 50,6% | 49,4% |
+
+O detector de `11` custa menos lógica (17 contra 19 células). A cobertura não
+é a prometida: a paridade pega mais inversões simples (50,6% contra 33,3%),
+mas o `11` pega mais duplas (52,4% contra 49,4%). A hipótese cai no ponto da
+cobertura, mas o `11` mantém duas vantagens não medidas por estes números:
+deteção de qualquer bit errado que produza `11`, que é o estado ilegal, e
+localização por trit quando o vetor `bad` é exposto, coisa que a paridade não
+dá. O custo de escrita é o mesmo, zero lógica extra no caminho de escrita.
 
 ## H7: o somador ternário direto vence o decodifica, soma e codifica
 
@@ -217,7 +234,9 @@ ripple sobre trits codificados em binário.
 (`synth_gowin`) para GW2A-18C, contagem do JSON de síntese. Comportamento das
 três variantes verificado por exaustão com `eval` (477 casos por variante,
 0 falhas). `scripts/synth_h7.sh` reproduz as contagens.
-
+A variante de decodifica e recodifica passou a verificação funcional, mas a síntese de
+N=24 não terminou em 60 minutos de `yosys` (também tentada em N=12, sem
+sucesso). A área dela fica em aberto, então a hipótese não pode ser
 | Variante | LUT4 | LUT1 | Total |
 | :-- | --: | --: | --: |
 | Direta (carry ternário) | 124 | 8 | 132 |
