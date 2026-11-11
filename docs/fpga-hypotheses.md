@@ -185,7 +185,22 @@ duplicação de BRAM.
 
 **Derruba a hipótese.** Cabe em flip-flops, ou as portas bastam sem duplicação nem ciclo extra.
 
-**Classe.** Tatuagem: define o alvo físico do nível 4. `[INFERENCE]` para o número de portas.
+**Resultado. 2026-11-11.** Sintetizado `fpga/gowin/trit_regfile.v` com `yosys` 0.66
+(`synth_gowin`) para GW2A-18C, contagem do JSON de síntese. O alvo real é a
+GW2A-18C, não o iCE40; a conclusão de flip-flops segue valendo, porque a
+placa tem 15.552 flip-flops e o banco precisa de 34.992 bits.
+
+| Variante | DFF | `DPX9B` (BRAM) | Leitura/escrita |
+| :-- | --: | --: | :-- |
+| Bancos duplicados | 109 | 6 | 2R+1W em 1 ciclo |
+| Banco único | 108 | 3 | porta B perde leitura na escrita |
+
+O banco não cabe em flip-flops e a síntese inferiu BRAM (primitiva
+`DPX9B`, barramento de 36 bits por porta) nos dois casos. A duplicação usa
+6 blocos e resolve 2R+1W em um ciclo. O banco único usa 3 blocos, mas uma
+escrita rouba a segunda leitura, o que adiciona ciclos ou arbitragem na
+execução. O custo exato em ciclos depende do escalonamento do core e fica
+para a integração, assim como o Fmax, que exige colocação com mapa de pinos.
 
 ## H6: a detecção de erro por trit é viável no orçamento de lógica
 
