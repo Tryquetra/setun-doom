@@ -9,7 +9,8 @@ REBEL-6 e saída de vídeo.
 | :-- | :-- | :-- | :-- |
 | Decoder REBEL-6 | `fpga/gowin/rebel6_decoder.v` | 73/73 instruções vs `decode()` do Rust | `08e2f26` |
 | ALU (ternária + binária) | `fpga/gowin/rebel6_alu.v` | 6.000/6.000 pares vs `word.rs`/`cpu.rs` | `05e45c5` |
-| Banco 729 regs (BRAM dual) | `fpga/gowin/trit_regfile.v` | 3–6 `DPX9B`, 0 FF | `079fe61` |
+| Banco 729 regs 48b (BRAM dual) | `fpga/gowin/trit_regfile.v` | 3–6 `DPX9B` | `079fe61` |
+| Banco 729 regs 64b (BRAM dual) | `fpga/gowin/rebel6_regfile.v` | 8 `DPX9B`, 141 DFF | pendente commit |
 | Área de operadores ternários | `fpga/gowin/trit_*.v` | hipóteses H1–H7 | `c66612c`…`d322ad1` |
 
 ## Fluxo do build
