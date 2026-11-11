@@ -170,7 +170,23 @@ trits por byte, e 39 bits por palavra com empacotamento binário denso.
 
 **Derruba a hipótese.** O custo de desempacotamento anula o ganho de BRAM ou derruba o Fmax.
 
-**Classe.** Corte de cabelo.
+**Resultado. 2026-11-11.** Sintetizado `fpga/gowin/trit_pack.v` com `yosys` 0.66
+(`synth_gowin`) para GW2A-18C, contagem do JSON de síntese. Empacotadores
+verificados por exaustão com `eval` (60 casos cada, 0 falhas).
+`scripts/synth_h4.sh` reproduz as contagens.
+
+| Variante | `DPX9B` | LUT4 do empacotador | LUT1 |
+| :-- | --: | --: | --: |
+| Banco 48 bits (2 bits por trit) | 3 | — | — |
+| Banco 40 bits (5 trits por byte) | 3 | 377 | 4 |
+| Banco 39 bits (denso) | 3 | 1.972 | 336 |
+
+Os três bancos usam os mesmos 3 blocos de BRAM: a economia de bits não muda
+a contagem de blocos nesta escala. O empacotador de 40 bits custa 381 células
+e o de 39 bits custa 2.308 células, antes do desempacotamento, que é
+simétrico. A hipótese é falsificada no banco de 729 registradores: o ganho
+de BRAM não aparece e a lógica extra é material. O empacotamento só poderia
+pagar se o número de bancos crescer a ponto de atravessar fronteiras de bloco.
 
 ## H5: o banco de registradores não cabe em flip-flops no iCE40
 
