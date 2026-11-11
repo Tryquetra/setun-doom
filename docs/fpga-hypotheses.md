@@ -213,7 +213,23 @@ ripple sobre trits codificados em binário.
 
 **Derruba a hipótese.** Decodifica e recodifica vence em área e em Fmax.
 
-**Classe.** Corte de cabelo.
+**Resultado. 2026-11-11.** Sintetizado `fpga/gowin/trit_add.v` com `yosys` 0.66
+(`synth_gowin`) para GW2A-18C, contagem do JSON de síntese. Comportamento das
+três variantes verificado por exaustão com `eval` (477 casos por variante,
+0 falhas). `scripts/synth_h7.sh` reproduz as contagens.
+
+| Variante | LUT4 | LUT1 | Total |
+| :-- | --: | --: | --: |
+| Direta (carry ternário) | 124 | 8 | 132 |
+| Ripple sobre pares binários | 133 | 2 | 135 |
+| Decodifica, soma e recodifica | não terminou | não terminou | não terminou |
+
+A direta vence o ripple sobre pares por 2,2% em células de lógica. A variante
+de decodifica e recodifica passou a verificação funcional, mas a síntese de
+N=24 não terminou em 20 minutos de `yosys` (também tentada em N=12, sem
+sucesso). A área dela fica em aberto, então a hipótese não pode ser
+confirmada nem derrubada pela comparação das três. A comparação de Fmax e de
+caminho crítico continua pendente de colocação do core inteiro.
 
 ## H8: o código redundante é incompatível com lógica assíncrona
 
