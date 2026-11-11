@@ -91,7 +91,22 @@ canônico, inversão dos dois bits no redundante. O sintetizador absorve as duas
 **Nota.** É o teste literal da afirmação do projeto de que `STI.T` é inversão de fio sem
 propagação de carry.
 
-**Classe.** Chapéu.
+**Resultado. 2026-11-11.** Sintetizado `fpga/gowin/trit_neg.v` com `yosys` 0.66
+(`synth_gowin`) para GW2A-18C, com `write_verilog` para inspecionar o netlist.
+
+| Codificação | Células | LUT4 | LUT1 | IBUF/OBUF |
+| :-- | --: | --: | --: | --: |
+| Canônica (swap por trit) | 96 | 0 | 0 | 48/48 |
+| Redundante (`~` por bit) | 144 | 0 | 48 | 48/48 |
+
+A canônica é fio puro: netlist contém apenas IBUF/OBUF e conexões. A redundante
+ganha 48 `LUT1` (uma por bit), porque o fabric GW2A não absorve a inversão no
+roteamento. Hipótese falsificada para a redundante, confirmada para a canônica.
+A decisão de C1 a C3, que já elege a canônica, ganha a medição de área, e a
+nota de que `STI.T` é inversão de fio vale para a codificação do projeto.
+
+Comandos reproduzíveis: `scripts/synth_h2.sh` (o PnR fica de fora porque o
+módulo isolado tem 96 IOs e não tem mapa de pinos; a contagem é de síntese).
 
 ## H3: a igualdade bit a bit só vale no código canônico
 
