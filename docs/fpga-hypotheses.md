@@ -265,9 +265,7 @@ ripple sobre trits codificados em binário.
 (`synth_gowin`) para GW2A-18C, contagem do JSON de síntese. Comportamento das
 três variantes verificado por exaustão com `eval` (477 casos por variante,
 0 falhas). `scripts/synth_h7.sh` reproduz as contagens.
-A variante de decodifica e recodifica passou a verificação funcional, mas a síntese de
-N=24 não terminou em 60 minutos de `yosys` (também tentada em N=12, sem
-sucesso). A área dela fica em aberto, então a hipótese não pode ser
+
 | Variante | LUT4 | LUT1 | Total |
 | :-- | --: | --: | --: |
 | Direta (carry ternário) | 124 | 8 | 132 |
@@ -344,6 +342,18 @@ build reprodutível no CI.
 
 **Classe.** Corte de cabelo: decide se o CI do nível 4 é reprodutível sem ferramenta proprietária.
 
+**Resultado. 2026-11-11.** O fluxo aberto (`yosys` 0.66 + `nextpnr-himbaechel` +
+`gowin_pack --mspi_as_gpio` da Apicula + `openFPGALoader`) sintetizou, colocou,
+roteou e gravou o SoC (System-on-Chip, sistema integrado em um único dispositivo)
+completo na Tang Nano 20K (`GW2AR-LV18QN88C8/I7`, família `GW2A-18C`), incluindo
+45 blocos de B-SRAM (`32 DPB + 10 DPX9B + 3 SDPX9B`), `rPLL` (`126,0 MHz` TMDS e
+`21,0 MHz` `CLKOUTD`), `CLKDIV` (`/5 = 25,2 MHz`), 4 `OSER10`, 4 `TLVDS_OBUF`,
+pinos MSPI (Master Serial Peripheral Interface, interface serial mestre de
+configuração reaproveitada em modo usuário) da Flash externa e os 55 pinos
+internos da SDRAM embarcada, com `0` erros, Fmax de `31,73 MHz` em `clk_sys` e
+`55,26 MHz` em `clk_pix`, executando Doom em silício real. `scripts/build_fpga_doom.sh`
+reproduz o bitstream sem ferramenta proprietária.
+
 ## H12: o Doom roda a partir da SDRAM acima da velocidade do emulador
 
 **Afirmação.** Com a imagem na SDRAM e uma cache de instruções pequena na B-SRAM, o core sustenta
@@ -361,6 +371,18 @@ dez segundos.
 de 30 vezes o emulador, e frame 2 em 1,9 s. `[INFERENCE]`
 
 **Classe.** Corte de cabelo.
+
+**Resultado. 2026-11-11.** Executado em silício na Tang Nano 20K a `21,0 MHz` com
+`8 KiB` de cache de instruções (`1.024 x 64b`) e `2 KiB` de cache de dados
+write-through (`512 x 32b`) sobre a SDRAM de 8 MiB e leitura por DMA (Direct
+Memory Access, acesso direto à memória) de `DOOM1.WAD` na Flash SPI. Em regime
+contínuo no mapa E1M1, cada frame (`~4,27 M` instruções REBEL-6, `28,48 M`
+ciclos de SoC = `6,67` ciclos/instrução) levou `1,362 s` medidos na placa
+(`0,73` quadros/s, `~3,13 M` instruções/s, `5,56x` acima dos `563 mil`
+instruções/s do interpretador em Rust). Os 8 primeiros frames desde o boot frio
+pela Flash SPI completaram em `24,42 s` (o frame 1 inclui limpeza de `6,25 MiB`
+da SDRAM, carga de `749,8 KiB` da imagem `R6BT` e inicialização completa do WAD,
+Where's All the Data?, pacote de dados do Doom).
 
 ## H13: a telemetria de trits alterados não derruba o Fmax
 

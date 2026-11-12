@@ -54,9 +54,10 @@ path = "src/bin/rebel6_asm.rs"
 required-features = ["std"]
 
 [[bin]]
-name = "rebel6_doom"
-path = "src/bin/rebel6_doom.rs"
+name = "rebel6_fpga_view"
+path = "src/bin/rebel6_fpga_view.rs"
 required-features = ["std"]
+
 
 [[bin]]
 name = "simd_bench"
