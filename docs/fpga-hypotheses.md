@@ -430,6 +430,39 @@ codificação atravessar fronteiras de módulo. A decisão entre as duas depende
 do gargalo: lógica (one-hot vence) contra dados/memória (offset vence, na
 mesma largura da canônica). Fmax e caminho crítico ficam pendentes de
 colocação, como em H7.
+## H15: o custo do datapath completo por codificação
+
+**Afirmação.** A decisão de codificação não pode sair do somador isolado
+(H14): o custo total de um datapath (banco de registradores 32 x 24 trits
+com duas leituras e uma escrita, mais somador) pode reordenar as variantes.
+
+**Teste.** Implementar o mesmo fatia em quatro codificações
+(`fpga/gowin/trit_datapath.v`): canônica, offset, ponte canônica->one-hot
+->canônica, e one-hot em toda a memória. Verificação por testbench iverilog
+com 2000 ciclos aleatórios contra modelo em Python, em N=2, nas quatro. Síntese
+em N=24 com `synth_gowin`, contagem do JSON. `scripts/synth_h15.sh` reproduz.
+
+**Métrica.** LUT4 + LUT1 do datapath inteiro.
+
+**Derruba a hipótese.** A canônica empata ou vence o one-hot no total.
+
+**Resultado. 2026-11-15.** As quatro variantes passam os 2000 ciclos.
+
+| Variante | LUT4 | LUT1 | Total |
+| :-- | --: | --: | --: |
+| Canônica | 124 | 8 | 132 |
+| Offset | 164 | 8 | 172 |
+| Ponte one-hot (memória canônica) | 72 | 0 | 72 |
+| One-hot completo | 30 | 0 | 30 |
+
+O one-hot vence em lógica mesmo com a ponte de conversão: a ponte custa 72
+células (45% abaixo da canônica) e o one-hot completo 30 (77% abaixo). O
+offset, que venceu H14 isolado, perde para a canônica no datapath (172 contra
+132), possivelmente porque a tabela de caso do somador offset não se funde tão
+bem com o caminho do banco. A memória de 32 registradores ficou em lógica
+distribuída (0 blocos BRAM), então o efeito de largura em blocos não aparece
+nesta escala; ele fica para um banco do tamanho de H5 (729 registradores).
+Colocação e Fmax continuam pendentes.
 
 ## Ordem de execução por custo
 
