@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use Setun-Doom (setun-doom), please cite it as below."
+title: "Setun-Doom (setun-doom): 21-Trit Balanced Ternary Computer Emulator, RV32IM Dynamic Binary Translator, and Synthesizable 32-Trit REBEL-6 FPGA SoC"
+authors:
+  - family-names: Cassiano
+    given-names: Robson
+    orcid: "https://orcid.org/0009-0009-5188-361X"
+version: 0.1.0
+date-released: 2026-11-15
+license: MIT
+repository-code: "https://github.com/Tryquetra/setun-doom"
+url: "https://github.com/Tryquetra/setun-doom"
+type: software
+keywords:
+  - balanced-ternary
+  - computer-architecture
+  - rebel-6
+  - dynamic-binary-translation
+  - fpga-synthesis
