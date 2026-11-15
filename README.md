@@ -238,3 +238,23 @@ lumps are read from the host by offset.
 
 See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full compliance record.
 
+---
+
+## Citing
+
+Author: [Robson Cassiano](https://orcid.org/0009-0009-5188-361X) (ORCID: [0009-0009-5188-361X](https://orcid.org/0009-0009-5188-361X)).
+
+For the source code, cite the software entry below. GitHub's "Cite this repository" button reads [CITATION.cff](https://github.com/Tryquetra/setun-doom/blob/main/CITATION.cff).
+
+```bibtex
+@software{cassiano2026setundoom,
+  author = {Cassiano, Robson},
+  title = {{Setun-Doom (setun-doom)}: 21-Trit Balanced Ternary Computer Emulator, RV32IM Dynamic Binary Translator, and Synthesizable 32-Trit REBEL-6 FPGA SoC},
+  year = {2026},
+  version = {0.1.0},
+  url = {https://github.com/Tryquetra/setun-doom},
+  license = {MIT},
+  note = {Author ORCID: https://orcid.org/0009-0009-5188-361X}
+}
+```
+
