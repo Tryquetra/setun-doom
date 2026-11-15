@@ -397,6 +397,39 @@ Where's All the Data?, pacote de dados do Doom).
 medição separado, como os modos veracidade e rápido do software.
 
 **Classe.** Chapéu.
+## H14: as codificações alternativas reduzem a área do somador ternário
+
+**Afirmação.** O carry direto canônico de 24 trits (H7, 132 células de lógica)
+não é o mínimo; codificações que mapeiam a soma em aritmética binária
+(código com viés, valor = código - 1) ou em one-hot sintetizam com menos
+LUT.
+
+**Teste.** Implementar os dois somadores (`fpga/gowin/trit_add_offset.v` e
+`fpga/gowin/trit_add_onehot.v`), verificar o comportamento por exaustão com
+`eval` do yosys em N=2 (243 casos por variante, contra referência em Python),
+e sintetizar em N=24 com `synth_gowin` contando células do JSON.
+
+**Métrica.** LUT4 + LUT1 da síntese.
+
+**Derruba a hipótese.** As duas codificações empatam ou custam mais que as
+132 células da canônica de H7.
+
+**Resultado. 2026-11-15.** `<scripts/synth_h14.sh` reproduz verificação e
+contagens.
+
+| Variante | LUT4 | LUT1 | Total |
+| :-- | --: | --: | --: |
+| Canônica direta (H7) | 124 | 8 | 132 |
+| Offset (viés binário, 2 bits) | 94 | 8 | 102 |
+| One-hot (3 bits) | 48 | 1 | 49 |
+
+As duas novas passam os 243 casos. O código offset reduz a área em 22,7%
+mantendo 2 bits por trit. O one-hot reduz em 62,9%, ao custo de 3 bits por
+trit, o que implica 50% a mais de memória e de largura de barramento se a
+codificação atravessar fronteiras de módulo. A decisão entre as duas depende
+do gargalo: lógica (one-hot vence) contra dados/memória (offset vence, na
+mesma largura da canônica). Fmax e caminho crítico ficam pendentes de
+colocação, como em H7.
 
 ## Ordem de execução por custo
 
