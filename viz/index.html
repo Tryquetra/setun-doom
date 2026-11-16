@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HexGray3 vs Ternary Hardware Codings | Setun-Doom 3D Explorer</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b14;
+      --surface: #0e1627;
+      --surface-elev: rgba(16, 25, 44, 0.94);
+      --border: rgba(148, 163, 184, 0.22);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --emerald: #34d399;
+      --gold: #dca93e;
+      --fault: #ff4d6d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-rows: auto auto minmax(420px, 56vh) auto;
+      min-height: 100dvh;
+      gap: 10px;
+      padding: 12px;
+      max-width: 1520px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .title-block p {
+      margin: 3px 0 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .global-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    button, select {
+      appearance: none;
+      min-block-size: 34px;
+      padding: 6px 11px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: rgba(30, 41, 59, 0.9);
+      color: #f8fafc;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      button {
+        transition: background-color 140ms ease-out, border-color 140ms ease-out;
+      }
+    }
+
+    button:hover, select:hover {
+      background: rgba(51, 65, 85, 0.95);
+      border-color: rgba(226, 232, 240, 0.55);
+    }
+
+    button:focus-visible, select:focus-visible, [tabindex="0"]:focus-visible {
+      outline: 2px solid #facc15;
+      outline-offset: 2px;
+    }
+
+    button.primary {
+      background: rgba(52, 211, 153, 0.16);
+      border-color: rgba(52, 211, 153, 0.6);
+      color: #a7f3d0;
+    }
+
+    button.fault {
+      background: rgba(255, 77, 109, 0.16);
+      border-color: rgba(255, 77, 109, 0.55);
+      color: #fecdd3;
+    }
+
+    .readout-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .readout-strip strong {
+      color: var(--gold);
+    }
+
+    .tablist {
+      display: flex;
+      overflow-x: auto;
+      gap: 4px;
+      padding: 4px 6px 0 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .tablist [role="tab"] {
+      position: relative;
+      flex: none;
+      background: transparent;
+      border: 0;
+      border-radius: 8px 8px 0 0;
+      padding: 10px 14px;
+      color: var(--muted);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 0.84rem;
+      font-weight: 600;
+    }
+
+    .tablist [role="tab"][aria-selected="true"] {
+      color: #f8fafc;
+    }
+
+    .tablist [role="tab"][aria-selected="true"]::after {
+      content: "";
+      position: absolute;
+      inset: auto 8px 0 8px;
+      border-block-end: 3px solid var(--accent);
+    }
+
+    .stage-wrap {
+      position: relative;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: radial-gradient(circle at 50% 35%, #111c33 0%, #070b14 75%);
+      overflow: hidden;
+      min-height: 400px;
+    }
+
+    #stage {
+      width: 100%;
+      height: 100%;
+      min-height: 400px;
+    }
+
+    .stage-overlay-pill {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(7, 11, 20, 0.84);
+      border: 1px solid var(--border);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.75rem;
+      color: var(--text);
+      pointer-events: none;
+    }
+
+    .stage-overlay-hint {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(7, 11, 20, 0.78);
+      border: 1px solid var(--border);
+      font-size: 0.74rem;
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    .panels-shell {
+      display: grid;
+    }
+
+    .panel-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 10px;
+    }
+
+    .info-card {
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
+    .info-card.win {
+      border-color: rgba(52, 211, 153, 0.55);
+      background: rgba(6, 78, 59, 0.22);
+    }
+
+    .info-card.warn {
+      border-color: rgba(255, 77, 109, 0.45);
+      background: rgba(127, 29, 29, 0.18);
+    }
+
+    .info-card h2, .info-card h3 {
+      margin: 0 0 6px 0;
+      font-size: 0.84rem;
+      color: #f8fafc;
+    }
+
+    .info-card p {
+      margin: 0;
+      font-size: 0.78rem;
+      line-height: 1.48;
+      color: var(--muted);
+    }
+
+    .metric-big {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--emerald);
+      margin-bottom: 4px;
+    }
+
+    .metric-big.amber { color: var(--gold); }
+    .metric-big.red { color: var(--fault); }
+
+    .skew-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 10px;
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    .skew-toolbar label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .table-wrapper {
+      overflow: auto;
+      max-inline-size: 100%;
+      max-block-size: min(460px, 60vh);
+      container-type: inline-size;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-top: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 0.8rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    caption {
+      text-align: left;
+      padding: 10px 12px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-weight: 700;
+      font-size: 0.86rem;
+      color: #f8fafc;
+      background: rgba(15, 23, 42, 0.92);
+    }
+
+    th, td {
+      padding: 8px 12px;
+      text-align: right;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+      white-space: nowrap;
+    }
+
+    th:first-child, td:first-child {
+      text-align: left;
+    }
+
+    thead th {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 2;
+      background: #131e33;
+      color: #cbd5e1;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-weight: 600;
+    }
+
+    tbody th {
+      position: sticky;
+      inset-inline-start: 0;
+      z-index: 1;
+      background: #0e1627;
+      color: #f8fafc;
+    }
+
+    tr.is-winner th, tr.is-winner td {
+      background: rgba(6, 78, 59, 0.34);
+      color: #a7f3d0;
+      font-weight: 700;
+    }
+
+    tr.is-selected th, tr.is-selected td {
+      outline: 1px solid var(--accent);
+      outline-offset: -1px;
+    }
+
+    @container (width < 640px) {
+      table, caption, thead, tbody, tr, th, td {
+        display: block;
+        width: 100%;
+      }
+      thead {
+        display: none;
+      }
+      tr {
+        margin-block-end: 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      tbody th {
+        position: sticky;
+        inset-block-start: 0;
+        text-align: left;
+        background: #162238;
+      }
+      td {
+        text-align: right;
+      }
+      td::before {
+        float: left;
+        color: var(--muted);
+        content: attr(data-label) ": ";
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="title-block">
+        <h1>HexGray3 vs Ternary Hardware Codings (Tang Nano 20K &amp; Setun-Doom)</h1>
+        <p>Interactive 3D comparison of wire flips, half-swings vs full-swings, clock-domain skew glitches, and FPGA silicon area.</p>
+      </div>
+
+      <div class="global-controls" aria-label="Simulation step and workload controls">
+        <label for="workload-mode" class="sr-only" style="position:absolute;left:-9999px;">Workload mode</label>
+        <select id="workload-mode" aria-label="Workload mode">
+          <option value="ring">Mode: 6-Sector Ring (+60° / -60°)</option>
+          <option value="linear">Mode: Light Ramp [-3 .. +3]</option>
+        </select>
+        <button type="button" id="btn-prev">Step -1 / CW (-60°)</button>
+        <button type="button" id="btn-next" class="primary">Step +1 / CCW (+60°)</button>
+        <button type="button" id="btn-center">Jump Center (0)</button>
+        <button type="button" id="btn-sentinel" class="fault">Inject Fault (100)</button>
+        <button type="button" id="btn-play">Play Auto-Step</button>
+        <button type="button" id="btn-reset-counts">Reset Counters</button>
+      </div>
+
+      <div class="readout-strip" aria-live="polite">
+        <span>State: <strong id="rd-label">V0 (0°)</strong></span>
+        <span>HexGray3: <strong id="rd-code">3'b001</strong></span>
+        <span>Vector (q,r,s): <strong id="rd-qrs">(+1, 0, -1)</strong></span>
+        <span>Swings (step): <strong id="rd-swing">0 half / 0 full</strong></span>
+      </div>
+    </header>
+
+    <div id="main-tablist" class="tablist" role="tablist" focusgroup="tablist nomemory" aria-label="Visualization views">
+      <button type="button" role="tab" id="tab-overview" aria-selected="true" focusgroupstart>1. Overview Arena (All 5 Codings)</button>
+      <button type="button" role="tab" id="tab-geometry" aria-selected="false">2. Why Q3 Cube Beats Multi-Wire</button>
+      <button type="button" role="tab" id="tab-skew" aria-selected="false">3. Skew Glitch &amp; Swing Energy Lab</button>
+      <button type="button" role="tab" id="tab-silicon" aria-selected="false">4. Tang Nano 20K Silicon Scorecard</button>
+    </div>
+
+    <section class="stage-wrap" aria-label="Interactive Three.js 3D viewport">
+      <div id="stage"></div>
+      <div id="stage-pill" class="stage-overlay-pill">View 1: Overview Arena | Drag to orbit, scroll to zoom</div>
+      <div class="stage-overlay-hint">Left-click objects or use controls above to step states</div>
+    </section>
+
+    <section class="panels-shell">
+      <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+        <div class="panel-box">
+          <div class="cards-grid" id="overview-cards"></div>
+          <p style="margin:10px 0 0 0;font-size:0.78rem;color:var(--muted);">
+            Watch the glowing wire bars beneath each 3D rotor. Every glowing amber spike above a bus marks a cycle where two or more physical wires toggled simultaneously. Try switching between <strong>6-Sector Ring</strong> and <strong>Light Ramp [-3..+3]</strong> to observe how traditional ternary carries trigger full-swings (<code>-1 &lt;-&gt; +1</code>) at <code>+1 &lt;-&gt; +2</code> while <code>HexGray3</code> holds strictly <code>1</code> wire flip per step.
+          </p>
+        </div>
+      </div>
+
+      <div id="panel-geometry" role="tabpanel" aria-labelledby="tab-geometry" hidden>
+        <div class="panel-box">
+          <div class="cards-grid">
+            <div class="info-card win">
+              <h2>Boolean 3-Cube Q3 (Left Stage)</h2>
+              <p>Each corner is a 3-bit hardware word, and every cube edge connects codes that differ by strictly 1 bit. The golden ring loops across 6 corners (<code>001-011-010-110-111-101</code>), placing zero (<code>000</code>) as a central hub and locking <code>100</code> as an explicit fault sentinel.</p>
+            </div>
+            <div class="info-card">
+              <h2>Zero-Sum Hex Plane (Right Stage)</h2>
+              <p>All 7 valid geometric states satisfy <code>q + r + s = 0</code>. A 60-degree turn swaps a <code>+1</code> and a <code>0</code> axis (two half-swings, zero full-swings). Encoding those 3 trits individually needs 6 or 9 wires; packing the constrained invariant into <code>HexGray3</code> uses 3 wires (<code>87.5%</code> state efficiency).</p>
+            </div>
+            <div class="info-card">
+              <h2>Scope &amp; Honest Frontier</h2>
+              <p><code>HexGray3</code> excels on cyclic directions, sector angles, incremental control ramps, and cross-clock pointers. General 21-trit Setun arithmetic (<code>Word21</code>, 10.46 billion states) spans unconstrained values and retains per-trit binary encodings alongside dedicated <code>HexGray3</code> datapaths.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-skew" role="tabpanel" aria-labelledby="tab-skew" hidden>
+        <div class="panel-box">
+          <div class="skew-toolbar">
+            <label for="skew-slider">
+              Simulated Wire Propagation Skew:
+              <input id="skew-slider" type="range" min="0" max="100" value="65" />
+              <span id="skew-readout">0.65 cycles</span>
+            </label>
+            <span id="skew-verdict" style="font-size:0.8rem;color:var(--fault);font-weight:600;">With skew active, Canonical/OneHot produce torn phantom states during flight. HexGray3 stays glitch-free.</span>
+          </div>
+          <div class="cards-grid">
+            <div class="info-card win">
+              <h3>HexGray3 Receiver Sample</h3>
+              <div class="metric-big" id="skew-hg3-status">CLEAN (0 torn states)</div>
+              <p>Only 1 signal packet travels along the 3-wire ribbon per step. Even when arrival timing drifts, the destination register reads either the previous valid state or the next valid state.</p>
+            </div>
+            <div class="info-card warn">
+              <h3>Canonical 2b Receiver Sample</h3>
+              <div class="metric-big red" id="skew-can-status">2 WIRES IN FLIGHT</div>
+              <p>When a half-swing flips <code>q</code> and another flips <code>r</code>, fast and slow traces arrive out of order, briefly forming a torn phantom state in asynchronous receivers.</p>
+            </div>
+            <div class="info-card">
+              <h3>Half-Swing vs Full-Swing Energy</h3>
+              <div class="metric-big amber" id="skew-energy-summary">Ideal 0.25x vs Binary 1.00x per wire</div>
+              <p>In tri-level theory, a half-swing (<code>0 &lt;-&gt; +1</code>) consumes <code>0.25x</code> capacitive energy (<code>dV^2</code>). In real FPGA binary wires, One-Hot 3b toggles 2 wires even on half-swings (<code>10.02M</code> wire flips vs <code>4.66M</code> in RV32I during Doom).</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-silicon" role="tabpanel" aria-labelledby="tab-silicon" hidden>
+        <div class="panel-box">
+          <p style="margin:0 0 8px 0;font-size:0.8rem;color:var(--muted);">
+            Click any 3D pillar group in the viewport to highlight its row below. Data comes directly from <code>iverilog</code> (6,000 cycles x 8 lanes = 48,000 steps), <code>yosys synth_gowin</code>, and <code>nextpnr-himbaechel</code> on Tang Nano 20K (<code>GW2AR-LV18QN88C8/I7</code>).
+          </p>
+          <div tabindex="0" role="region" aria-labelledby="h16-caption" class="table-wrapper">
+            <table>
+              <caption id="h16-caption">Measured H16 FPGA Hardware Scorecard (N=8 Parallel Zero-Sum Cells = 24 Trits)</caption>
+              <thead>
+                <tr>
+                  <th>Encoding Variant</th>
+                  <th>Wires / DFF</th>
+                  <th>LUT4</th>
+                  <th>LUT1</th>
+                  <th>MUX2_LUT5</th>
+                  <th>Fmax (MHz)</th>
+                  <th>Wire Toggles (6k cyc)</th>
+                  <th>Multi-Bit Glitch Cycles</th>
+                </tr>
+              </thead>
+              <tbody id="h16-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

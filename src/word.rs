@@ -848,25 +848,42 @@ impl Word21 {
     /// consuming less dynamic switching energy) vs *full-swings* (`-1 <-> +1`).
     #[inline]
     pub fn count_trit_flips(self, next: Self) -> (u32, u32, u32) {
+        let (total, neg_zero, zero_pos, full) = self.count_trit_flips_detailed(next);
+        (total, neg_zero + zero_pos, full)
+    }
+
+    /// Detailed transition breakdown across the 21 trits of `self -> next`, returning
+    /// `(total_flips, half_neg_zero, half_zero_pos, full_swings)`.
+    /// Separating `-1 <-> 0` from `0 <-> +1` allows exact physical wire toggle accounting
+    /// for asymmetric FPGA codings such as H14/H15 offset (`-1=00, 0=01, +1=10`).
+    #[inline]
+    pub fn count_trit_flips_detailed(self, next: Self) -> (u32, u32, u32, u32) {
         if self.0 == next.0 {
-            return (0, 0, 0);
+            return (0, 0, 0, 0);
         }
         let a = self.to_trits();
         let b = next.to_trits();
         let mut total = 0u32;
-        let mut half_swings = 0u32;
+        let mut half_neg_zero = 0u32;
+        let mut half_zero_pos = 0u32;
         let mut full_swings = 0u32;
         for i in 0..21 {
-            let diff = (a[i].as_i8() - b[i].as_i8()).unsigned_abs();
+            let ai = a[i].as_i8();
+            let bi = b[i].as_i8();
+            let diff = (ai - bi).unsigned_abs();
             if diff == 1 {
                 total += 1;
-                half_swings += 1;
+                if ai < 0 || bi < 0 {
+                    half_neg_zero += 1;
+                } else {
+                    half_zero_pos += 1;
+                }
             } else if diff == 2 {
                 total += 1;
                 full_swings += 1;
             }
         }
-        (total, half_swings, full_swings)
+        (total, half_neg_zero, half_zero_pos, full_swings)
     }
 
     /// Counts how many bits would toggle in a 32-bit two's-complement binary register (`RV32I`)

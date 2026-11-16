@@ -50,6 +50,7 @@ pub mod elf;
 pub mod fixed;
 #[cfg(feature = "std")]
 pub mod gui;
+pub mod hex_gray;
 pub mod memory;
 #[cfg(feature = "std")]
 pub mod mmo;
@@ -65,8 +66,8 @@ pub mod word;
 pub use assembler::{AsmError, SetunAssembler};
 #[cfg(feature = "std")]
 pub use benchmarks::{
-    BenchmarkRunner, FixedPrecisionReport, FullBenchmarkSuiteReport, IsaBenchmarkResult,
-    RenderThroughputReport,
+    BenchmarkRunner, FixedPrecisionReport, FullBenchmarkSuiteReport, HexGrayBenchmarkReport,
+    HexGrayWorkloadReport, IsaBenchmarkResult, RenderThroughputReport,
 };
 pub use bsp::{BspChild, BspNode, BspTree, Subsector, TernaryOcclusionClipper, WallSeg};
 pub use cpu::{Cpu, Instruction, Opcode, PowerTelemetry};
@@ -83,6 +84,7 @@ pub use elf::{Elf32Image, ElfError, ElfSection, ElfSegment, LoadedElfLayout};
 pub use fixed::{TernaryFixed, FRAC_SCALE, FRAC_TRITS, INT_TRITS};
 #[cfg(feature = "std")]
 pub use gui::BenchGui;
+pub use hex_gray::{HexCodingComparison, HexGray3};
 pub use memory::{
     Memory, MemoryError, FB_HEIGHT, FB_SIZE, FB_WIDTH, FRAMEBUFFER_BASE, MEMORY_SIZE,
 };

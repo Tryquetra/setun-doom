@@ -82,6 +82,10 @@ pub struct Cpu {
     pub cycles: u64,
     /// Register trits that changed value.
     pub trit_flips: u64,
+    /// Register half-swing transitions (`0 <-> ±1`).
+    pub half_swings: u64,
+    /// Register full-swing transitions (`-1 <-> +1`).
+    pub full_swings: u64,
     /// Weighted switching energy in quarter units.
     pub energy: u64,
     /// Set when the program counter leaves instruction memory.
@@ -103,6 +107,8 @@ impl Cpu {
             data: DataMem::new(data_size),
             cycles: 0,
             trit_flips: 0,
+            half_swings: 0,
+            full_swings: 0,
             energy: 0,
             halted: false,
             exit_code: 0,
@@ -144,13 +150,17 @@ impl Cpu {
         }
         let slot = &mut self.regs[index as usize];
         let old = *slot;
-        let flips = old.trit_flips(value);
+        let (half_nz, half_zp, full) = old.swing_breakdown(value);
+        let half = half_nz + half_zp;
+        let flips = half + full;
         if self.trace {
             #[cfg(feature = "std")]
             println!("store x{index} {old} -> {value} flips {flips}");
         }
         self.trit_flips += u64::from(flips);
-        self.energy += u64::from(old.weighted_energy(value));
+        self.half_swings += u64::from(half);
+        self.full_swings += u64::from(full);
+        self.energy += u64::from(half + 4 * full);
         *slot = value;
         Ok(())
     }

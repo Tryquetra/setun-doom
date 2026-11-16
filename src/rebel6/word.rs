@@ -308,15 +308,32 @@ impl Word24 {
     /// a full swing (`-1 <-> +1`) costs `4`.
     #[must_use]
     pub fn weighted_energy(self, other: Self) -> u32 {
-        let mut energy = 0;
+        let (hnz, hzp, full) = self.swing_breakdown(other);
+        hnz + hzp + 4 * full
+    }
+
+    /// Returns `(half_neg_zero, half_zero_pos, full_swings)` between two `Word24` values.
+    #[must_use]
+    pub fn swing_breakdown(self, other: Self) -> (u32, u32, u32) {
+        let mut half_nz = 0;
+        let mut half_zp = 0;
+        let mut full = 0;
         for i in 0..TRITS {
             let a = self.trit(i);
             let b = other.trit(i);
             if a != b {
-                energy += if a == 0 || b == 0 { 1 } else { 4 };
+                if a == 0 || b == 0 {
+                    if a < 0 || b < 0 {
+                        half_nz += 1;
+                    } else {
+                        half_zp += 1;
+                    }
+                } else {
+                    full += 1;
+                }
             }
         }
-        energy
+        (half_nz, half_zp, full)
     }
 
     fn zip_trits(a: Self, b: Self, f: impl Fn(i8, i8) -> i8) -> Self {

@@ -464,6 +464,41 @@ distribuída (0 blocos BRAM), então o efeito de largura em blocos não aparece
 nesta escala; ele fica para um banco do tamanho de H5 (729 registradores).
 Colocação e Fmax continuam pendentes.
 
+## H16: codificação Hexagonal Gray (Q3) para células ternárias soma-zero
+
+**Afirmação.** Quando o estado é uma célula hexagonal ternária balanceada soma-zero
+$(q, r, s) \in \{-1, 0, +1\}^3$ com $q + r + s = 0$ (7 estados), a codificação
+Hexagonal Gray de 3 bits (`hex_gray3`, módulo [`src/hex_gray.rs`](../src/hex_gray.rs))
+reduz simultaneamente área lógica (`LUT4`), registradores (`DFF`), chaveamento físico
+de fios (`bit_flips`), transições multi-bit sujeitas a glitch e aumenta `Fmax` frente
+às codificações canônica (6 bits), offset (6 bits), one-hot 3b/trit (9 bits) e
+one-hot 7 estados (7 bits).
+
+**Teste.** Implementar banco de `N=8` células (24 trits soma-zero) nas cinco
+codificações ([`fpga/gowin/trit_hex_gray_h16.v`](../fpga/gowin/trit_hex_gray_h16.v)),
+verificar equivalência funcional em 64 frames iniciais e medir 6.000 ciclos (48.000
+transições por faixa) em `iverilog`, sintetizar com `yosys synth_gowin` e executar
+place-and-route com `nextpnr-himbaechel` em `GW2AR-LV18QN88C8/I7`. [`scripts/synth_h16.sh`](../scripts/synth_h16.sh)
+reproduz todos os números.
+
+**Resultado. 2026-11-15.**
+
+| Variante | Fios / DFF | LUT4 | LUT1 | MUX2_LUT5 | Fmax (MHz) | Flips (6k ciclos) | Ciclos glitch (d_H >= 2) |
+| :-- | --: | --: | --: | --: | --: | --: | --: |
+| Canônica 2b (`hg_canon6b_n8`) | 48 | 128 | 384 | 384 | 217,30 | 96.000 | 48.000 |
+| Offset 2b (`hg_offset6b_n8`) | 48 | 160 | 288 | 384 | 241,14 | 144.004 | 48.000 |
+| One-hot 3b (`hg_onehot9b_n8`) | 72 | 214 | 549 | 391 | 195,50 | 192.000 | 48.000 |
+| One-hot 7 (`hg_onehot7b_n8`) | 56 | 186 | 262 | 216 | 190,01 | 96.000 | 48.000 |
+| **Hex-Gray Q3 (`hg_hexgray3b_n8`)** | **24** | **32** | **0** | **24** | **328,30** | **48.784** | **782** |
+
+`hg_hexgray3b_n8` corta 49,2% dos toggles físicos em relação à canônica, 66,1% em
+relação à offset e 74,6% em relação ao one-hot 3b, derruba em 98,4% as transições
+multi-bit (restando apenas os saltos diretos para o centro), reduz `LUT4 + LUT1` de
+512 (canônica) ou 763 (one-hot 3b) para 32 e eleva `Fmax` de 217,30 MHz para 328,30 MHz.
+Os ganhos de fios valem estritamente para o domínio soma-zero ou sequências hamiltonianas
+de 7 estados (`LINEAR_7`); palavras arbitrárias de 21 trits (`Word21`) continuam
+sujeitas ao custo binário físico por trit (`canon2b`, `offset2b`, `onehot3b`).
+
 ## Ordem de execução por custo
 
 | Ordem | Hipótese | Custo do teste |
