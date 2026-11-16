@@ -19,8 +19,10 @@ use crate::assembler::SetunAssembler;
 use crate::bsp::{BspChild, BspNode, BspTree, Subsector, WallSeg};
 use crate::cpu::{Cpu, PowerTelemetry};
 use crate::fixed::{TernaryFixed, DOOM_BINARY_FRACUNIT};
+use crate::hex_gray::{HexCodingComparison, HexGray3};
 use crate::memory::{Memory, FB_SIZE};
 use crate::render::TernaryRenderer;
+use crate::trit::Trit;
 use crate::word::{Tryte6, Word21};
 use std::time::Instant;
 
@@ -89,11 +91,31 @@ pub struct RenderThroughputReport {
     pub megapixels_per_sec: f64,
 }
 
+/// Physical wire switching and half/full-swing comparison for a Hex-Gray benchmark workload.
+#[derive(Copy, Clone, Debug)]
+pub struct HexGrayWorkloadReport {
+    pub name: &'static str,
+    pub steps: u64,
+    pub comparison: HexCodingComparison,
+}
+
+/// Consolidated Hex-Gray experimental suite inside Setun-Doom.
+#[derive(Clone, Debug)]
+pub struct HexGrayBenchmarkReport {
+    pub workloads: Vec<HexGrayWorkloadReport>,
+    pub linear7_full_swings_eliminated: u64,
+    pub linear7_canon_4b_wire_flips: u64,
+    pub linear7_hex_gray3_wire_flips: u64,
+    pub linear7_hex_gray3_glitch_steps: u64,
+    pub linear7_canon_4b_glitch_steps: u64,
+}
+
 /// Global report for the Setun-Doom benchmark suite.
 pub struct FullBenchmarkSuiteReport {
     pub isa_benchmarks: Vec<IsaBenchmarkResult>,
     pub fixed_precision: FixedPrecisionReport,
     pub render_throughput: RenderThroughputReport,
+    pub hex_gray: HexGrayBenchmarkReport,
 }
 
 /// Real `RV32I` reference executor with 32-register file (`x0..x31` in two's complement).
@@ -150,11 +172,13 @@ impl BenchmarkRunner {
 
         let fixed_precision = Self::bench_fixed_point_precision();
         let render_throughput = Self::bench_bsp_and_vga_throughput(120);
+        let hex_gray = Self::bench_hex_gray_suite();
 
         FullBenchmarkSuiteReport {
             isa_benchmarks,
             fixed_precision,
             render_throughput,
+            hex_gray,
         }
     }
 
@@ -685,6 +709,121 @@ impl BenchmarkRunner {
             elapsed_ms: elapsed_s * 1000.0,
             fps,
             megapixels_per_sec,
+        }
+    }
+
+    /// Evaluates Hexagonal Gray (`HexGray3`) across three real Doom/ternary workloads:
+    /// 1. Camera yaw / 6-sector angular sweep (6,000 steps around $C_6$ + center pauses).
+    /// 2. BSP trichotomous `R_PointOnSide` sign-axis transitions mapped onto zero-sum $(q, r, s)$ states.
+    /// 3. Linear signed 7-level ramp `[-3..+3]` comparing `HexGray3` Hamiltonian path against
+    ///    canonical 2-trit (`Word21` slice, 4 wires) where `+1 <-> +2` induces ternary full-swings.
+    pub fn bench_hex_gray_suite() -> HexGrayBenchmarkReport {
+        // Workload A: Continuous Doom camera / raycast sweep across 6 sectors + center resets
+        let mut sweep = HexCodingComparison::default();
+        let mut cur = HexGray3::CENTER;
+        for step in 0..6_000u64 {
+            let next = match step % 15 {
+                0 => HexGray3::CENTER,
+                1..=7 => cur.ccw(),
+                8..=13 => cur.cw(),
+                _ => cur,
+            };
+            sweep.record(cur, next);
+            cur = next;
+        }
+
+        // Workload B: BSP `R_PointOnSide` trichotomous zero-crossings driving hexagonal sector state
+        let mut bsp_cmp = HexCodingComparison::default();
+        let node = BspNode {
+            x: TernaryFixed::from_int(100),
+            y: TernaryFixed::from_int(-50),
+            dx: TernaryFixed::from_int(24),
+            dy: TernaryFixed::from_int(-18),
+            front_child: BspChild::Subsector(0),
+            back_child: BspChild::Subsector(1),
+        };
+        let mut sector = HexGray3::V0;
+        for i in 0..2_400i64 {
+            let sign = if i % 2 == 0 { 1 } else { -1 };
+            let px = TernaryFixed::from_f64((100 + sign * ((i % 37) + 1)) as f64 * 0.5);
+            let py = TernaryFixed::from_f64((-50 - sign * ((i % 29) + 1)) as f64 * 0.5);
+            let side = node.point_on_side(px, py);
+            let next_sector = match side {
+                Trit::Zero => HexGray3::CENTER,
+                dir => sector.step(dir),
+            };
+            bsp_cmp.record(sector, next_sector);
+            sector = next_sector;
+        }
+
+        // Workload C: 7-level linear ramp `[-3..+3]` (6,000 Doom sector-light / slope increments)
+        let mut linear_cmp = HexCodingComparison::default();
+        let mut linear7_full_swings_eliminated = 0u64;
+        let mut linear7_canon_4b_wire_flips = 0u64;
+        let mut linear7_hex_gray3_wire_flips = 0u64;
+        let mut linear7_hex_gray3_glitch_steps = 0u64;
+        let mut linear7_canon_4b_glitch_steps = 0u64;
+
+        let mut val: i8 = -3;
+        let mut delta: i8 = 1;
+        for _ in 0..6_000u64 {
+            let next_val = val + delta;
+            let prev_w = Word21::new(i64::from(val));
+            let next_w = Word21::new(i64::from(next_val));
+            let (_, _, full_in_word) = prev_w.count_trit_flips(next_w);
+            linear7_full_swings_eliminated += u64::from(full_in_word);
+
+            // Exact 2-trit canonical encoding (`t0` in bits 0..1, `t1` in bits 2..3)
+            let prev_t = prev_w.to_trits();
+            let next_t = next_w.to_trits();
+            let p4 = prev_t[0].to_dual_bits() | (prev_t[1].to_dual_bits() << 2);
+            let n4 = next_t[0].to_dual_bits() | (next_t[1].to_dual_bits() << 2);
+            let flips_4b = u64::from((p4 ^ n4).count_ones());
+            linear7_canon_4b_wire_flips += flips_4b;
+            if flips_4b > 1 {
+                linear7_canon_4b_glitch_steps += 1;
+            }
+
+            let ph = HexGray3::from_signed_7(val);
+            let nh = HexGray3::from_signed_7(next_val);
+            let flips_hg = u64::from(ph.wire_flips_to(nh));
+            linear7_hex_gray3_wire_flips += flips_hg;
+            if flips_hg > 1 {
+                linear7_hex_gray3_glitch_steps += 1;
+            }
+            linear_cmp.record(ph, nh);
+
+            val = next_val;
+            if val == 3 {
+                delta = -1;
+            } else if val == -3 {
+                delta = 1;
+            }
+        }
+
+        HexGrayBenchmarkReport {
+            workloads: vec![
+                HexGrayWorkloadReport {
+                    name: "A. Camera 6-Sector Sweep (6k)",
+                    steps: 6_000,
+                    comparison: sweep,
+                },
+                HexGrayWorkloadReport {
+                    name: "B. BSP R_PointOnSide Sector",
+                    steps: 2_400,
+                    comparison: bsp_cmp,
+                },
+                HexGrayWorkloadReport {
+                    name: "C. Light Ramp [-3..+3] (6k)",
+                    steps: 6_000,
+                    comparison: linear_cmp,
+                },
+            ],
+            linear7_full_swings_eliminated,
+            linear7_canon_4b_wire_flips,
+            linear7_hex_gray3_wire_flips,
+            linear7_hex_gray3_glitch_steps,
+            linear7_canon_4b_glitch_steps,
         }
     }
 }

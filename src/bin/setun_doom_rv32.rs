@@ -366,12 +366,18 @@ fn run_guest<const VERACITY: bool>(elf: &[u8], gui: Option<BenchGui>) {
                     None => String::from("N/A"),
                 };
                 println!(
-                    "telemetry: trit flips = {} (half {}, full {}) | bit flips = {} | \
-                     carry gates = {} | digit reduction = {:.2}% | energy = {}",
+                    "telemetry: trit flips = {} (half {}: -/0={}, 0/+={} | full {}) | bit flips = {} | \
+                     canon2b = {} | offset2b = {} | onehot3b = {} | carry gates = {} | \
+                     digit reduction = {:.2}% | ideal energy = {}",
                     telemetry.ternary_trit_flips,
                     telemetry.ternary_half_swings,
+                    telemetry.ternary_half_neg_zero,
+                    telemetry.ternary_half_zero_pos,
                     telemetry.ternary_full_swings,
                     telemetry.binary32_bit_flips,
+                    telemetry.canonical2b_wire_flips(),
+                    telemetry.offset2b_wire_flips(),
+                    telemetry.onehot3b_wire_flips(),
                     telemetry.adder_carry_propagations,
                     telemetry.digit_flip_reduction_pct(),
                     energy

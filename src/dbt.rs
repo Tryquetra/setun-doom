@@ -1906,6 +1906,8 @@ pub fn run_all_riscv_isa_tests() -> Result<RiscvIsaSuiteSummary, DbtError> {
 
         total_telemetry.ternary_trit_flips += report.telemetry.ternary_trit_flips;
         total_telemetry.ternary_half_swings += report.telemetry.ternary_half_swings;
+        total_telemetry.ternary_half_neg_zero += report.telemetry.ternary_half_neg_zero;
+        total_telemetry.ternary_half_zero_pos += report.telemetry.ternary_half_zero_pos;
         total_telemetry.ternary_full_swings += report.telemetry.ternary_full_swings;
         total_telemetry.binary32_bit_flips += report.telemetry.binary32_bit_flips;
         total_telemetry.adder_carry_propagations += report.telemetry.adder_carry_propagations;

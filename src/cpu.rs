@@ -343,6 +343,10 @@ pub struct PowerTelemetry {
     pub ternary_trit_flips: u64,
     /// Count of half-swing ternary transitions (`-1 <-> 0` or `0 <-> +1`).
     pub ternary_half_swings: u64,
+    /// Half-swing subset between `-1` and `0`.
+    pub ternary_half_neg_zero: u64,
+    /// Half-swing subset between `0` and `+1`.
+    pub ternary_half_zero_pos: u64,
     /// Count of full-swing ternary transitions (`-1 <-> +1`).
     pub ternary_full_swings: u64,
     /// Total bits that would toggle in 32-bit binary registers (`RV32I` two's complement)
@@ -359,10 +363,12 @@ impl PowerTelemetry {
         if prev == next {
             return;
         }
-        let (t_flips, half, full) = prev.count_trit_flips(next);
+        let (t_flips, half_nz, half_zp, full) = prev.count_trit_flips_detailed(next);
         let b_flips = prev.count_binary32_flips(next);
         self.ternary_trit_flips += t_flips as u64;
-        self.ternary_half_swings += half as u64;
+        self.ternary_half_neg_zero += half_nz as u64;
+        self.ternary_half_zero_pos += half_zp as u64;
+        self.ternary_half_swings += (half_nz + half_zp) as u64;
         self.ternary_full_swings += full as u64;
         self.binary32_bit_flips += b_flips as u64;
     }
@@ -379,15 +385,56 @@ impl PowerTelemetry {
         next_binary16: i32,
     ) {
         if prev_ternary != next_ternary {
-            let (t_flips, half, full) = prev_ternary.count_trit_flips(next_ternary);
+            let (t_flips, half_nz, half_zp, full) =
+                prev_ternary.count_trit_flips_detailed(next_ternary);
             self.ternary_trit_flips += t_flips as u64;
-            self.ternary_half_swings += half as u64;
+            self.ternary_half_neg_zero += half_nz as u64;
+            self.ternary_half_zero_pos += half_zp as u64;
+            self.ternary_half_swings += (half_nz + half_zp) as u64;
             self.ternary_full_swings += full as u64;
         }
         if prev_binary16 != next_binary16 {
             let b_flips = (prev_binary16 ^ next_binary16).count_ones();
             self.binary32_bit_flips += b_flips as u64;
         }
+    }
+
+    /// Logical tri-level ideal switching energy ($\Delta V^2$: half-swing = `0.25`, full-swing = `1.0`).
+    #[must_use]
+    pub fn ternary_ideal_energy(&self) -> f64 {
+        (self.ternary_half_swings as f64) * 0.25 + (self.ternary_full_swings as f64)
+    }
+
+    /// Exact physical wire bit-flips under FPGA Canonical 2-bit coding (`0=00, +1=01, -1=10`):
+    /// half-swings flip 1 wire, full-swings (`01 <-> 10`) flip 2 wires simultaneously.
+    #[must_use]
+    pub const fn canonical2b_wire_flips(&self) -> u64 {
+        self.ternary_half_swings + 2 * self.ternary_full_swings
+    }
+
+    /// Exact physical wire bit-flips under FPGA Offset 2-bit coding (`-1=00, 0=01, +1=10`):
+    /// `-1 <-> 0` flips 1 wire, `-1 <-> +1` flips 1 wire, `0 <-> +1` flips 2 wires simultaneously.
+    #[must_use]
+    pub const fn offset2b_wire_flips(&self) -> u64 {
+        self.ternary_half_neg_zero + 2 * self.ternary_half_zero_pos + self.ternary_full_swings
+    }
+
+    /// Exact physical wire bit-flips under FPGA One-Hot 3-bit coding (`0=001, +1=010, -1=100`):
+    /// every trit transition flips strictly 2 wires simultaneously across a 50% wider bus.
+    #[must_use]
+    pub const fn onehot3b_wire_flips(&self) -> u64 {
+        2 * (self.ternary_half_swings + self.ternary_full_swings)
+    }
+
+    /// Percentage reduction of a physical binary-wire flip count vs 32-bit `RV32I` bit flips.
+    #[must_use]
+    pub fn wire_flip_reduction_pct(&self, physical_flips: u64) -> f64 {
+        if self.binary32_bit_flips == 0 {
+            return 0.0;
+        }
+        let b = self.binary32_bit_flips as f64;
+        let p = physical_flips as f64;
+        ((b - p) / b) * 100.0
     }
 
     /// Computes percentage reduction of *Digit Flips* for ternary architecture versus 32-bit binary

@@ -262,7 +262,7 @@ fn main() {
 
     let suite = BenchmarkRunner::run_all();
     println!("==============================================================================================================");
-    println!(" COMPARATIVE TABLE: SETUN-DOOM (21-TRIT TERNARY) vs. RV32I (32-BIT BINARY) — IEEE ISMVL 2025 METHODOLOGY");
+    println!(" COMPARATIVE TABLE: SETUN-DOOM (21-TRIT TERNARY) vs. RV32I (32-BIT BINARY) | IEEE ISMVL 2025 METHODOLOGY");
     println!("==============================================================================================================");
     println!(
         " {:<32} | {:>10} | {:>9} | {:>11} | {:>11} | {:>11} | {:>9}",
@@ -287,6 +287,76 @@ fn main() {
             b.mips()
         );
     }
+    println!("--------------------------------------------------------------------------------------------------------------");
+    println!(" SWING & PHYSICAL WIRE CODING BREAKDOWN (Logical dV^2 vs FPGA Canonical2b / Offset2b / OneHot3b)");
+    println!(
+        " {:<32} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10}",
+        "Benchmark / Kernel",
+        "Half(-/0)",
+        "Half(0/+)",
+        "Full(-/+)",
+        "Canon2b",
+        "Offset2b",
+        "OneHot3b"
+    );
+    println!("--------------------------------------------------------------------------------------------------------------");
+    for b in &suite.isa_benchmarks {
+        let t = &b.telemetry;
+        println!(
+            " {:<32} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10}",
+            b.name,
+            t.ternary_half_neg_zero,
+            t.ternary_half_zero_pos,
+            t.ternary_full_swings,
+            t.canonical2b_wire_flips(),
+            t.offset2b_wire_flips(),
+            t.onehot3b_wire_flips()
+        );
+    }
+    println!("==============================================================================================================");
+    println!(" HEX-GRAY (3-WIRE Q3) VS TERNARY CODINGS ON ZERO-SUM (q+r+s=0) & LINEAR WORKLOADS");
+    println!("--------------------------------------------------------------------------------------------------------------");
+    println!(
+        " {:<30} | {:>8} | {:>8} | {:>9} | {:>9} | {:>9} | {:>8} | {:>8}",
+        "Hex-Gray Workload",
+        "HalfSw",
+        "FullSw",
+        "HexGray3b",
+        "Canon6b",
+        "Offset6b",
+        "1Hot9b",
+        "SaveVsCan"
+    );
+    println!("--------------------------------------------------------------------------------------------------------------");
+    for w in &suite.hex_gray.workloads {
+        let c = &w.comparison;
+        println!(
+            " {:<30} | {:>8} | {:>8} | {:>9} | {:>9} | {:>9} | {:>8} | {:>+7.2}%",
+            w.name,
+            c.trit_half_swings,
+            c.trit_full_swings,
+            c.hex_gray3_wire_flips,
+            c.canonical_6b_wire_flips,
+            c.offset_6b_wire_flips,
+            c.onehot_9b_wire_flips,
+            c.reduction_vs(c.canonical_6b_wire_flips)
+        );
+    }
+    println!(
+        " * Hex-Gray Zero-Glitch CDC Safety    : Sweep glitch_steps HG3b={} vs Canon6b={} vs Offset6b={} vs 1Hot9b={}",
+        suite.hex_gray.workloads[0].comparison.hex_gray3_glitch_steps,
+        suite.hex_gray.workloads[0].comparison.canonical_6b_glitch_steps,
+        suite.hex_gray.workloads[0].comparison.offset_6b_glitch_steps,
+        suite.hex_gray.workloads[0].comparison.onehot_9b_glitch_steps
+    );
+    println!(
+        " * Light Ramp [-3..+3] vs 2-Trit 4b   : HexGray3 wire flips = {} (glitches = {}) vs 2-Trit Canon4b = {} (glitches = {}) | Ternary full-swings eliminated = {}",
+        suite.hex_gray.linear7_hex_gray3_wire_flips,
+        suite.hex_gray.linear7_hex_gray3_glitch_steps,
+        suite.hex_gray.linear7_canon_4b_wire_flips,
+        suite.hex_gray.linear7_canon_4b_glitch_steps,
+        suite.hex_gray.linear7_full_swings_eliminated
+    );
     println!("==============================================================================================================");
     println!(
         " * Fixed-Point Precision ({} samples) : TernaryFixed 11.10 RMSE = {:.4} (Symmetry Error = {:.4}) vs Doom 16.16 RMSE = {:.4} (Sign Bias = {:.4})",
@@ -330,12 +400,26 @@ fn main() {
         " * REBEL-6/Setun Peephole Fusions     : {} immediate fusions (LI.T/AIPC.T) + {} trichotomous fusions (BCEG) + {} Setun inversions (STI.T)",
         dbt_summary.total_immediate_fusions, dbt_summary.total_branch_fusions, dbt_summary.total_neg_fusions
     );
+    let dbt_t = &dbt_summary.total_telemetry;
     println!(
-        " * Physical Switching Telemetry       : {} Trit Flips vs {} Bit Flips (Reduction = {:.2}% | Carry Gates = {})",
-        dbt_summary.total_telemetry.ternary_trit_flips,
-        dbt_summary.total_telemetry.binary32_bit_flips,
-        dbt_summary.total_telemetry.digit_flip_reduction_pct(),
-        dbt_summary.total_telemetry.adder_carry_propagations
+        " * Physical Switching Telemetry       : {} Trit Flips (Half: -/0={}, 0/+={} | Full: {}) vs {} Bit Flips (Digit Reduction = {:.2}%, Ideal dV^2 = {:.2}% | Carry Gates = {})",
+        dbt_t.ternary_trit_flips,
+        dbt_t.ternary_half_neg_zero,
+        dbt_t.ternary_half_zero_pos,
+        dbt_t.ternary_full_swings,
+        dbt_t.binary32_bit_flips,
+        dbt_t.digit_flip_reduction_pct(),
+        dbt_t.weighted_energy_reduction_pct(),
+        dbt_t.adder_carry_propagations
+    );
+    println!(
+        " * FPGA Binary-Wire Coding (DBT 37)   : Canon2b={} ({:+.2}%) | Offset2b={} ({:+.2}%) | OneHot3b={} ({:+.2}%)",
+        dbt_t.canonical2b_wire_flips(),
+        dbt_t.wire_flip_reduction_pct(dbt_t.canonical2b_wire_flips()),
+        dbt_t.offset2b_wire_flips(),
+        dbt_t.wire_flip_reduction_pct(dbt_t.offset2b_wire_flips()),
+        dbt_t.onehot3b_wire_flips(),
+        dbt_t.wire_flip_reduction_pct(dbt_t.onehot3b_wire_flips())
     );
 
     let doom_elf_bytes = include_bytes!("../vendor/riscv_tests/rv32m/doom_rv32_benchmark.elf");
@@ -353,11 +437,25 @@ fn main() {
         doom_report.immediate_fusions_executed,
         doom_report.branch_fusions_executed
     );
+    let dt = &doom_report.telemetry;
     println!(
-        " * Physical Switching Doom            : {} Trit Flips vs {} Bit Flips (Reduction = {:.2}%)",
-        doom_report.telemetry.ternary_trit_flips,
-        doom_report.telemetry.binary32_bit_flips,
-        doom_report.telemetry.digit_flip_reduction_pct()
+        " * Physical Switching Doom            : {} Trit Flips (Half: -/0={}, 0/+={} | Full: {}) vs {} Bit Flips (Digit = {:.2}%, Ideal dV^2 = {:.2}%)",
+        dt.ternary_trit_flips,
+        dt.ternary_half_neg_zero,
+        dt.ternary_half_zero_pos,
+        dt.ternary_full_swings,
+        dt.binary32_bit_flips,
+        dt.digit_flip_reduction_pct(),
+        dt.weighted_energy_reduction_pct()
+    );
+    println!(
+        " * FPGA Binary-Wire Coding (Doom)     : Canon2b={} ({:+.2}%) | Offset2b={} ({:+.2}%) | OneHot3b={} ({:+.2}%)",
+        dt.canonical2b_wire_flips(),
+        dt.wire_flip_reduction_pct(dt.canonical2b_wire_flips()),
+        dt.offset2b_wire_flips(),
+        dt.wire_flip_reduction_pct(dt.offset2b_wire_flips()),
+        dt.onehot3b_wire_flips(),
+        dt.wire_flip_reduction_pct(dt.onehot3b_wire_flips())
     );
     println!(
         " * Bare-Metal Console Output (Syscall): {}",
